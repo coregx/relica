@@ -47,9 +47,37 @@ func (sq *SelectQuery) From(table string) *SelectQuery {
 }
 
 // Where adds a WHERE condition.
-func (sq *SelectQuery) Where(condition string, params ...interface{}) *SelectQuery {
-	sq.where = append(sq.where, condition)
-	sq.params = append(sq.params, params...)
+// Accepts either a string with placeholders or an Expression.
+//
+// String example:
+//
+//	Where("status = ? AND age > ?", 1, 18)
+//
+// Expression example:
+//
+//	Where(relica.And(
+//	    relica.Eq("status", 1),
+//	    relica.GreaterThan("age", 18),
+//	))
+func (sq *SelectQuery) Where(condition interface{}, params ...interface{}) *SelectQuery {
+	switch cond := condition.(type) {
+	case string:
+		// Legacy string-based WHERE (backward compatible)
+		sq.where = append(sq.where, cond)
+		sq.params = append(sq.params, params...)
+
+	case Expression:
+		// New Expression-based WHERE
+		sqlStr, args := cond.Build(sq.builder.db.dialect)
+		if sqlStr != "" {
+			sq.where = append(sq.where, sqlStr)
+			sq.params = append(sq.params, args...)
+		}
+
+	default:
+		panic("Where() expects string or Expression")
+	}
+
 	return sq
 }
 
@@ -299,10 +327,35 @@ func (uq *UpdateQuery) Set(values map[string]interface{}) *UpdateQuery {
 }
 
 // Where adds a WHERE condition to the UPDATE query.
+// Accepts either a string with placeholders or an Expression.
 // Multiple Where calls are combined with AND.
-func (uq *UpdateQuery) Where(condition string, params ...interface{}) *UpdateQuery {
-	uq.where = append(uq.where, condition)
-	uq.params = append(uq.params, params...)
+//
+// String example:
+//
+//	Where("status = ?", 1)
+//
+// Expression example:
+//
+//	Where(relica.Eq("status", 1))
+func (uq *UpdateQuery) Where(condition interface{}, params ...interface{}) *UpdateQuery {
+	switch cond := condition.(type) {
+	case string:
+		// Legacy string-based WHERE (backward compatible)
+		uq.where = append(uq.where, cond)
+		uq.params = append(uq.params, params...)
+
+	case Expression:
+		// New Expression-based WHERE
+		sqlStr, args := cond.Build(uq.builder.db.dialect)
+		if sqlStr != "" {
+			uq.where = append(uq.where, sqlStr)
+			uq.params = append(uq.params, args...)
+		}
+
+	default:
+		panic("Where() expects string or Expression")
+	}
+
 	return uq
 }
 
@@ -388,10 +441,35 @@ func (qb *QueryBuilder) Delete(table string) *DeleteQuery {
 }
 
 // Where adds a WHERE condition to the DELETE query.
+// Accepts either a string with placeholders or an Expression.
 // Multiple Where calls are combined with AND.
-func (dq *DeleteQuery) Where(condition string, params ...interface{}) *DeleteQuery {
-	dq.where = append(dq.where, condition)
-	dq.params = append(dq.params, params...)
+//
+// String example:
+//
+//	Where("id = ?", 123)
+//
+// Expression example:
+//
+//	Where(relica.Eq("id", 123))
+func (dq *DeleteQuery) Where(condition interface{}, params ...interface{}) *DeleteQuery {
+	switch cond := condition.(type) {
+	case string:
+		// Legacy string-based WHERE (backward compatible)
+		dq.where = append(dq.where, cond)
+		dq.params = append(dq.params, params...)
+
+	case Expression:
+		// New Expression-based WHERE
+		sqlStr, args := cond.Build(dq.builder.db.dialect)
+		if sqlStr != "" {
+			dq.where = append(dq.where, sqlStr)
+			dq.params = append(dq.params, args...)
+		}
+
+	default:
+		panic("Where() expects string or Expression")
+	}
+
 	return dq
 }
 

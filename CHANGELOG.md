@@ -5,6 +5,130 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2-beta] - 2025-10-24
+
+### Added
+
+#### Expression API for Fluent WHERE Clauses
+
+Type-safe, composable expression builders for complex database queries.
+
+**HashExp - Map-based Conditions**
+```go
+Where(relica.HashExp{
+    "status":     []interface{}{1, 2, 3},  // Automatic IN clause
+    "deleted_at": nil,                      // Automatic IS NULL
+    "role":       "admin",                  // Simple equality
+})
+// Generates: WHERE "deleted_at" IS NULL AND "role" = $1 AND "status" IN ($2, $3, $4)
+```
+
+**Comparison Operators**
+- `Eq(col, val)` - Equality with automatic NULL → IS NULL conversion
+- `NotEq(col, val)` - Inequality with automatic NULL → IS NOT NULL conversion
+- `GreaterThan(col, val)`, `LessThan(col, val)` - Comparison operators
+- `GreaterOrEqual(col, val)`, `LessOrEqual(col, val)` - Inclusive comparisons
+
+**IN and BETWEEN Expressions**
+- `In(col, vals...)` - IN clause with variadic arguments
+  - Single value optimization: `IN (val)` → `= val`
+  - Empty values: `IN ()` → `0=1` (always false)
+- `NotIn(col, vals...)` - NOT IN clause
+  - Single value optimization: `NOT IN (val)` → `<> val`
+  - Empty values: `NOT IN ()` → empty (always true)
+- `Between(col, from, to)` - Range queries
+- `NotBetween(col, from, to)` - Exclusive range
+
+**LIKE Expressions with Automatic Escaping**
+- `Like(col, vals...)` - Pattern matching with automatic wildcard injection
+  - Default: `%value%` (partial match)
+  - Special character escaping: `%`, `\`, `_`
+  - Multiple values combined with AND
+- `NotLike(col, vals...)` - Negative pattern matching
+- `OrLike(col, vals...)` - Multiple values combined with OR
+- `OrNotLike(col, vals...)` - Negative pattern matching with OR
+- `Match(left, right)` - Custom wildcard placement
+  - `Match(true, false)` → `%value` (suffix matching)
+  - `Match(false, true)` → `value%` (prefix matching)
+  - `Match(false, false)` → `value` (exact match)
+
+**Logical Combinators**
+- `And(exps...)` - Combine expressions with AND
+  - Automatic nil expression filtering
+  - Proper parentheses for precedence
+- `Or(exps...)` - Combine expressions with OR
+- `Not(exp)` - Negate expression
+
+**Raw Expressions**
+- `NewExp(sql, args...)` - Custom SQL fragments for unsupported cases
+  - Subqueries
+  - Database-specific functions
+  - Complex expressions
+
+### Changed
+
+**WHERE Method Signature**
+- Updated `Where()` to accept `interface{}` (string or Expression)
+- ✅ **Backward compatible** - string-based WHERE still works
+- ✅ **Can mix both styles** in same query
+- Applied to: `SelectQuery`, `UpdateQuery`, `DeleteQuery`
+
+### Technical Details
+
+**Performance**
+- Zero allocations in Expression.Build() hot paths
+- Deterministic SQL generation (sorted map keys in HashExp)
+- Same performance as string-based WHERE (<1% overhead)
+- Statement cache hit rate improved with deterministic SQL
+
+**Multi-Dialect Support**
+- PostgreSQL: `$1, $2, $3` placeholders, `"` identifier quoting
+- MySQL: `?, ?, ?` placeholders, `` ` `` identifier quoting
+- SQLite: `?, ?, ?` placeholders, `"` identifier quoting
+- Consistent Expression API across all databases
+
+**Test Coverage**
+- 87.4% overall coverage (up from 83%)
+- 80+ unit tests for expressions
+- 20+ integration tests across all databases
+- 100% coverage for expression types
+
+**Code Quality**
+- Comprehensive godoc comments for all expressions
+- Example-driven documentation
+- Table-driven tests with subtests
+- Full integration test suite
+
+### Documentation
+
+**Updated Documentation**
+- README.md - Added Expression API section with quick reference
+- CHANGELOG.md - Detailed v0.1.1 release notes
+
+### Security
+
+**Automatic SQL Injection Protection**
+- LIKE expressions escape special characters (`%`, `_`, `\`)
+- NULL values safely handled (no direct comparison)
+- Parameterized queries with prepared statements
+- Input validation for expression types
+
+### Migration
+
+**No breaking changes.** All v0.1.0 code works without modifications.
+
+**Optional adoption:**
+- Gradually migrate to Expression API for type safety
+- Mix string-based and expression-based WHERE in same codebase
+
+### Known Limitations
+
+- Expression API doesn't support JOINs (planned for v0.2.0)
+- Subqueries require `NewExp()` (native support planned)
+- Column references must be string literals (no variable column names for cache optimization)
+
+---
+
 ## [0.1.0-beta] - 2025-10-24
 
 ### Added

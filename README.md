@@ -152,6 +152,164 @@ db.Builder().
     Execute()
 ```
 
+### Expression API (v0.1.1+)
+
+Relica supports fluent expression builders for type-safe, complex WHERE clauses:
+
+#### HashExp - Simple Conditions
+
+```go
+// Simple equality
+db.Builder().Select().From("users").
+    Where(relica.HashExp{"status": 1}).
+    All(&users)
+
+// Multiple conditions (AND)
+db.Builder().Select().From("users").
+    Where(relica.HashExp{
+        "status": 1,
+        "age":    30,
+    }).
+    All(&users)
+
+// IN clause (slice values)
+db.Builder().Select().From("users").
+    Where(relica.HashExp{
+        "status": []interface{}{1, 2, 3},
+    }).
+    All(&users)
+
+// NULL handling
+db.Builder().Select().From("users").
+    Where(relica.HashExp{
+        "deleted_at": nil,  // IS NULL
+    }).
+    All(&users)
+
+// Combined: IN + NULL + equality
+db.Builder().Select().From("users").
+    Where(relica.HashExp{
+        "status":     []interface{}{1, 2},
+        "deleted_at": nil,
+        "role":       "admin",
+    }).
+    All(&users)
+```
+
+#### Comparison Operators
+
+```go
+// Greater than
+db.Builder().Select().From("users").
+    Where(relica.GreaterThan("age", 18)).
+    All(&users)
+
+// Less than or equal
+db.Builder().Select().From("users").
+    Where(relica.LessOrEqual("price", 100.0)).
+    All(&products)
+
+// Available: Eq, NotEq, GreaterThan, LessThan, GreaterOrEqual, LessOrEqual
+```
+
+#### IN and BETWEEN
+
+```go
+// IN
+db.Builder().Select().From("users").
+    Where(relica.In("role", "admin", "moderator")).
+    All(&users)
+
+// NOT IN
+db.Builder().Select().From("users").
+    Where(relica.NotIn("status", 0, 99)).
+    All(&users)
+
+// BETWEEN
+db.Builder().Select().From("orders").
+    Where(relica.Between("created_at", startDate, endDate)).
+    All(&orders)
+```
+
+#### LIKE with Automatic Escaping
+
+```go
+// Default: %value% (partial match)
+db.Builder().Select().From("users").
+    Where(relica.Like("name", "john")).  // name LIKE '%john%'
+    All(&users)
+
+// Multiple values (AND)
+db.Builder().Select().From("articles").
+    Where(relica.Like("title", "go", "database")).  // title LIKE '%go%' AND title LIKE '%database%'
+    All(&articles)
+
+// Custom matching (prefix/suffix)
+db.Builder().Select().From("files").
+    Where(relica.Like("filename", ".txt").Match(false, true)).  // filename LIKE '%.txt'
+    All(&files)
+
+// OR logic
+db.Builder().Select().From("users").
+    Where(relica.OrLike("email", "gmail", "yahoo")).  // email LIKE '%gmail%' OR email LIKE '%yahoo%'
+    All(&users)
+```
+
+#### Logical Combinators
+
+```go
+// AND
+db.Builder().Select().From("users").
+    Where(relica.And(
+        relica.Eq("status", 1),
+        relica.GreaterThan("age", 18),
+    )).
+    All(&users)
+
+// OR
+db.Builder().Select().From("users").
+    Where(relica.Or(
+        relica.Eq("role", "admin"),
+        relica.Eq("role", "moderator"),
+    )).
+    All(&users)
+
+// NOT
+db.Builder().Select().From("users").
+    Where(relica.Not(
+        relica.In("status", 0, 99),
+    )).
+    All(&users)
+
+// Nested combinations
+db.Builder().Select().From("users").
+    Where(relica.And(
+        relica.Eq("status", 1),
+        relica.Or(
+            relica.Eq("role", "admin"),
+            relica.GreaterThan("age", 30),
+        ),
+    )).
+    All(&users)
+```
+
+#### Backward Compatibility
+
+String-based WHERE still works:
+
+```go
+// Old style (still supported)
+db.Builder().Select().From("users").
+    Where("status = ? AND age > ?", 1, 18).
+    All(&users)
+
+// Can mix both styles
+db.Builder().Select().From("users").
+    Where("status = ?", 1).
+    Where(relica.GreaterThan("age", 18)).
+    All(&users)
+```
+
 ### Transactions
 
 ```go

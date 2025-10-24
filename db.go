@@ -20,6 +20,13 @@ type (
 	SelectQuery = core.SelectQuery
 	// Tx represents a database transaction.
 	Tx = core.Tx
+
+	// Expression represents a database expression for building complex WHERE clauses.
+	Expression = core.Expression
+	// HashExp represents a hash-based expression using column-value pairs.
+	HashExp = core.HashExp
+	// LikeExp represents a LIKE expression with automatic escaping.
+	LikeExp = core.LikeExp
 )
 
 // Re-export core functions.
@@ -28,4 +35,24 @@ var (
 	NewDB            = core.NewDB
 	WithMaxOpenConns = core.WithMaxOpenConns
 	WithMaxIdleConns = core.WithMaxIdleConns
+
+	// Expression builders
+	NewExp         = core.NewExp
+	Eq             = core.Eq
+	NotEq          = core.NotEq
+	GreaterThan    = core.GreaterThan
+	LessThan       = core.LessThan
+	GreaterOrEqual = core.GreaterOrEqual
+	LessOrEqual    = core.LessOrEqual
+	In             = core.In
+	NotIn          = core.NotIn
+	Between        = core.Between
+	NotBetween     = core.NotBetween
+	Like           = core.Like
+	NotLike        = core.NotLike
+	OrLike         = core.OrLike
+	OrNotLike      = core.OrNotLike
+	And            = core.And
+	Or             = core.Or
+	Not            = core.Not
 )

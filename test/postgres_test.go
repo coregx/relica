@@ -25,7 +25,7 @@ type User struct {
 func TestPostgresIntegration(t *testing.T) {
 	ctx := context.Background()
 
-	// Запускаем PostgreSQL в Docker
+	// Start PostgreSQL in Docker
 	pgContainer, err := postgres.Run(
 		ctx,
 		"postgres:15-alpine",
@@ -41,16 +41,16 @@ func TestPostgresIntegration(t *testing.T) {
 	require.NoError(t, err)
 	defer pgContainer.Terminate(ctx) //nolint:errcheck // Test cleanup
 
-	// Получаем DSN
+	// Get connection string (DSN)
 	dsn, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
 	require.NoError(t, err)
 
-	// Подключаемся к БД
+	// Connect to database
 	db, err := relica.NewDB("postgres", dsn)
 	require.NoError(t, err)
 	defer db.Close() //nolint:errcheck // Test cleanup
 
-	// Создаем таблицу
+	// Create test table
 	_, err = db.ExecContext(ctx, `
         CREATE TABLE users (
             id SERIAL PRIMARY KEY,
@@ -60,7 +60,7 @@ func TestPostgresIntegration(t *testing.T) {
     `)
 	require.NoError(t, err)
 
-	// Тест вставки (PostgreSQL требует RETURNING clause вместо LastInsertId)
+	// Test INSERT (PostgreSQL requires RETURNING clause instead of LastInsertId)
 	user := User{Name: "Alice", Email: "alice@example.com"}
 	var insertedID int
 	err = db.QueryRowContext(ctx,
@@ -71,7 +71,7 @@ func TestPostgresIntegration(t *testing.T) {
 	require.Greater(t, insertedID, 0, "ID should be auto-generated")
 	user.ID = insertedID
 
-	// Тест выборки через Query Builder
+	// Test SELECT via Query Builder
 	var fetched User
 	err = db.Builder().Select().From("users").Where("id = ?", user.ID).One(&fetched)
 	require.NoError(t, err)

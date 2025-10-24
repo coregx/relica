@@ -124,18 +124,19 @@ echo ""
 
 # 8. Test coverage check
 log_info "Checking test coverage..."
-COVERAGE=$(go test -cover ./... 2>&1 | grep "coverage:" | tail -1 | awk '{print $2}' | sed 's/%//')
+# Get coverage for internal/core (main package)
+COVERAGE=$(go test -cover ./... 2>&1 | grep "internal/core" | awk '{print $5}' | sed 's/%//')
 if [ -n "$COVERAGE" ]; then
-    log_info "Test coverage: ${COVERAGE}%"
-    # Check if coverage is above 70%
-    if (( $(echo "$COVERAGE >= 70.0" | bc -l) )); then
+    log_info "Test coverage (internal/core): ${COVERAGE}%"
+    # Check if coverage is above 70% (using awk instead of bc for portability)
+    if awk -v cov="$COVERAGE" 'BEGIN {exit !(cov >= 70.0)}'; then
         log_success "Coverage meets minimum requirement (70%)"
     else
         log_warning "Coverage below 70% (current: ${COVERAGE}%)"
         WARNINGS=$((WARNINGS + 1))
     fi
 else
-    log_warning "Could not determine coverage"
+    log_warning "Could not determine coverage for internal/core"
     WARNINGS=$((WARNINGS + 1))
 fi
 echo ""
