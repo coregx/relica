@@ -23,14 +23,30 @@ func (qb *QueryBuilder) WithContext(ctx context.Context) *QueryBuilder {
 	return qb
 }
 
+// JoinInfo represents a JOIN clause in SELECT query.
+type JoinInfo struct {
+	JoinType string      // "INNER JOIN", "LEFT JOIN", "RIGHT JOIN", "FULL OUTER JOIN", "CROSS JOIN"
+	Table    string      // Table name with optional alias: "users u", "messages m"
+	On       interface{} // string | Expression | nil
+}
+
 // SelectQuery represents a SELECT query being built.
 type SelectQuery struct {
-	builder *QueryBuilder
-	columns []string
-	table   string
-	where   []string
-	params  []interface{}
-	ctx     context.Context // context for this specific query
+	builder       *QueryBuilder
+	columns       []string
+	table         string
+	joins         []JoinInfo
+	where         []string
+	params        []interface{}
+	groupBy       []string // GROUP BY columns: ["user_id", "status"]
+	havingClauses []struct {
+		condition string
+		args      []interface{}
+	} // HAVING clauses (WHERE for aggregates)
+	orderBy     []string        // ORDER BY clauses: ["age DESC", "name ASC", "created_at"]
+	limitValue  *int64          // LIMIT value (nil = not set)
+	offsetValue *int64          // OFFSET value (nil = not set)
+	ctx         context.Context // context for this specific query
 }
 
 // WithContext sets the context for this SELECT query.
@@ -81,13 +97,379 @@ func (sq *SelectQuery) Where(condition interface{}, params ...interface{}) *Sele
 	return sq
 }
 
+// Join adds a generic JOIN clause to the SELECT query.
+// joinType specifies the type of join ("INNER JOIN", "LEFT JOIN", etc.).
+// table is the table name with optional alias (e.g., "users u", "messages m").
+// on can be a string, Expression, or nil (for CROSS JOIN).
+//
+// Example:
+//
+//	Join("INNER JOIN", "users u", "m.user_id = u.id")
+//	Join("LEFT JOIN", "attachments a", relica.Eq("m.id", relica.Raw("a.message_id")))
+func (sq *SelectQuery) Join(joinType, table string, on interface{}) *SelectQuery {
+	sq.joins = append(sq.joins, JoinInfo{
+		JoinType: joinType,
+		Table:    table,
+		On:       on,
+	})
+	return sq
+}
+
+// InnerJoin adds an INNER JOIN clause to the SELECT query.
+// table is the table name with optional alias (e.g., "users u").
+// on can be a string or Expression specifying the join condition.
+//
+// Example:
+//
+//	InnerJoin("users u", "m.user_id = u.id")
+//	InnerJoin("users u", relica.Eq("m.user_id", relica.Raw("u.id")))
+func (sq *SelectQuery) InnerJoin(table string, on interface{}) *SelectQuery {
+	return sq.Join("INNER JOIN", table, on)
+}
+
+// LeftJoin adds a LEFT JOIN (LEFT OUTER JOIN) clause to the SELECT query.
+// table is the table name with optional alias (e.g., "attachments a").
+// on can be a string or Expression specifying the join condition.
+//
+// Example:
+//
+//	LeftJoin("attachments a", "m.id = a.message_id")
+func (sq *SelectQuery) LeftJoin(table string, on interface{}) *SelectQuery {
+	return sq.Join("LEFT JOIN", table, on)
+}
+
+// RightJoin adds a RIGHT JOIN (RIGHT OUTER JOIN) clause to the SELECT query.
+// table is the table name with optional alias.
+// on can be a string or Expression specifying the join condition.
+//
+// Example:
+//
+//	RightJoin("users u", "m.user_id = u.id")
+func (sq *SelectQuery) RightJoin(table string, on interface{}) *SelectQuery {
+	return sq.Join("RIGHT JOIN", table, on)
+}
+
+// FullJoin adds a FULL OUTER JOIN clause to the SELECT query.
+// table is the table name with optional alias.
+// on can be a string or Expression specifying the join condition.
+// Note: Not supported by MySQL. Use PostgreSQL or SQLite.
+//
+// Example:
+//
+//	FullJoin("users u", "m.user_id = u.id")
+func (sq *SelectQuery) FullJoin(table string, on interface{}) *SelectQuery {
+	return sq.Join("FULL OUTER JOIN", table, on)
+}
+
+// CrossJoin adds a CROSS JOIN clause to the SELECT query.
+// table is the table name with optional alias.
+// CROSS JOIN does not require an ON condition (Cartesian product).
+//
+// Example:
+//
+//	CrossJoin("attachments")
+func (sq *SelectQuery) CrossJoin(table string) *SelectQuery {
+	return sq.Join("CROSS JOIN", table, nil)
+}
+
+// OrderBy adds ORDER BY clause with optional direction (ASC/DESC).
+// Supports multiple columns with optional direction specification.
+// Chainable: multiple OrderBy() calls append to the same clause.
+//
+// Examples:
+//
+//	OrderBy("age DESC")                    // Single column descending
+//	OrderBy("status ASC", "created_at")    // Multiple columns (created_at defaults to ASC)
+//	OrderBy("name").OrderBy("age DESC")    // Chained calls
+func (sq *SelectQuery) OrderBy(columns ...string) *SelectQuery {
+	sq.orderBy = append(sq.orderBy, columns...)
+	return sq
+}
+
+// Limit sets the LIMIT clause for the query.
+// Limits the number of rows returned by the query.
+//
+// Example:
+//
+//	Limit(100)  // Return at most 100 rows
+func (sq *SelectQuery) Limit(limit int64) *SelectQuery {
+	sq.limitValue = &limit
+	return sq
+}
+
+// Offset sets the OFFSET clause for the query.
+// Skips the specified number of rows before returning results.
+//
+// Example:
+//
+//	Offset(200)  // Skip first 200 rows
+func (sq *SelectQuery) Offset(offset int64) *SelectQuery {
+	sq.offsetValue = &offset
+	return sq
+}
+
+// buildTableWithAlias builds a table reference with optional alias.
+// Input: "users u" → Output: "users" AS "u" (quoted)
+// Input: "users" → Output: "users" (quoted)
+func (sq *SelectQuery) buildTableWithAlias(table string) string {
+	tableParts := strings.Fields(table)
+	if len(tableParts) == 2 {
+		// Table with alias
+		quotedTable := sq.builder.db.dialect.QuoteIdentifier(tableParts[0])
+		quotedAlias := sq.builder.db.dialect.QuoteIdentifier(tableParts[1])
+		return quotedTable + " AS " + quotedAlias
+	}
+	// Simple table name
+	return sq.builder.db.dialect.QuoteIdentifier(table)
+}
+
+// buildJoins constructs the JOIN clause from the joins slice.
+// Returns empty string if no joins are specified.
+func (sq *SelectQuery) buildJoins(params *[]interface{}) string {
+	if len(sq.joins) == 0 {
+		return ""
+	}
+
+	parts := make([]string, 0, len(sq.joins))
+
+	for _, join := range sq.joins {
+		part := " " + join.JoinType + " "
+
+		// Build table with optional alias
+		part += sq.buildTableWithAlias(join.Table)
+
+		// Build ON condition
+		if join.On != nil {
+			part += " ON "
+
+			switch on := join.On.(type) {
+			case string:
+				// String-based ON: use as-is
+				part += on
+
+			case Expression:
+				// Expression-based ON
+				sqlStr, args := on.Build(sq.builder.db.dialect)
+				part += sqlStr
+				*params = append(*params, args...)
+
+			default:
+				panic(fmt.Sprintf("JOIN ON must be string, Expression, or nil, got %T", join.On))
+			}
+		}
+
+		parts = append(parts, part)
+	}
+
+	return strings.Join(parts, "")
+}
+
+// buildOrderBy constructs the ORDER BY clause from the orderBy slice.
+// Returns empty string if no ORDER BY is specified.
+// Parses column direction (ASC/DESC) and quotes column names.
+func (sq *SelectQuery) buildOrderBy() string {
+	if len(sq.orderBy) == 0 {
+		return ""
+	}
+
+	parts := make([]string, 0, len(sq.orderBy))
+	for _, col := range sq.orderBy {
+		// Parse "column [ASC|DESC]"
+		fields := strings.Fields(col)
+		if len(fields) == 0 {
+			continue
+		}
+
+		// Quote column name (may include table prefix: "users.age" → "users"."age")
+		quoted := sq.quoteColumnName(fields[0])
+
+		// Add direction if specified
+		if len(fields) > 1 {
+			direction := strings.ToUpper(fields[1])
+			if direction == "ASC" || direction == "DESC" {
+				quoted += " " + direction
+			}
+		}
+
+		parts = append(parts, quoted)
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+
+	return " ORDER BY " + strings.Join(parts, ", ")
+}
+
+// quoteColumnName quotes a column name, handling table prefixes.
+// Examples: "age" → "age", "users.age" → "users"."age"
+func (sq *SelectQuery) quoteColumnName(col string) string {
+	// Check for table.column format
+	if strings.Contains(col, ".") {
+		parts := strings.SplitN(col, ".", 2)
+		return sq.builder.db.dialect.QuoteIdentifier(parts[0]) + "." + sq.builder.db.dialect.QuoteIdentifier(parts[1])
+	}
+	return sq.builder.db.dialect.QuoteIdentifier(col)
+}
+
+// buildLimitOffset constructs the LIMIT and OFFSET clauses.
+// Returns empty string if neither is set.
+func (sq *SelectQuery) buildLimitOffset() string {
+	var result string
+
+	if sq.limitValue != nil {
+		result += fmt.Sprintf(" LIMIT %d", *sq.limitValue)
+	}
+
+	if sq.offsetValue != nil {
+		result += fmt.Sprintf(" OFFSET %d", *sq.offsetValue)
+	}
+
+	return result
+}
+
+// buildSelect constructs the SELECT clause, handling aggregate functions.
+// Detects aggregate functions (contains "(") and column aliases (contains "AS").
+// Returns "*" if no columns specified.
+func (sq *SelectQuery) buildSelect() string {
+	if len(sq.columns) == 0 {
+		return "*"
+	}
+
+	parts := make([]string, 0, len(sq.columns))
+	for _, col := range sq.columns {
+		// Determine column type and format accordingly
+		switch {
+		case strings.Contains(col, "("):
+			// Aggregate function or expression - use as-is
+			parts = append(parts, col)
+		case strings.Contains(col, " as ") || strings.Contains(col, " AS "):
+			// Column with alias - use as-is
+			parts = append(parts, col)
+		default:
+			// Simple column name - quote it
+			parts = append(parts, sq.quoteColumnName(col))
+		}
+	}
+
+	return strings.Join(parts, ", ")
+}
+
+// GroupBy adds GROUP BY clause.
+// Multiple columns supported: GroupBy("user_id", "status")
+// Chainable: GroupBy("a").GroupBy("b")
+func (sq *SelectQuery) GroupBy(columns ...string) *SelectQuery {
+	sq.groupBy = append(sq.groupBy, columns...)
+	return sq
+}
+
+// buildGroupBy constructs the GROUP BY clause from the groupBy slice.
+// Returns empty string if no GROUP BY is specified.
+// Quotes column names using dialect.
+func (sq *SelectQuery) buildGroupBy() string {
+	if len(sq.groupBy) == 0 {
+		return ""
+	}
+
+	parts := make([]string, 0, len(sq.groupBy))
+	for _, col := range sq.groupBy {
+		parts = append(parts, sq.quoteColumnName(col))
+	}
+
+	return " GROUP BY " + strings.Join(parts, ", ")
+}
+
+// Having adds HAVING clause (WHERE for aggregates).
+// Accepts string or Expression (same as Where).
+// Multiple calls are combined with AND.
+//
+// String example:
+//
+//	Having("COUNT(*) > ?", 100)
+//
+// Expression example:
+//
+//	Having(relica.GreaterThan("COUNT(*)", 100))
+func (sq *SelectQuery) Having(condition interface{}, args ...interface{}) *SelectQuery {
+	switch cond := condition.(type) {
+	case string:
+		// String-based HAVING
+		sq.havingClauses = append(sq.havingClauses, struct {
+			condition string
+			args      []interface{}
+		}{
+			condition: cond,
+			args:      args,
+		})
+
+	case Expression:
+		// Expression-based HAVING
+		sqlStr, exprArgs := cond.Build(sq.builder.db.dialect)
+		if sqlStr != "" {
+			sq.havingClauses = append(sq.havingClauses, struct {
+				condition string
+				args      []interface{}
+			}{
+				condition: sqlStr,
+				args:      exprArgs,
+			})
+		}
+
+	default:
+		panic(fmt.Sprintf("Having() expects string or Expression, got %T", condition))
+	}
+
+	return sq
+}
+
+// buildHaving constructs the HAVING clause from the havingClauses slice.
+// Returns empty string if no HAVING is specified.
+// Multiple clauses are combined with AND.
+// Appends parameters to params slice.
+func (sq *SelectQuery) buildHaving(params *[]interface{}) string {
+	if len(sq.havingClauses) == 0 {
+		return ""
+	}
+
+	parts := make([]string, 0, len(sq.havingClauses))
+	for _, clause := range sq.havingClauses {
+		parts = append(parts, clause.condition)
+		*params = append(*params, clause.args...)
+	}
+
+	return " HAVING " + strings.Join(parts, " AND ")
+}
+
+// renumberHavingPlaceholders renumbers placeholders in HAVING clause for PostgreSQL.
+// For databases using positional placeholders ($1, $2), replaces ? with numbered placeholders.
+func (sq *SelectQuery) renumberHavingPlaceholders(havingClause string, totalParams int) string {
+	if sq.builder.db.dialect.Placeholder(1) == "?" || len(sq.havingClauses) == 0 {
+		return havingClause
+	}
+
+	// Count current params (JOIN + WHERE)
+	currentParamCount := totalParams - len(sq.havingClauses)
+	for i := 0; i < len(sq.havingClauses); i++ {
+		for range sq.havingClauses[i].args {
+			currentParamCount++
+			placeholder := sq.builder.db.dialect.Placeholder(currentParamCount)
+			havingClause = strings.Replace(havingClause, "?", placeholder, 1)
+		}
+	}
+
+	return havingClause
+}
+
 // Build constructs the Query object from SelectQuery.
 func (sq *SelectQuery) Build() *Query {
-	// Build SELECT clause
-	cols := "*"
-	if len(sq.columns) > 0 {
-		cols = strings.Join(sq.columns, ", ")
-	}
+	// Build SELECT clause (handles aggregates)
+	cols := sq.buildSelect()
+
+	// Collect all parameters (JOIN params + WHERE params + HAVING params)
+	var allParams []interface{}
+
+	// Build JOIN clause (adds params via pointer)
+	joinClause := sq.buildJoins(&allParams)
 
 	// Build WHERE clause
 	whereClause := ""
@@ -97,15 +479,47 @@ func (sq *SelectQuery) Build() *Query {
 
 		// Renumber WHERE placeholders for PostgreSQL ($1, $2, etc.)
 		if sq.builder.db.dialect.Placeholder(1) != "?" {
+			// Start numbering after JOIN params
+			startIndex := len(allParams) + 1
 			for i := range whereParams {
-				placeholder := sq.builder.db.dialect.Placeholder(i + 1)
+				placeholder := sq.builder.db.dialect.Placeholder(startIndex + i)
 				whereClause = strings.Replace(whereClause, "?", placeholder, 1)
 			}
 		}
 	}
 
-	// Construct SQL
-	query := "SELECT " + cols + " FROM " + sq.builder.db.dialect.QuoteIdentifier(sq.table) + whereClause
+	// Append WHERE params after JOIN params
+	allParams = append(allParams, whereParams...)
+
+	// Renumber JOIN placeholders if needed (PostgreSQL)
+	if sq.builder.db.dialect.Placeholder(1) != "?" {
+		for i := 1; i <= len(sq.joins)*2; i++ { // Estimate max placeholders
+			oldPlaceholder := "?"
+			newPlaceholder := sq.builder.db.dialect.Placeholder(i)
+			joinClause = strings.Replace(joinClause, oldPlaceholder, newPlaceholder, 1)
+		}
+	}
+
+	// Build FROM clause with optional alias
+	fromClause := " FROM " + sq.buildTableWithAlias(sq.table)
+
+	// Build GROUP BY clause
+	groupByClause := sq.buildGroupBy()
+
+	// Build HAVING clause (adds params via pointer)
+	havingClause := sq.buildHaving(&allParams)
+
+	// Renumber HAVING placeholders if needed (PostgreSQL)
+	havingClause = sq.renumberHavingPlaceholders(havingClause, len(allParams))
+
+	// Build ORDER BY clause
+	orderByClause := sq.buildOrderBy()
+
+	// Build LIMIT/OFFSET clause
+	limitOffsetClause := sq.buildLimitOffset()
+
+	// Construct SQL: SELECT ... FROM ... JOIN ... WHERE ... GROUP BY ... HAVING ... ORDER BY ... LIMIT ... OFFSET
+	query := "SELECT " + cols + fromClause + joinClause + whereClause + groupByClause + havingClause + orderByClause + limitOffsetClause
 
 	// Context priority: query ctx > builder ctx > nil
 	ctx := sq.ctx
@@ -115,7 +529,7 @@ func (sq *SelectQuery) Build() *Query {
 
 	return &Query{
 		sql:    query,
-		params: whereParams,
+		params: allParams,
 		db:     sq.builder.db,
 		tx:     sq.builder.tx,
 		ctx:    ctx,

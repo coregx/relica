@@ -20,6 +20,8 @@ type (
 	SelectQuery = core.SelectQuery
 	// Tx represents a database transaction.
 	Tx = core.Tx
+	// TxOptions represents transaction options including isolation level.
+	TxOptions = core.TxOptions
 
 	// Expression represents a database expression for building complex WHERE clauses.
 	Expression = core.Expression
