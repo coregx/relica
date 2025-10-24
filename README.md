@@ -1,10 +1,10 @@
 # Relica
 
-[![CI](https://github.com/coregx/relica/actions/workflows/test.yml/badge.svg)](https://github.com/coregx/relica/actions/workflows/test.yml)
+[![CI](https://github.com/coregx/relica/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/coregx/relica/actions/workflows/test.yml)
 [![Go Version](https://img.shields.io/badge/Go-1.25%2B-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![Go Report Card](https://goreportcard.com/badge/github.com/coregx/relica)](https://goreportcard.com/report/github.com/coregx/relica)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/coregx/relica?include_prereleases)](https://github.com/coregx/relica/releases)
+[![Release](https://img.shields.io/github/v/release/coregx/relica?include_prereleases&style=flat)](https://github.com/coregx/relica/releases)
 [![Go Reference](https://pkg.go.dev/badge/github.com/coregx/relica.svg)](https://pkg.go.dev/github.com/coregx/relica)
 
 **Relica** is a lightweight, type-safe database query builder for Go with zero production dependencies.
