@@ -210,7 +210,7 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 
 - **v0.1.0-beta** (2025-01-24) - Initial release (CRUD, transactions, batch)
 - **v0.1.2-beta** (2025-01-24) - Expression API (type-safe WHERE clauses)
-- **v0.2.0-beta** (2025-02-03) - JOIN, ORDER BY, Aggregates (production-ready query builder)
+- **v0.2.0-beta** (2025-01-24) - JOIN, ORDER BY, Aggregates (production-ready query builder)
 - **v0.3.0-beta** (Target: Q4 2025) - Subqueries, UNION, window functions
 - **v1.0.0** (Target: Q1 2026) - Production stable release
 
@@ -225,5 +225,5 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 
 ---
 
-*Last Updated: 2025-02-03*
+*Last Updated: 2025-01-24*
 *Maintained by: COREGX Team*
