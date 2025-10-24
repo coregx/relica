@@ -358,6 +358,10 @@ Relica is released under the [MIT License](LICENSE).
 - **Discussions**: [GitHub Discussions](https://github.com/coregx/relica/discussions)
 - **Email**: support@coregx.dev
 
+## ✨ Special Thanks
+
+**Professor Ancha Baranova** - This project would not have been possible without her invaluable help and support. Her assistance was crucial in bringing Relica to life.
+
 ---
 
 **Made with ❤️ by COREGX Team**
