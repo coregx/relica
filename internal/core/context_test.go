@@ -221,11 +221,11 @@ func TestContextCancellation_BeforeExecute(t *testing.T) {
 
 // TestContextTimeout tests context with timeout
 func TestContextTimeout(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 
 	// Wait for timeout
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 
 	if ctx.Err() == nil {
 		t.Error("Context should have timed out")
@@ -238,12 +238,12 @@ func TestContextTimeout(t *testing.T) {
 
 // TestContextDeadline tests context with deadline
 func TestContextDeadline(t *testing.T) {
-	deadline := time.Now().Add(1 * time.Millisecond)
+	deadline := time.Now().Add(10 * time.Millisecond)
 	ctx, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
 
 	// Wait for deadline
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 
 	if ctx.Err() == nil {
 		t.Error("Context should have exceeded deadline")
