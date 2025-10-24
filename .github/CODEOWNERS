@@ -1,0 +1,47 @@
+# CODEOWNERS for Relica
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+#
+# This file defines individuals or teams responsible for code in this repository.
+# Code owners are automatically requested for review when someone opens a pull request
+# that modifies code they own.
+
+# Default owner for everything in the repo
+* @kolkov
+
+# Core library code - Critical database operations
+/internal/core/ @kolkov
+/internal/cache/ @kolkov
+/internal/dialects/ @kolkov
+/internal/util/ @kolkov
+
+# Public API - Breaking changes require careful review
+/db.go @kolkov
+
+# Documentation - Keep up to date with code changes
+*.md @kolkov
+/docs/ @kolkov
+
+# GitHub configuration and CI/CD
+/.github/ @kolkov
+
+# Code quality and linting configuration
+/.golangci.yml @kolkov
+
+# Tests - Ensure coverage and reliability
+*_test.go @kolkov
+/test/ @kolkov
+/benchmark/ @kolkov
+
+# Scripts - Build and release automation
+/scripts/ @kolkov
+
+# Release management - Version control and changelog
+/CHANGELOG.md @kolkov
+/RELEASE_GUIDE.md @kolkov
+
+# Contributing guidelines
+/CONTRIBUTING.md @kolkov
+/CODE_OF_CONDUCT.md @kolkov
+
+# Security policy
+/SECURITY.md @kolkov
