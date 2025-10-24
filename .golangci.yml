@@ -1,0 +1,221 @@
+# GolangCI-Lint Configuration for COREGX Relica
+# Documentation: https://golangci-lint.run/docs/configuration/
+# PRODUCTION QUALITY - Database Query Builder for Go 1.25+
+
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  # Enable comprehensive set of linters for production-quality database library
+  enable:
+    # Code quality and complexity
+    - gocyclo       # Check cyclomatic complexity
+    - gocognit      # Check cognitive complexity
+    - funlen        # Check function length
+    - maintidx      # Maintainability index
+    - cyclop        # Check cyclomatic complexity (alternative)
+    - nestif        # Reports deeply nested if statements
+
+    # Bug detection
+    - govet         # Standard Go vet (includes copylocks!)
+    - staticcheck   # Comprehensive static analysis
+    - errcheck      # Check that errors are handled
+    - errorlint     # Check error wrapping
+    - gosec         # Security issues
+    - nilnil        # Check that functions don't return nil both ways
+    - nilerr        # Check nil error returns
+    - nilnesserr    # Check nil error returns patterns
+
+    # Code style and consistency
+    - misspell      # Check for misspelled words
+    - whitespace    # Check for trailing whitespace
+    - unconvert     # Remove unnecessary type conversions
+    - unparam       # Detect unused function parameters
+    - ineffassign   # Detect ineffectual assignments
+
+    # Naming conventions
+    - errname       # Check error naming conventions
+    - revive        # Fast, configurable, extensible linter
+
+    # Performance (critical for database library)
+    - prealloc      # Find slice declarations that could be preallocated
+    - bodyclose     # Check HTTP response bodies are closed
+    - makezero      # Find slice declarations with non-zero initial length
+
+    # Code practices
+    - goconst       # Find repeated strings that could be constants
+    - gocritic      # Comprehensive code checker
+    - goprintffuncname  # Check printf-like function names
+    - nolintlint    # Check nolint directives are used correctly
+    - nakedret      # Checks for naked returns
+
+    # Additional quality checkers
+    - dupl          # Detect duplicate code
+    - dogsled       # Check for assignments with too many blank identifiers
+    - durationcheck # Check for two durations multiplied together
+
+  settings:
+    govet:
+      # EXPLICITLY ENABLE copylocks to catch mutex copying issues
+      enable:
+        - copylocks
+      # Disable fieldalignment (memory optimization not critical for clarity)
+      disable:
+        - fieldalignment
+
+    gocyclo:
+      # Threshold for production database library
+      min-complexity: 15
+
+    cyclop:
+      # Max complexity for query building logic
+      max-complexity: 10
+
+    funlen:
+      # Allow reasonably long functions, but encourage shorter
+      lines: 100
+      statements: 50
+
+    gocognit:
+      # Cognitive complexity threshold
+      min-complexity: 20
+
+    misspell:
+      locale: US
+
+    nestif:
+      # Max nesting level (encourage flat code)
+      min-complexity: 4
+
+    revive:
+      # Enable important rules for code quality
+      rules:
+        - name: exported
+        - name: error-return
+        - name: error-naming
+        - name: if-return
+        - name: increment-decrement
+        - name: var-declaration
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: indent-error-flow
+        - name: errorf
+        - name: empty-block
+        - name: superfluous-else
+        - name: unused-parameter
+        - name: unreachable-code
+        - name: redefines-builtin-id
+        # Disabled rules
+        - name: var-naming
+          disabled: true  # "util" package is acceptable
+        - name: context-keys-type
+          disabled: true  # Test contexts can use string keys
+
+    gocritic:
+      # Enable important checks for database library
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+
+      # Disable overly opinionated checks
+      disabled-checks:
+        - commentFormatting  # Too opinionated about comment style
+        - whyNoLint          # We document nolints when needed
+        - unnamedResult      # Named results can reduce readability
+
+      settings:
+        hugeParam:
+          # Database query structures can be large
+          sizeThreshold: 256
+
+    gosec:
+      # Security is important for database library
+      excludes: []
+
+  # Exclusions (v2 structure)
+  exclusions:
+    rules:
+      # Test files - allow more complexity for comprehensive testing
+      - path: _test\.go
+        linters:
+          - gocyclo
+          - gocognit
+          - cyclop
+          - funlen
+          - maintidx
+          - errcheck
+          - gosec
+          - goconst
+          - dupl
+          - gocritic
+          - revive
+          - nestif
+          - staticcheck
+
+      # Benchmark files - performance testing specific
+      - path: _bench_test\.go
+        linters:
+          - gocyclo
+          - funlen
+          - errcheck
+          - dupl
+          - gocritic
+          - gosec
+
+      # Integration test files - complex test scenarios
+      - path: _integration_test\.go
+        linters:
+          - cyclop
+          - gocyclo
+          - gocognit
+          - funlen
+
+      # Scanner/reflection code - inherently complex
+      - path: internal/core/scanner\.go
+        linters:
+          - gocyclo
+          - gocognit
+          - cyclop
+          - funlen
+
+      # Query builder - SQL generation can be complex
+      - path: internal/core/builder\.go
+        linters:
+          - gocyclo
+          - goconst
+
+      # Dialects - SQL dialect implementations
+      - path: internal/dialects/.*\.go
+        linters:
+          - goconst
+
+      # Example applications
+      - path: examples/.*\.go
+        linters:
+          - errcheck
+          - gosec
+          - funlen
+
+      # Util package - standard Go utility package naming
+      - path: internal/util/.*\.go
+        linters:
+          - revive
+
+      # Generated code
+      - path: ".*\\.pb\\.go"
+        linters:
+          - revive
+          - gocritic
+
+issues:
+  # Show all issues (no hiding)
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  new: false

@@ -1,0 +1,245 @@
+name: Tests
+
+# Testing Strategy:
+# - Tests run on Linux, macOS, and Windows (database drivers must work cross-platform)
+# - Go 1.25+ required (matches go.mod requirement)
+# - Multi-database support: PostgreSQL, MySQL, SQLite
+# - Zero production dependencies
+#
+# Branch Strategy:
+# - main branch: Production-ready code only (protected)
+# - develop branch: Active development (default for PRs)
+# - Pull requests: Must pass all tests before merge
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+
+jobs:
+  # Static analysis - Run once on Linux (OS-independent)
+  static-analysis:
+    name: Static Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25'
+        cache: true
+        cache-dependency-path: "go.sum"
+
+    - name: Download dependencies
+      run: |
+        go mod download
+        go mod verify
+
+    - name: Run go vet
+      run: |
+        go vet $(go list ./... | grep -v "/test")
+
+    - name: Run golangci-lint
+      uses: golangci/golangci-lint-action@v8
+      with:
+        version: latest
+        args: --timeout=5m
+
+    - name: Check code formatting
+      run: |
+        if [ -n "$(gofmt -l .)" ]; then
+          echo "ERROR: The following files are not formatted:"
+          gofmt -l .
+          echo ""
+          echo "Run 'gofmt -w .' to fix formatting issues."
+          exit 1
+        fi
+        echo "All files are properly formatted ✓"
+
+  # Unit tests - Cross-platform (behavioral differences matter)
+  unit-tests:
+    name: Unit Tests - ${{ matrix.os }} - Go ${{ matrix.go-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go-version: ['1.25']  # Match go.mod requirement
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ matrix.go-version }}
+        cache: true
+        cache-dependency-path: "go.sum"
+
+    - name: Download dependencies
+      shell: bash
+      run: |
+        go mod download
+        go mod verify
+
+    - name: Build all packages
+      shell: bash
+      run: |
+        # Build main module (exclude integration test submodule)
+        BUILDABLE=$(go list -f '{{if (and (or .GoFiles .CgoFiles) (not .Module))}}{{.ImportPath}}{{end}}' ./... 2>/dev/null | \
+                    grep -v "github.com/coregx/relica/test" || true)
+
+        if [ -n "$BUILDABLE" ]; then
+          echo "Building: $BUILDABLE"
+          go build -v $BUILDABLE
+        else
+          echo "No buildable packages"
+        fi
+
+    - name: Run unit tests with race detector
+      shell: bash
+      run: |
+        # Run tests with race detector and coverage
+        # Exclude integration test submodule
+        go test -v -race -coverprofile=coverage.out -covermode=atomic $(go list ./... | grep -v "github.com/coregx/relica/test")
+
+    - name: Upload coverage to Codecov
+      if: matrix.os == 'ubuntu-latest'
+      uses: codecov/codecov-action@v4
+      with:
+        files: ./coverage.out
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+  # Integration tests - PostgreSQL and MySQL via services
+  integration-tests:
+    name: Integration Tests - ${{ matrix.database }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        database: [postgres, mysql]
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_DATABASE: test
+          MYSQL_ROOT_PASSWORD: test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25'
+        cache: true
+        cache-dependency-path: "test/go.sum"
+
+    - name: Download integration test dependencies
+      working-directory: test
+      run: |
+        go mod download
+        go mod verify
+
+    - name: Run PostgreSQL integration tests
+      if: matrix.database == 'postgres'
+      working-directory: test
+      env:
+        POSTGRES_DSN: "postgres://test:test@localhost:5432/test?sslmode=disable"
+      run: |
+        go test -v -tags=integration ./... -run Postgres
+
+    - name: Run MySQL integration tests
+      if: matrix.database == 'mysql'
+      working-directory: test
+      env:
+        MYSQL_DSN: "root:test@tcp(localhost:3306)/test?parseTime=true"
+      run: |
+        go test -v -tags=integration ./... -run MySQL
+
+  # Benchmarks
+  benchmark:
+    name: Benchmark
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25'
+        cache: true
+        cache-dependency-path: "go.sum"
+
+    - name: Run benchmarks
+      run: |
+        echo "==> Running benchmarks"
+        go test -bench=. -benchmem ./benchmark/... 2>&1 | grep -E "(^Benchmark|^PASS|^FAIL|ns/op|B/op)"
+
+  # Test coverage check
+  coverage:
+    name: Coverage Check
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25'
+        cache: true
+        cache-dependency-path: "go.sum"
+
+    - name: Run tests with coverage
+      run: |
+        go test -coverprofile=coverage.out -covermode=atomic ./...
+
+    - name: Check coverage threshold
+      run: |
+        # Calculate total coverage
+        total_coverage=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+        echo "Total coverage: ${total_coverage}%"
+
+        # Fail if coverage is below 70%
+        if (( $(echo "$total_coverage < 70.0" | bc -l) )); then
+          echo "ERROR: Coverage ${total_coverage}% is below minimum threshold of 70%"
+          exit 1
+        fi
+
+        echo "Coverage check passed ✓"

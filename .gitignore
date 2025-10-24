@@ -1,0 +1,77 @@
+# Binaries
+bin/
+voyager
+.bin/
+
+# Dependency directories
+vendor/
+
+# Test artifacts
+coverage.out
+*.test
+coverage.txt
+coverage-unit.txt
+coverage-integration.txt
+
+# IDE specific
+.idea/
+.vscode/
+
+# Go workspace file
+go.work
+
+# Build artifacts
+dist/
+*.exe
+
+# Log files
+*.log
+
+# Local configuration files
+*.env
+*.local
+
+# Generated files
+*.pb.go
+*.swagger.json
+
+# Protoc downloads
+protoc-*.zip
+protoc-*.tar.gz
+
+# GoReleaser cache and artifacts
+.cache/
+.release/
+
+# AI agents
+.claude/
+.goco/
+.goda/
+
+# Development docs (kanban, reports, internal notes)
+docs/dev/
+
+# Temporary files
+*.tmp
+*.swp
+
+# Project structure file
+project_structure.txt
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# GoReleaser temporary files
+.goreleaser.yaml.local
+.goreleaser.checksum
+
+# Coverage reports
+*.coverprofile
+*.cover
+
+# Docker compose override files
+docker-compose.override.yml
+
+# Development artifacts
+*.dev.yaml
