@@ -152,7 +152,7 @@ db.Builder().
     Execute()
 ```
 
-### Expression API (v0.1.1+)
+### Expression API (v0.1.2+)
 
 Relica supports fluent expression builders for type-safe, complex WHERE clauses:
 
