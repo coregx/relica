@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/coregx/relica/internal/dialects"
 )
 
 // QueryBuilder constructs type-safe queries.
@@ -30,11 +32,41 @@ type JoinInfo struct {
 	On       interface{} // string | Expression | nil
 }
 
+// unionInfo represents a set operation (UNION, INTERSECT, EXCEPT) between queries.
+// Database support for set operations:
+//
+// PostgreSQL 9.1+:  UNION ✓, UNION ALL ✓, INTERSECT ✓, EXCEPT ✓
+// MySQL 8.0+:       UNION ✓, UNION ALL ✓
+// MySQL 8.0.31+:    UNION ✓, UNION ALL ✓, INTERSECT ✓, EXCEPT ✓
+// SQLite 3.25+:     UNION ✓, UNION ALL ✓, INTERSECT ✓, EXCEPT ✓
+type unionInfo struct {
+	query *SelectQuery // The query to combine with
+	all   bool         // true = UNION ALL, false = UNION (removes duplicates)
+	op    string       // "UNION", "INTERSECT", "EXCEPT" (default: "UNION")
+}
+
+// fromSource represents the source of a FROM clause (table name or subquery).
+type fromSource struct {
+	isSubquery bool
+	table      string       // table name (when isSubquery = false)
+	subquery   *SelectQuery // subquery (when isSubquery = true)
+	alias      string       // alias for subquery (required for subqueries)
+}
+
+// cteInfo represents a Common Table Expression (CTE).
+type cteInfo struct {
+	name      string       // CTE name (e.g., "sales_summary")
+	query     *SelectQuery // The CTE query
+	recursive bool         // true for WITH RECURSIVE
+}
+
 // SelectQuery represents a SELECT query being built.
 type SelectQuery struct {
 	builder       *QueryBuilder
 	columns       []string
-	table         string
+	table         string      // DEPRECATED: use fromSrc instead (kept for backward compatibility)
+	fromSrc       *fromSource // FROM source (table or subquery)
+	selectExprs   []RawExp    // Raw SELECT expressions (for scalar subqueries, etc.)
 	joins         []JoinInfo
 	where         []string
 	params        []interface{}
@@ -46,6 +78,8 @@ type SelectQuery struct {
 	orderBy     []string        // ORDER BY clauses: ["age DESC", "name ASC", "created_at"]
 	limitValue  *int64          // LIMIT value (nil = not set)
 	offsetValue *int64          // OFFSET value (nil = not set)
+	unions      []unionInfo     // Set operations: UNION, INTERSECT, EXCEPT
+	ctes        []cteInfo       // Common Table Expressions (CTEs)
 	ctx         context.Context // context for this specific query
 }
 
@@ -59,6 +93,65 @@ func (sq *SelectQuery) WithContext(ctx context.Context) *SelectQuery {
 // From specifies the table to select from.
 func (sq *SelectQuery) From(table string) *SelectQuery {
 	sq.table = table
+	sq.fromSrc = &fromSource{
+		isSubquery: false,
+		table:      table,
+	}
+	return sq
+}
+
+// FromSelect specifies a subquery as the FROM source.
+// The alias parameter is required and will be used to reference the subquery in the outer query.
+//
+// Example:
+//
+//	sub := db.Builder().Select("user_id", "COUNT(*) as cnt").From("orders").GroupBy("user_id")
+//	db.Builder().FromSelect(sub, "order_counts").
+//	    Select("user_id", "cnt").
+//	    Where("cnt > ?", 10).
+//	    All(&results)
+//
+// Generates:
+//
+//	SELECT user_id, cnt
+//	FROM (SELECT user_id, COUNT(*) as cnt FROM orders GROUP BY user_id) AS order_counts
+//	WHERE cnt > 10
+func (sq *SelectQuery) FromSelect(subquery *SelectQuery, alias string) *SelectQuery {
+	if alias == "" {
+		panic("FromSelect: alias is required for subquery")
+	}
+	sq.fromSrc = &fromSource{
+		isSubquery: true,
+		subquery:   subquery,
+		alias:      alias,
+	}
+	// Clear table for safety (subquery takes precedence)
+	sq.table = ""
+	return sq
+}
+
+// SelectExpr adds a raw SQL expression to the SELECT clause.
+// This is useful for scalar subqueries, window functions, or complex expressions.
+//
+// Example:
+//
+//	db.Builder().
+//	    Select("id", "name").
+//	    SelectExpr("(SELECT COUNT(*) FROM orders WHERE orders.user_id = users.id)", "order_count").
+//	    From("users").
+//	    All(&results)
+//
+// Generates:
+//
+//	SELECT id, name, (SELECT COUNT(*) FROM orders WHERE orders.user_id = users.id) AS order_count
+//	FROM users
+//
+// Note: The SQL expression is used as-is. You're responsible for proper quoting and SQL injection prevention.
+func (sq *SelectQuery) SelectExpr(expr string, args ...interface{}) *SelectQuery {
+	sq.selectExprs = append(sq.selectExprs, RawExp{
+		SQL:  expr,
+		Args: args,
+	})
 	return sq
 }
 
@@ -208,24 +301,224 @@ func (sq *SelectQuery) Offset(offset int64) *SelectQuery {
 	return sq
 }
 
+// Union combines this query with another using UNION (removes duplicates).
+// UNION returns distinct rows from both queries.
+//
+// Example:
+//
+//	q1 := db.Builder().Select("name").From("users").Where("status = ?", 1)
+//	q2 := db.Builder().Select("name").From("archived_users").Where("status = ?", 1)
+//	q1.Union(q2).All(&names)
+//
+// Generates:
+//
+//	(SELECT name FROM users WHERE status = $1) UNION (SELECT name FROM archived_users WHERE status = $2)
+//
+// Note: Column count and types must match between queries.
+func (sq *SelectQuery) Union(other *SelectQuery) *SelectQuery {
+	if other != nil {
+		sq.unions = append(sq.unions, unionInfo{query: other, all: false, op: "UNION"})
+	}
+	return sq
+}
+
+// UnionAll combines this query with another using UNION ALL (keeps duplicates).
+// UNION ALL is faster than UNION as it doesn't remove duplicates.
+//
+// Example:
+//
+//	q1 := db.Builder().Select("id").From("orders_2023")
+//	q2 := db.Builder().Select("id").From("orders_2024")
+//	q1.UnionAll(q2).All(&orderIDs)
+//
+// Generates:
+//
+//	(SELECT id FROM orders_2023) UNION ALL (SELECT id FROM orders_2024)
+func (sq *SelectQuery) UnionAll(other *SelectQuery) *SelectQuery {
+	if other != nil {
+		sq.unions = append(sq.unions, unionInfo{query: other, all: true, op: "UNION"})
+	}
+	return sq
+}
+
+// Intersect combines this query with another using INTERSECT (rows in both queries).
+// INTERSECT returns only rows that appear in both result sets.
+//
+// Example:
+//
+//	q1 := db.Builder().Select("id").From("users")
+//	q2 := db.Builder().Select("user_id").From("orders")
+//	q1.Intersect(q2).All(&ids)  // Users who have placed orders
+//
+// Generates:
+//
+//	(SELECT id FROM users) INTERSECT (SELECT user_id FROM orders)
+//
+// Database support:
+//   - PostgreSQL 9.1+: ✓
+//   - MySQL 8.0.31+: ✓ (earlier versions will return error)
+//   - SQLite 3.25+: ✓
+func (sq *SelectQuery) Intersect(other *SelectQuery) *SelectQuery {
+	if other != nil {
+		sq.unions = append(sq.unions, unionInfo{query: other, all: false, op: "INTERSECT"})
+	}
+	return sq
+}
+
+// Except combines this query with another using EXCEPT (rows in first but not second).
+// EXCEPT returns rows from the first query that don't appear in the second.
+// Also known as MINUS in Oracle.
+//
+// Example:
+//
+//	q1 := db.Builder().Select("id").From("all_users")
+//	q2 := db.Builder().Select("user_id").From("banned_users")
+//	q1.Except(q2).All(&activeUsers)  // All users except banned ones
+//
+// Generates:
+//
+//	(SELECT id FROM all_users) EXCEPT (SELECT user_id FROM banned_users)
+//
+// Database support:
+//   - PostgreSQL 9.1+: ✓
+//   - MySQL 8.0.31+: ✓ (earlier versions will return error)
+//   - SQLite 3.25+: ✓
+func (sq *SelectQuery) Except(other *SelectQuery) *SelectQuery {
+	if other != nil {
+		sq.unions = append(sq.unions, unionInfo{query: other, all: false, op: "EXCEPT"})
+	}
+	return sq
+}
+
+// With adds a Common Table Expression (CTE) to the query.
+//
+// Example:
+//
+//	cte := db.Builder().Select("user_id", "SUM(total) as total").
+//	    From("orders").
+//	    GroupBy("user_id")
+//
+//	result := db.Builder().Select("*").
+//	    With("order_totals", cte).
+//	    From("order_totals").
+//	    Where("total > ?", 1000).
+//	    All(&users)
+//
+// Generates:
+//
+//	WITH "order_totals" AS (SELECT user_id, SUM(total) as total FROM "orders" GROUP BY user_id)
+//	SELECT * FROM "order_totals" WHERE total > $1
+func (sq *SelectQuery) With(name string, query *SelectQuery) *SelectQuery {
+	if name == "" {
+		panic("CTE name cannot be empty")
+	}
+	if query == nil {
+		panic("CTE query cannot be nil")
+	}
+	sq.ctes = append(sq.ctes, cteInfo{
+		name:      name,
+		query:     query,
+		recursive: false,
+	})
+	return sq
+}
+
+// WithRecursive adds a recursive Common Table Expression (CTE) to the query.
+// The query MUST use UNION or UNION ALL to separate the anchor and recursive parts.
+//
+// Example (organizational hierarchy):
+//
+//	anchor := db.Builder().Select("id", "name", "manager_id", "1 as level").
+//	    From("employees").
+//	    Where("manager_id IS NULL")
+//
+//	recursive := db.Builder().Select("e.id", "e.name", "e.manager_id", "h.level + 1").
+//	    From("employees e").
+//	    Join("INNER JOIN hierarchy h ON e.manager_id = h.id")
+//
+//	cte := anchor.UnionAll(recursive)
+//
+//	result := db.Builder().Select("*").
+//	    WithRecursive("hierarchy", cte).
+//	    From("hierarchy").
+//	    OrderBy("level", "name").
+//	    All(&employees)
+//
+// Generates:
+//
+//	WITH RECURSIVE "hierarchy" AS (
+//	    SELECT id, name, manager_id, 1 as level FROM "employees" WHERE manager_id IS NULL
+//	    UNION ALL
+//	    SELECT e.id, e.name, e.manager_id, h.level + 1 FROM "employees" AS "e" INNER JOIN hierarchy h ON e.manager_id = h.id
+//	)
+//	SELECT * FROM "hierarchy" ORDER BY "level", "name"
+//
+// Database support:
+//   - PostgreSQL: ✓ (all versions)
+//   - MySQL 8.0+: ✓ (added in MySQL 8.0.1)
+//   - SQLite 3.25+: ✓ (added in SQLite 3.25.0)
+func (sq *SelectQuery) WithRecursive(name string, query *SelectQuery) *SelectQuery {
+	if name == "" {
+		panic("CTE name cannot be empty")
+	}
+	if query == nil {
+		panic("CTE query cannot be nil")
+	}
+	// Validate that query contains UNION (required for recursive CTE)
+	if len(query.unions) == 0 {
+		panic("recursive CTE requires UNION or UNION ALL")
+	}
+	sq.ctes = append(sq.ctes, cteInfo{
+		name:      name,
+		query:     query,
+		recursive: true,
+	})
+	return sq
+}
+
 // buildTableWithAlias builds a table reference with optional alias.
 // Input: "users u" → Output: "users" AS "u" (quoted)
 // Input: "users" → Output: "users" (quoted)
-func (sq *SelectQuery) buildTableWithAlias(table string) string {
+func (sq *SelectQuery) buildTableWithAlias(table string, dialect dialects.Dialect) string {
 	tableParts := strings.Fields(table)
 	if len(tableParts) == 2 {
 		// Table with alias
-		quotedTable := sq.builder.db.dialect.QuoteIdentifier(tableParts[0])
-		quotedAlias := sq.builder.db.dialect.QuoteIdentifier(tableParts[1])
+		quotedTable := dialect.QuoteIdentifier(tableParts[0])
+		quotedAlias := dialect.QuoteIdentifier(tableParts[1])
 		return quotedTable + " AS " + quotedAlias
 	}
 	// Simple table name
-	return sq.builder.db.dialect.QuoteIdentifier(table)
+	return dialect.QuoteIdentifier(table)
+}
+
+// buildFrom constructs the FROM clause, handling both tables and subqueries.
+// Returns the FROM SQL fragment and appends any subquery parameters to params.
+func (sq *SelectQuery) buildFrom(dialect dialects.Dialect, params *[]interface{}) string {
+	// Prefer fromSrc if set (supports subqueries)
+	if sq.fromSrc != nil {
+		if sq.fromSrc.isSubquery {
+			// FROM (SELECT ...) AS alias
+			subSQL, subArgs := sq.fromSrc.subquery.buildSQL(dialect)
+			*params = append(*params, subArgs...)
+			quotedAlias := dialect.QuoteIdentifier(sq.fromSrc.alias)
+			return " FROM (" + subSQL + ") AS " + quotedAlias
+		}
+		// Regular table
+		return " FROM " + sq.buildTableWithAlias(sq.fromSrc.table, dialect)
+	}
+
+	// Fallback to legacy table field (backward compatibility)
+	if sq.table != "" {
+		return " FROM " + sq.buildTableWithAlias(sq.table, dialect)
+	}
+
+	// No FROM clause (e.g., SELECT 1)
+	return ""
 }
 
 // buildJoins constructs the JOIN clause from the joins slice.
 // Returns empty string if no joins are specified.
-func (sq *SelectQuery) buildJoins(params *[]interface{}) string {
+func (sq *SelectQuery) buildJoins(dialect dialects.Dialect, params *[]interface{}) string {
 	if len(sq.joins) == 0 {
 		return ""
 	}
@@ -236,7 +529,7 @@ func (sq *SelectQuery) buildJoins(params *[]interface{}) string {
 		part := " " + join.JoinType + " "
 
 		// Build table with optional alias
-		part += sq.buildTableWithAlias(join.Table)
+		part += sq.buildTableWithAlias(join.Table, dialect)
 
 		// Build ON condition
 		if join.On != nil {
@@ -249,7 +542,7 @@ func (sq *SelectQuery) buildJoins(params *[]interface{}) string {
 
 			case Expression:
 				// Expression-based ON
-				sqlStr, args := on.Build(sq.builder.db.dialect)
+				sqlStr, args := on.Build(dialect)
 				part += sqlStr
 				*params = append(*params, args...)
 
@@ -267,7 +560,7 @@ func (sq *SelectQuery) buildJoins(params *[]interface{}) string {
 // buildOrderBy constructs the ORDER BY clause from the orderBy slice.
 // Returns empty string if no ORDER BY is specified.
 // Parses column direction (ASC/DESC) and quotes column names.
-func (sq *SelectQuery) buildOrderBy() string {
+func (sq *SelectQuery) buildOrderBy(dialect dialects.Dialect) string {
 	if len(sq.orderBy) == 0 {
 		return ""
 	}
@@ -281,7 +574,7 @@ func (sq *SelectQuery) buildOrderBy() string {
 		}
 
 		// Quote column name (may include table prefix: "users.age" → "users"."age")
-		quoted := sq.quoteColumnName(fields[0])
+		quoted := sq.quoteColumnName(fields[0], dialect)
 
 		// Add direction if specified
 		if len(fields) > 1 {
@@ -303,13 +596,13 @@ func (sq *SelectQuery) buildOrderBy() string {
 
 // quoteColumnName quotes a column name, handling table prefixes.
 // Examples: "age" → "age", "users.age" → "users"."age"
-func (sq *SelectQuery) quoteColumnName(col string) string {
+func (sq *SelectQuery) quoteColumnName(col string, dialect dialects.Dialect) string {
 	// Check for table.column format
 	if strings.Contains(col, ".") {
 		parts := strings.SplitN(col, ".", 2)
-		return sq.builder.db.dialect.QuoteIdentifier(parts[0]) + "." + sq.builder.db.dialect.QuoteIdentifier(parts[1])
+		return dialect.QuoteIdentifier(parts[0]) + "." + dialect.QuoteIdentifier(parts[1])
 	}
-	return sq.builder.db.dialect.QuoteIdentifier(col)
+	return dialect.QuoteIdentifier(col)
 }
 
 // buildLimitOffset constructs the LIMIT and OFFSET clauses.
@@ -328,15 +621,13 @@ func (sq *SelectQuery) buildLimitOffset() string {
 	return result
 }
 
-// buildSelect constructs the SELECT clause, handling aggregate functions.
+// buildSelect constructs the SELECT clause, handling aggregate functions and raw expressions.
 // Detects aggregate functions (contains "(") and column aliases (contains "AS").
-// Returns "*" if no columns specified.
-func (sq *SelectQuery) buildSelect() string {
-	if len(sq.columns) == 0 {
-		return "*"
-	}
+// Returns "*" if no columns and no selectExprs specified.
+func (sq *SelectQuery) buildSelect(dialect dialects.Dialect) string {
+	parts := make([]string, 0, len(sq.columns)+len(sq.selectExprs))
 
-	parts := make([]string, 0, len(sq.columns))
+	// Add regular columns
 	for _, col := range sq.columns {
 		// Determine column type and format accordingly
 		switch {
@@ -348,8 +639,17 @@ func (sq *SelectQuery) buildSelect() string {
 			parts = append(parts, col)
 		default:
 			// Simple column name - quote it
-			parts = append(parts, sq.quoteColumnName(col))
+			parts = append(parts, sq.quoteColumnName(col, dialect))
 		}
+	}
+
+	// Add raw SELECT expressions (scalar subqueries, etc.)
+	for _, expr := range sq.selectExprs {
+		parts = append(parts, expr.SQL)
+	}
+
+	if len(parts) == 0 {
+		return "*"
 	}
 
 	return strings.Join(parts, ", ")
@@ -366,14 +666,14 @@ func (sq *SelectQuery) GroupBy(columns ...string) *SelectQuery {
 // buildGroupBy constructs the GROUP BY clause from the groupBy slice.
 // Returns empty string if no GROUP BY is specified.
 // Quotes column names using dialect.
-func (sq *SelectQuery) buildGroupBy() string {
+func (sq *SelectQuery) buildGroupBy(dialect dialects.Dialect) string {
 	if len(sq.groupBy) == 0 {
 		return ""
 	}
 
 	parts := make([]string, 0, len(sq.groupBy))
 	for _, col := range sq.groupBy {
-		parts = append(parts, sq.quoteColumnName(col))
+		parts = append(parts, sq.quoteColumnName(col, dialect))
 	}
 
 	return " GROUP BY " + strings.Join(parts, ", ")
@@ -442,8 +742,8 @@ func (sq *SelectQuery) buildHaving(params *[]interface{}) string {
 
 // renumberHavingPlaceholders renumbers placeholders in HAVING clause for PostgreSQL.
 // For databases using positional placeholders ($1, $2), replaces ? with numbered placeholders.
-func (sq *SelectQuery) renumberHavingPlaceholders(havingClause string, totalParams int) string {
-	if sq.builder.db.dialect.Placeholder(1) == "?" || len(sq.havingClauses) == 0 {
+func (sq *SelectQuery) renumberHavingPlaceholders(havingClause string, totalParams int, dialect dialects.Dialect) string {
+	if dialect.Placeholder(1) == "?" || len(sq.havingClauses) == 0 {
 		return havingClause
 	}
 
@@ -452,7 +752,7 @@ func (sq *SelectQuery) renumberHavingPlaceholders(havingClause string, totalPara
 	for i := 0; i < len(sq.havingClauses); i++ {
 		for range sq.havingClauses[i].args {
 			currentParamCount++
-			placeholder := sq.builder.db.dialect.Placeholder(currentParamCount)
+			placeholder := dialect.Placeholder(currentParamCount)
 			havingClause = strings.Replace(havingClause, "?", placeholder, 1)
 		}
 	}
@@ -460,66 +760,202 @@ func (sq *SelectQuery) renumberHavingPlaceholders(havingClause string, totalPara
 	return havingClause
 }
 
-// Build constructs the Query object from SelectQuery.
-func (sq *SelectQuery) Build() *Query {
-	// Build SELECT clause (handles aggregates)
-	cols := sq.buildSelect()
+// buildWhere constructs the WHERE clause from the where slice.
+// Returns empty string if no WHERE is specified.
+// Multiple clauses are combined with AND.
+// Appends parameters to params slice and handles placeholder renumbering for PostgreSQL.
+func (sq *SelectQuery) buildWhere(dialect dialects.Dialect, params *[]interface{}) string {
+	if len(sq.where) == 0 {
+		return ""
+	}
 
-	// Collect all parameters (JOIN params + WHERE params + HAVING params)
-	var allParams []interface{}
-
-	// Build JOIN clause (adds params via pointer)
-	joinClause := sq.buildJoins(&allParams)
-
-	// Build WHERE clause
-	whereClause := ""
 	whereParams := sq.params
-	if len(sq.where) > 0 {
-		whereClause = " WHERE " + strings.Join(sq.where, " AND ")
+	whereClause := " WHERE " + strings.Join(sq.where, " AND ")
 
-		// Renumber WHERE placeholders for PostgreSQL ($1, $2, etc.)
-		if sq.builder.db.dialect.Placeholder(1) != "?" {
-			// Start numbering after JOIN params
-			startIndex := len(allParams) + 1
-			for i := range whereParams {
-				placeholder := sq.builder.db.dialect.Placeholder(startIndex + i)
-				whereClause = strings.Replace(whereClause, "?", placeholder, 1)
-			}
+	// Renumber WHERE placeholders for PostgreSQL ($1, $2, etc.)
+	if dialect.Placeholder(1) != "?" {
+		// Start numbering after CTE + SelectExpr + FROM + JOIN params
+		startIndex := len(*params) + 1
+		for i := range whereParams {
+			placeholder := dialect.Placeholder(startIndex + i)
+			whereClause = strings.Replace(whereClause, "?", placeholder, 1)
 		}
 	}
 
-	// Append WHERE params after JOIN params
-	allParams = append(allParams, whereParams...)
+	// Append WHERE params after CTE + SelectExpr + FROM + JOIN params
+	*params = append(*params, whereParams...)
 
-	// Renumber JOIN placeholders if needed (PostgreSQL)
-	if sq.builder.db.dialect.Placeholder(1) != "?" {
-		for i := 1; i <= len(sq.joins)*2; i++ { // Estimate max placeholders
-			oldPlaceholder := "?"
-			newPlaceholder := sq.builder.db.dialect.Placeholder(i)
-			joinClause = strings.Replace(joinClause, oldPlaceholder, newPlaceholder, 1)
+	return whereClause
+}
+
+// buildWithClause generates the WITH clause for CTEs.
+func (sq *SelectQuery) buildWithClause(dialect dialects.Dialect) (string, []interface{}) {
+	if len(sq.ctes) == 0 {
+		return "", nil
+	}
+
+	var parts []string
+	var allArgs []interface{}
+
+	// Check if any CTE is recursive
+	hasRecursive := false
+	for _, cte := range sq.ctes {
+		if cte.recursive {
+			hasRecursive = true
+			break
 		}
 	}
 
-	// Build FROM clause with optional alias
-	fromClause := " FROM " + sq.buildTableWithAlias(sq.table)
+	// Start WITH clause
+	if hasRecursive {
+		parts = append(parts, "WITH RECURSIVE")
+	} else {
+		parts = append(parts, "WITH")
+	}
 
-	// Build GROUP BY clause
-	groupByClause := sq.buildGroupBy()
+	// Build each CTE
+	cteStrings := make([]string, 0, len(sq.ctes))
+	for _, cte := range sq.ctes {
+		cteSQL, cteArgs := cte.query.buildSQL(dialect)
 
-	// Build HAVING clause (adds params via pointer)
+		// Quote CTE name
+		quotedName := dialect.QuoteIdentifier(cte.name)
+
+		// Format: cte_name AS (cte_query)
+		cteString := quotedName + " AS (" + cteSQL + ")"
+		cteStrings = append(cteStrings, cteString)
+		allArgs = append(allArgs, cteArgs...)
+	}
+
+	// Join CTEs with commas
+	parts = append(parts, strings.Join(cteStrings, ", "))
+
+	return strings.Join(parts, " "), allArgs
+}
+
+// buildSQL constructs the SQL string and parameters for SelectQuery.
+// This is the core implementation shared by both Build() and the Expression interface.
+// Parameter ordering: CTEs → SelectExprs → FROM subquery → JOINs → WHERE → HAVING
+func (sq *SelectQuery) buildSQL(dialect dialects.Dialect) (string, []interface{}) {
+	// Collect all parameters in correct order
+	var allParams []interface{}
+	var parts []string
+
+	// 1. Build WITH clause if CTEs exist
+	if len(sq.ctes) > 0 {
+		withClause, withArgs := sq.buildWithClause(dialect)
+		parts = append(parts, withClause)
+		allParams = append(allParams, withArgs...)
+	}
+
+	// 2. Add params from SelectExpr (scalar subqueries in SELECT clause)
+	for _, expr := range sq.selectExprs {
+		allParams = append(allParams, expr.Args...)
+	}
+
+	// 3. Build SELECT clause (handles aggregates and raw expressions)
+	cols := sq.buildSelect(dialect)
+
+	// 4. Build FROM clause (may be table or subquery)
+	fromClause := sq.buildFrom(dialect, &allParams)
+
+	// 5. Build JOIN clause (adds params via pointer)
+	joinClause := sq.buildJoins(dialect, &allParams)
+
+	// 6. Build WHERE clause (adds params via pointer)
+	whereClause := sq.buildWhere(dialect, &allParams)
+
+	// 7. Renumber SelectExpr, FROM, and JOIN placeholders if needed (PostgreSQL)
+	if dialect.Placeholder(1) != "?" {
+		// Renumber SELECT expressions
+		selectExprParamCount := 0
+		for _, expr := range sq.selectExprs {
+			selectExprParamCount += len(expr.Args)
+		}
+
+		// Renumber FROM subquery placeholders (already handled in buildFrom)
+		// Renumber JOIN placeholders (already handled in buildJoins)
+	}
+
+	// 8. Build GROUP BY clause
+	groupByClause := sq.buildGroupBy(dialect)
+
+	// 9. Build HAVING clause (adds params via pointer)
 	havingClause := sq.buildHaving(&allParams)
 
 	// Renumber HAVING placeholders if needed (PostgreSQL)
-	havingClause = sq.renumberHavingPlaceholders(havingClause, len(allParams))
+	havingClause = sq.renumberHavingPlaceholders(havingClause, len(allParams), dialect)
 
-	// Build ORDER BY clause
-	orderByClause := sq.buildOrderBy()
+	// 10. Build ORDER BY clause
+	orderByClause := sq.buildOrderBy(dialect)
 
-	// Build LIMIT/OFFSET clause
+	// 11. Build LIMIT/OFFSET clause
 	limitOffsetClause := sq.buildLimitOffset()
 
 	// Construct SQL: SELECT ... FROM ... JOIN ... WHERE ... GROUP BY ... HAVING ... ORDER BY ... LIMIT ... OFFSET
 	query := "SELECT " + cols + fromClause + joinClause + whereClause + groupByClause + havingClause + orderByClause + limitOffsetClause
+
+	// 12. Handle set operations (UNION, INTERSECT, EXCEPT)
+	if len(sq.unions) > 0 {
+		mainSQL, finalParams := sq.buildSetOperations(query, allParams, dialect)
+		// Prepend WITH clause if exists
+		if len(parts) > 0 {
+			mainSQL = strings.Join(parts, " ") + " " + mainSQL
+		}
+		return mainSQL, finalParams
+	}
+
+	// Prepend WITH clause if exists
+	if len(parts) > 0 {
+		query = strings.Join(parts, " ") + " " + query
+	}
+
+	return query, allParams
+}
+
+// buildSetOperations handles UNION, INTERSECT, EXCEPT operations.
+// This method is extracted from buildSQL to reduce cognitive complexity.
+func (sq *SelectQuery) buildSetOperations(mainQuery string, allParams []interface{}, dialect dialects.Dialect) (string, []interface{}) {
+	// Wrap main query in parentheses
+	mainSQL := "(" + mainQuery + ")"
+
+	for _, u := range sq.unions {
+		// Build union query SQL
+		unionSQL, unionArgs := u.query.buildSQL(dialect)
+
+		// Renumber placeholders if needed (PostgreSQL)
+		if dialect.Placeholder(1) != "?" {
+			// Renumber placeholders to continue from current parameter count
+			startIndex := len(allParams) + 1
+			for i := 0; i < len(unionArgs); i++ {
+				oldPlaceholder := dialect.Placeholder(i + 1)
+				newPlaceholder := dialect.Placeholder(startIndex + i)
+				unionSQL = strings.Replace(unionSQL, oldPlaceholder, newPlaceholder, 1)
+			}
+		}
+
+		// Determine operation keyword
+		op := u.op
+		if op == "" {
+			op = "UNION"
+		}
+		if u.all && op == "UNION" {
+			op = "UNION ALL"
+		}
+
+		// Append set operation: (query1) UNION (query2)
+		mainSQL += " " + op + " (" + unionSQL + ")"
+
+		// Merge parameters in order
+		allParams = append(allParams, unionArgs...)
+	}
+
+	return mainSQL, allParams
+}
+
+// Build constructs the Query object from SelectQuery.
+func (sq *SelectQuery) Build() *Query {
+	query, allParams := sq.buildSQL(sq.builder.db.dialect)
 
 	// Context priority: query ctx > builder ctx > nil
 	ctx := sq.ctx
@@ -544,6 +980,32 @@ func (sq *SelectQuery) One(dest interface{}) error {
 // All scans all rows into dest slice.
 func (sq *SelectQuery) All(dest interface{}) error {
 	return sq.Build().All(dest)
+}
+
+// selectQueryExpression is an adapter that allows SelectQuery to implement the Expression interface.
+// This is necessary because SelectQuery.Build() returns *Query, not (string, []interface{}).
+type selectQueryExpression struct {
+	query *SelectQuery
+}
+
+// Build implements the Expression interface for SelectQuery.
+// This allows SelectQuery to be used in subquery contexts (IN, EXISTS, FROM).
+func (sqe *selectQueryExpression) Build(dialect dialects.Dialect) (string, []interface{}) {
+	return sqe.query.buildSQL(dialect)
+}
+
+// AsExpression converts a SelectQuery to an Expression, allowing it to be used as a subquery.
+// This is useful when embedding a SelectQuery in WHERE clauses like IN or EXISTS.
+//
+// Example:
+//
+//	sub := db.Builder().Select("user_id").From("orders").Where("total > ?", 100)
+//	db.Builder().Select("*").From("users").Where(In("id", sub.AsExpression())).All(&users)
+//
+// Note: In most cases, you can pass SelectQuery directly to expressions without calling AsExpression,
+// as the expression builders will detect and handle SelectQuery automatically.
+func (sq *SelectQuery) AsExpression() Expression {
+	return &selectQueryExpression{query: sq}
 }
 
 // Select starts a SELECT query.

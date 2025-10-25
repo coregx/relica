@@ -4,27 +4,27 @@
 
 ---
 
-## 🔴 КРИТИЧЕСКИ ВАЖНО: Backup Before Any Operation
+## 🔴 CRITICAL: Backup Before Any Operation
 
-**ВСЕГДА создавай backup перед серьезными операциями!**
+**ALWAYS create a backup before any serious operations!**
 
 ```bash
-# Создать backup ПЕРЕД любыми git операциями с ветками/тегами
+# Create backup BEFORE any git operations with branches/tags
 cd /d/projects/relica
 cp -r relica relica-backup-$(date +%Y%m%d-%H%M%S)
 
-# Или используй git bundle (переносимый backup)
+# Or use git bundle (portable backup)
 cd relica
 git bundle create ../relica-backup.bundle --all
 ```
 
-**Опасные операции (требуют backup)**:
+**Dangerous operations (require backup)**:
 - `git reset --hard`
 - `git branch -D`
 - `git tag -d`
 - `git push -f`
 - `git rebase`
-- Любые операции откатов/удалений
+- Any rollback/deletion operations
 
 ---
 

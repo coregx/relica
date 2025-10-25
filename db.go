@@ -35,6 +35,7 @@ type (
 var (
 	Open             = core.Open
 	NewDB            = core.NewDB
+	WrapDB           = core.WrapDB
 	WithMaxOpenConns = core.WithMaxOpenConns
 	WithMaxIdleConns = core.WithMaxIdleConns
 
@@ -57,4 +58,6 @@ var (
 	And            = core.And
 	Or             = core.Or
 	Not            = core.Not
+	Exists         = core.Exists
+	NotExists      = core.NotExists
 )
