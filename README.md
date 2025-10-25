@@ -23,7 +23,7 @@
 - 🔀 **Set Operations** - UNION, UNION ALL, INTERSECT, EXCEPT (v0.3.0+)
 - 🌳 **Common Table Expressions** - WITH clause, recursive CTEs (v0.3.0+)
 - 🌐 **Multi-Database** - PostgreSQL, MySQL 8.0+, SQLite 3.25+ support
-- 🧪 **Well-Tested** - 310+ tests, 89.5% coverage
+- 🧪 **Well-Tested** - 310+ tests, 89.9% coverage
 - 📝 **Clean API** - Fluent builder pattern with context support
 
 ## 🚀 Quick Start
