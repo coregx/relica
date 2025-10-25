@@ -12,6 +12,15 @@ import (
 	"github.com/coregx/relica/internal/dialects"
 )
 
+const (
+	// alwaysFalse is used for empty IN/EXISTS clauses
+	alwaysFalse = "0=1"
+	// sqlNotIn is the NOT IN operator
+	sqlNotIn = "NOT IN"
+	// sqlIn is the IN operator
+	sqlIn = "IN"
+)
+
 // Expression represents a database expression that can be embedded in a SQL statement.
 // Expressions are used to build complex WHERE clauses in a type-safe, fluent manner.
 //
@@ -96,7 +105,7 @@ func buildHashExpValue(key string, value interface{}, dialect dialects.Dialect) 
 
 	case []interface{}:
 		if len(v) == 0 {
-			return "0=1", nil
+			return alwaysFalse, nil
 		}
 		in := In(key, v...)
 		return in.Build(dialect)
@@ -227,39 +236,83 @@ func NotIn(col string, values ...interface{}) Expression {
 	return &InExp{Col: col, Values: values, Not: true}
 }
 
+// selectQueryBuilder is an interface to avoid circular imports.
+// It represents types that can build SQL queries (like SelectQuery).
+type selectQueryBuilder interface {
+	buildSQL(dialect dialects.Dialect) (string, []interface{})
+}
+
+// buildSubqueryIN builds an IN/NOT IN clause with a subquery.
+func buildSubqueryIN(col, subSQL string, subArgs []interface{}, not bool) (string, []interface{}, bool) {
+	if subSQL == "" {
+		// Empty subquery
+		if not {
+			return "", nil, true // NOT IN (empty) → always true
+		}
+		return alwaysFalse, nil, true // IN (empty) → always false
+	}
+
+	op := sqlIn
+	if not {
+		op = sqlNotIn
+	}
+	sql := fmt.Sprintf("%s %s (%s)", col, op, subSQL)
+	return sql, subArgs, true
+}
+
 // buildInExpSingleValue handles IN expression with a single value.
-func buildInExpSingleValue(col string, val interface{}, not bool) (string, []interface{}) {
+// Returns early if the value is a subquery (Expression or SelectQuery).
+func buildInExpSingleValue(col string, val interface{}, not bool, dialect dialects.Dialect) (string, []interface{}, bool) {
+	// Check if value is a SelectQuery (most common subquery case)
+	if sq, ok := val.(selectQueryBuilder); ok {
+		subSQL, subArgs := sq.buildSQL(dialect)
+		return buildSubqueryIN(col, subSQL, subArgs, not)
+	}
+
+	// Check if value is an Expression (generic subquery case)
+	if expr, ok := val.(Expression); ok {
+		subSQL, subArgs := expr.Build(dialect)
+		return buildSubqueryIN(col, subSQL, subArgs, not)
+	}
+
+	// Regular value case
 	if val == nil {
 		if not {
-			return col + " IS NOT NULL", nil
+			return col + " IS NOT NULL", nil, true
 		}
-		return col + " IS NULL", nil
+		return col + " IS NULL", nil, true
 	}
 	// Non-NULL single value
 	if not {
-		return col + "<>?", []interface{}{val}
+		return col + "<>?", []interface{}{val}, true
 	}
-	return col + "=?", []interface{}{val}
+	return col + "=?", []interface{}{val}, true
 }
 
 // Build converts an IN expression into a SQL fragment.
+// Supports both value lists and subqueries:
+//
+//	In("id", 1, 2, 3)           → id IN (1, 2, 3)
+//	In("id", subquery)          → id IN (SELECT ...)
+//	NotIn("status", "deleted")  → status NOT IN ('deleted')
 func (e *InExp) Build(dialect dialects.Dialect) (string, []interface{}) {
 	if len(e.Values) == 0 {
 		// Empty IN clause
 		if e.Not {
 			return "", nil // NOT IN () → always true
 		}
-		return "0=1", nil // IN () → always false
+		return alwaysFalse, nil // IN () → always false
 	}
 
 	col := dialect.QuoteIdentifier(e.Col)
 
-	// Single value optimization
+	// Single value optimization (including subquery support)
 	if len(e.Values) == 1 {
-		return buildInExpSingleValue(col, e.Values[0], e.Not)
+		sql, args, _ := buildInExpSingleValue(col, e.Values[0], e.Not, dialect)
+		return sql, args
 	}
 
-	// Multiple values
+	// Multiple values (regular list only - subqueries must be single value)
 	var placeholders []string
 	var args []interface{}
 
@@ -272,9 +325,9 @@ func (e *InExp) Build(dialect dialects.Dialect) (string, []interface{}) {
 		}
 	}
 
-	op := "IN"
+	op := sqlIn
 	if e.Not {
-		op = "NOT IN"
+		op = sqlNotIn
 	}
 
 	sql := fmt.Sprintf("%s %s (%s)", col, op, strings.Join(placeholders, ", "))
@@ -508,4 +561,64 @@ func (e *NotExp) Build(dialect dialects.Dialect) (string, []interface{}) {
 	}
 
 	return "NOT (" + sql + ")", args
+}
+
+// ExistsExp represents an EXISTS or NOT EXISTS expression.
+// Used for subquery existence checks in WHERE clauses.
+//
+// Example:
+//
+//	subquery := db.Builder().Select("1").From("orders").Where("orders.user_id = users.id")
+//	db.Builder().Select("*").From("users").Where(relica.Exists(subquery))
+//
+// Generates: SELECT * FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" WHERE orders.user_id = users.id)
+type ExistsExp struct {
+	Exp Expression
+	Not bool
+}
+
+// Exists generates an EXISTS expression by wrapping the given expression.
+// The expression is typically a SelectQuery that will be built into a subquery.
+//
+// Example:
+//
+//	sub := db.Builder().Select("1").From("orders").Where("user_id = ?", 123)
+//	relica.Exists(sub) → EXISTS (SELECT 1 FROM "orders" WHERE user_id = 123)
+func Exists(exp Expression) Expression {
+	return &ExistsExp{Exp: exp, Not: false}
+}
+
+// NotExists generates a NOT EXISTS expression by wrapping the given expression.
+//
+// Example:
+//
+//	sub := db.Builder().Select("1").From("orders").Where("user_id = ?", 123)
+//	relica.NotExists(sub) → NOT EXISTS (SELECT 1 FROM "orders" WHERE user_id = 123)
+func NotExists(exp Expression) Expression {
+	return &ExistsExp{Exp: exp, Not: true}
+}
+
+// Build converts an EXISTS expression into a SQL fragment.
+func (e *ExistsExp) Build(dialect dialects.Dialect) (string, []interface{}) {
+	if e.Exp == nil {
+		// Empty EXISTS → always false, empty NOT EXISTS → always true
+		if e.Not {
+			return "", nil
+		}
+		return alwaysFalse, nil
+	}
+
+	sql, args := e.Exp.Build(dialect)
+	if sql == "" {
+		// Same behavior as nil expression
+		if e.Not {
+			return "", nil
+		}
+		return alwaysFalse, nil
+	}
+
+	if e.Not {
+		return "NOT EXISTS (" + sql + ")", args
+	}
+	return "EXISTS (" + sql + ")", args
 }

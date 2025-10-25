@@ -91,6 +91,34 @@ func Open(driverName, dsn string, opts ...Option) (*DB, error) {
 	return db, nil
 }
 
+// WrapDB wraps an existing *sql.DB connection with Relica's query builder.
+// The caller is responsible for managing the connection lifecycle (including Close()).
+//
+// This is useful when you need to:
+//   - Use Relica with an externally managed connection pool
+//   - Integrate with existing code that already has a *sql.DB instance
+//   - Apply custom connection pool settings before wrapping
+//
+// Example:
+//
+//	db, _ := sql.Open("postgres", dsn)
+//	db.SetMaxOpenConns(100)
+//	db.SetConnMaxLifetime(time.Hour)
+//	relicaDB := relica.WrapDB(db, "postgres")
+//	defer db.Close() // Caller's responsibility
+//
+// Note: Each wrapped DB instance gets its own statement cache for isolation.
+func WrapDB(sqlDB *sql.DB, driverName string) *DB {
+	dialect := dialects.GetDialect(driverName)
+	return &DB{
+		sqlDB:      sqlDB,
+		driverName: driverName,
+		stmtCache:  cache.NewStmtCache(),
+		dialect:    dialect,
+		tracer:     NewNoOpTracer(),
+	}
+}
+
 // Close releases all database resources.
 func (db *DB) Close() error {
 	db.stmtCache.Clear()

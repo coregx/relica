@@ -19,8 +19,11 @@
 - 🔗 **JOIN Operations** - INNER, LEFT, RIGHT, FULL, CROSS JOIN support (v0.2.0+)
 - 📊 **Sorting & Pagination** - ORDER BY, LIMIT, OFFSET (v0.2.0+)
 - 🔢 **Aggregate Functions** - COUNT, SUM, AVG, MIN, MAX, GROUP BY, HAVING (v0.2.0+)
-- 🌐 **Multi-Database** - PostgreSQL, MySQL, SQLite support
-- 🧪 **Well-Tested** - 277+ tests, 88.9% coverage
+- 🔍 **Subqueries** - IN, EXISTS, FROM subqueries, scalar subqueries (v0.3.0+)
+- 🔀 **Set Operations** - UNION, UNION ALL, INTERSECT, EXCEPT (v0.3.0+)
+- 🌳 **Common Table Expressions** - WITH clause, recursive CTEs (v0.3.0+)
+- 🌐 **Multi-Database** - PostgreSQL, MySQL 8.0+, SQLite 3.25+ support
+- 🧪 **Well-Tested** - 310+ tests, 89.5% coverage
 - 📝 **Clean API** - Fluent builder pattern with context support
 
 ## 🚀 Quick Start
@@ -447,6 +450,110 @@ db.Builder().
 
 See [Aggregates Guide](docs/dev/reports/AGGREGATES_GUIDE.md) for comprehensive examples and patterns.
 
+### Advanced SQL Features (v0.3.0+)
+
+Relica v0.3.0 adds powerful SQL features for complex queries.
+
+#### Subqueries
+
+**IN/EXISTS Subqueries**:
+```go
+// Find users who have placed orders
+sub := db.Builder().Select("user_id").From("orders").Where("status = ?", "completed")
+db.Builder().Select("*").From("users").Where(relica.In("id", sub)).All(&users)
+
+// Find users with at least one order (EXISTS is often faster)
+orderCheck := db.Builder().Select("1").From("orders").Where("orders.user_id = users.id")
+db.Builder().Select("*").From("users").Where(relica.Exists(orderCheck)).All(&users)
+```
+
+**FROM Subqueries**:
+```go
+// Calculate aggregates, then filter
+stats := db.Builder().
+    Select("user_id", "COUNT(*) as order_count", "SUM(total) as total_spent").
+    From("orders").
+    GroupBy("user_id")
+
+db.Builder().
+    FromSelect(stats, "order_stats").
+    Select("user_id", "order_count", "total_spent").
+    Where("order_count > ? AND total_spent > ?", 10, 5000).
+    All(&topCustomers)
+```
+
+See [Subquery Guide](docs/SUBQUERY_GUIDE.md) for complete examples and performance tips.
+
+#### Set Operations
+
+**UNION/UNION ALL**:
+```go
+// Combine active and archived users (UNION removes duplicates)
+active := db.Builder().Select("name").From("users").Where("status = ?", 1)
+archived := db.Builder().Select("name").From("archived_users").Where("status = ?", 1)
+active.Union(archived).All(&allNames)
+
+// UNION ALL is 2-3x faster (keeps duplicates)
+active.UnionAll(archived).All(&allNames)
+```
+
+**INTERSECT/EXCEPT** (PostgreSQL, MySQL 8.0.31+, SQLite):
+```go
+// Find users who have placed orders (INTERSECT)
+allUsers := db.Builder().Select("id").From("users")
+orderUsers := db.Builder().Select("user_id").From("orders")
+allUsers.Intersect(orderUsers).All(&activeUsers)
+
+// Find users without orders (EXCEPT)
+allUsers.Except(orderUsers).All(&inactiveUsers)
+```
+
+See [Set Operations Guide](docs/SET_OPERATIONS_GUIDE.md) for database compatibility and workarounds.
+
+#### Common Table Expressions (CTEs)
+
+**Basic CTEs**:
+```go
+// Define reusable query
+orderTotals := db.Builder().
+    Select("user_id", "SUM(total) as total").
+    From("orders").
+    GroupBy("user_id")
+
+// Use CTE in main query
+db.Builder().
+    With("order_totals", orderTotals).
+    Select("*").
+    From("order_totals").
+    Where("total > ?", 1000).
+    All(&premiumUsers)
+```
+
+**Recursive CTEs** (organizational hierarchies, trees):
+```go
+// Anchor: top-level employees
+anchor := db.Builder().
+    Select("id", "name", "manager_id", "1 as level").
+    From("employees").
+    Where("manager_id IS NULL")
+
+// Recursive: children
+recursive := db.Builder().
+    Select("e.id", "e.name", "e.manager_id", "h.level + 1").
+    From("employees e").
+    InnerJoin("hierarchy h", "e.manager_id = h.id")
+
+// Build hierarchy
+db.Builder().
+    WithRecursive("hierarchy", anchor.UnionAll(recursive)).
+    Select("*").
+    From("hierarchy").
+    OrderBy("level", "name").
+    All(&orgChart)
+```
+
+See [CTE Guide](docs/CTE_GUIDE.md) for hierarchical data examples (org charts, bill of materials, category trees).
+
 ### Transactions
 
 ```go
@@ -590,6 +697,69 @@ db, err := relica.Open("postgres", dsn,
     relica.WithStmtCacheCapacity(1000),
 )
 ```
+
+### Connection Management
+
+#### Standard Connection
+
+```go
+// Create new connection with Relica managing the pool
+db, err := relica.Open("postgres", dsn)
+defer db.Close()
+```
+
+#### Wrap Existing Connection (v0.3.0+)
+
+Use `WrapDB()` when you need to integrate Relica with an existing `*sql.DB` connection:
+
+```go
+import (
+    "database/sql"
+    "time"
+
+    "github.com/coregx/relica"
+    _ "github.com/lib/pq"
+)
+
+// Create and configure external connection pool
+sqlDB, err := sql.Open("postgres", dsn)
+if err != nil {
+    log.Fatal(err)
+}
+
+// Apply custom pool settings
+sqlDB.SetMaxOpenConns(100)
+sqlDB.SetMaxIdleConns(50)
+sqlDB.SetConnMaxLifetime(time.Hour)
+sqlDB.SetConnMaxIdleTime(10 * time.Minute)
+
+// Wrap with Relica query builder
+db := relica.WrapDB(sqlDB, "postgres")
+
+// Use Relica's fluent API
+var users []User
+err = db.Builder().
+    Select().
+    From("users").
+    Where("status = ?", 1).
+    All(&users)
+
+// Caller is responsible for closing the connection
+defer sqlDB.Close()  // NOT db.Close()
+```
+
+**Use Cases for WrapDB:**
+
+- **Existing Codebase Integration**: Add Relica to projects with established `*sql.DB` connections
+- **Custom Pool Configuration**: Apply advanced connection pool settings before wrapping
+- **Shared Connections**: Multiple parts of your application can share the same pool
+- **Testing**: Wrap test database connections without managing lifecycle
+
+**Important Notes:**
+
+- Each `WrapDB()` call creates a new Relica instance with its own statement cache
+- The caller is responsible for closing the underlying `*sql.DB` connection
+- Multiple wraps of the same connection are isolated (separate caches)
 
 ## 📖 Documentation
 

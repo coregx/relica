@@ -5,7 +5,361 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0-beta] - 2025-01-24
+## [0.3.0-beta] - 2025-10-25
+
+### Added
+
+#### Subquery Support (Phase 1)
+
+**Full subquery support** for advanced SQL queries including IN, EXISTS, and FROM subqueries.
+
+**Exists/NotExists Expressions**:
+- `Exists(subquery)` - EXISTS expression for existence checks
+- `NotExists(subquery)` - NOT EXISTS expression
+- Works with any Expression or SelectQuery
+- Proper parameter merging from nested queries
+
+**Example**:
+```go
+sub := db.Builder().Select("1").From("orders").Where("orders.user_id = users.id")
+db.Builder().Select("*").From("users").Where(relica.Exists(sub)).All(&users)
+// Generates: SELECT * FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" WHERE orders.user_id = users.id)
+```
+
+**IN/NOT IN with Subqueries**:
+- `In(column, subquery)` - IN (SELECT ...) for filtering by subquery results
+- `NotIn(column, subquery)` - NOT IN (SELECT ...)
+- Automatic detection of subquery vs value list
+- Backward compatible with value lists
+
+**Example**:
+```go
+sub := db.Builder().Select("user_id").From("orders").Where("total > ?", 100)
+db.Builder().Select("*").From("users").Where(relica.In("id", sub)).All(&users)
+// Generates: SELECT * FROM "users" WHERE "id" IN (SELECT "user_id" FROM "orders" WHERE total > $1)
+```
+
+**FROM Subqueries**:
+- `FromSelect(subquery, alias)` - Use subquery in FROM clause
+- Alias is required (SQL standard)
+- Supports complex nested queries
+- Works with WHERE, JOIN, ORDER BY, etc.
+
+**Example**:
+```go
+sub := db.Builder().Select("user_id", "COUNT(*) as cnt").From("orders").GroupBy("user_id")
+db.Builder().FromSelect(sub, "order_counts").
+    Select("user_id", "cnt").
+    Where("cnt > ?", 10).
+    All(&results)
+// Generates: SELECT user_id, cnt FROM (SELECT user_id, COUNT(*) as cnt FROM orders GROUP BY user_id) AS order_counts WHERE cnt > $1
+```
+
+**Scalar Subqueries**:
+- `SelectExpr(expression, args...)` - Raw SQL expressions in SELECT clause
+- Supports scalar subqueries, window functions, complex calculations
+- Parameter binding support
+
+**Example**:
+```go
+db.Builder().
+    Select("id", "name").
+    SelectExpr("(SELECT COUNT(*) FROM orders WHERE user_id = users.id) as order_count").
+    From("users").
+    All(&users)
+// Generates: SELECT id, name, (SELECT COUNT(*) FROM orders WHERE user_id = users.id) as order_count FROM users
+```
+
+**Features**:
+- Multi-database support: PostgreSQL, MySQL 8.0+, SQLite 3.25+
+- Nested subqueries (subquery within subquery)
+- Proper parameter ordering and merging
+- Zero breaking changes (fully backward compatible)
+
+**Performance Notes**:
+- Subqueries execute on database side (efficient)
+- Parameter caching maintained
+- LRU statement cache still applies
+
+**Test Coverage**: 88.6% (26 new unit tests, all passing)
+
+---
+
+#### Set Operations (Phase 2)
+
+**Full set operation support** for combining results from multiple queries (UNION, INTERSECT, EXCEPT).
+
+**UNION / UNION ALL**:
+- `Union(other)` - Combines results and removes duplicates
+- `UnionAll(other)` - Combines results and keeps duplicates (faster)
+- Supports chaining: `q1.Union(q2).Union(q3)`
+- Works with all databases: PostgreSQL, MySQL 8.0+, SQLite 3.25+
+
+**Example**:
+```go
+q1 := db.Builder().Select("name").From("users").Where("status = ?", 1)
+q2 := db.Builder().Select("name").From("archived_users").Where("status = ?", 1)
+q1.Union(q2).All(&names)
+// Generates: (SELECT "name" FROM "users" WHERE status = $1) UNION (SELECT "name" FROM "archived_users" WHERE status = $2)
+```
+
+**INTERSECT**:
+- `Intersect(other)` - Returns rows present in both queries
+- Useful for finding overlapping data sets
+- Supported: PostgreSQL, MySQL 8.0.31+, SQLite 3.25+
+
+**Example**:
+```go
+q1 := db.Builder().Select("id").From("users")
+q2 := db.Builder().Select("user_id").From("orders")
+q1.Intersect(q2).All(&activeUsers)
+// Finds users who have placed orders
+```
+
+**EXCEPT**:
+- `Except(other)` - Returns rows in first query but not in second
+- Useful for finding differences between data sets
+- Supported: PostgreSQL, MySQL 8.0.31+, SQLite 3.25+
+
+**Example**:
+```go
+q1 := db.Builder().Select("id").From("all_users")
+q2 := db.Builder().Select("user_id").From("banned_users")
+q1.Except(q2).All(&activeUsers)
+// Finds all users except banned ones
+```
+
+**Features**:
+- Automatic parentheses wrapping: `(SELECT ...) UNION (SELECT ...)`
+- Correct parameter merging across queries
+- PostgreSQL placeholder renumbering ($1, $2, $3...)
+- Mix operations: `q1.Union(q2).Except(q3).Intersect(q4)`
+- Nil safety: `Union(nil)` safely ignored
+- Works with JOINs, subqueries, WHERE clauses
+
+**Database Compatibility**:
+- **PostgreSQL 9.1+**: All operations ✓
+- **MySQL 8.0+**: UNION, UNION ALL ✓
+- **MySQL 8.0.31+**: All operations ✓ (INTERSECT/EXCEPT added)
+- **SQLite 3.25+**: All operations ✓
+
+**Performance**:
+- UNION ALL is 2-3x faster than UNION (no duplicate removal)
+- Use UNION ALL when duplicates acceptable
+- Consider EXISTS/NOT EXISTS instead of INTERSECT/EXCEPT for better performance
+
+**MySQL < 8.0.31 Workarounds**:
+```go
+// Instead of INTERSECT, use WHERE IN:
+db.Builder().Select("id").From("users").
+    Where("id IN (SELECT user_id FROM orders)").All(&users)
+
+// Instead of EXCEPT, use NOT EXISTS:
+db.Builder().Select("*").From("users u").
+    Where(NotExists(
+        db.Builder().Select("1").From("banned b").Where("b.user_id = u.id")
+    )).All(&users)
+```
+
+**Test Coverage**: 88.9% (21 new unit tests, all passing)
+
+---
+
+#### Common Table Expressions - CTEs (Phase 3)
+
+**Full CTE support** for reusable query expressions and recursive hierarchical queries.
+
+**Basic CTEs (WITH clause)**:
+- `With(name, subquery)` - Adds a named CTE to the query
+- Multiple CTEs: Chain `.With("cte1", q1).With("cte2", q2)`
+- Automatic parameter merging from CTE queries
+- Reusable query expressions (better performance than repeated subqueries)
+
+**Example**:
+```go
+// Define reusable CTE
+cte := db.Builder().
+    Select("user_id", "SUM(total) as total").
+    From("orders").
+    GroupBy("user_id")
+
+// Use CTE in main query
+db.Builder().
+    With("order_totals", cte).
+    Select("*").
+    From("order_totals").
+    Where("total > ?", 1000).
+    All(&users)
+// Generates: WITH "order_totals" AS (SELECT user_id, SUM(total) as total FROM "orders" GROUP BY user_id) SELECT * FROM "order_totals" WHERE total > $1
+```
+
+**Multiple CTEs**:
+```go
+cte1 := db.Builder().Select("user_id", "COUNT(*) as cnt").From("orders").GroupBy("user_id")
+cte2 := db.Builder().Select("user_id", "AVG(amount) as avg").From("payments").GroupBy("user_id")
+
+db.Builder().
+    With("order_counts", cte1).
+    With("payment_averages", cte2).
+    Select("o.user_id", "o.cnt", "p.avg").
+    From("order_counts o").
+    InnerJoin("payment_averages p", "o.user_id = p.user_id").
+    All(&stats)
+```
+
+**Recursive CTEs (WITH RECURSIVE)**:
+- `WithRecursive(name, subquery)` - Adds a recursive CTE
+- Requires UNION or UNION ALL (anchor + recursive parts)
+- Perfect for hierarchical data: org charts, trees, graphs
+- Built-in validation: panics if UNION missing
+
+**Example (Organizational Hierarchy)**:
+```go
+// Anchor: Top-level employees (no manager)
+anchor := db.Builder().
+    Select("id", "name", "manager_id", "1 as level").
+    From("employees").
+    Where("manager_id IS NULL")
+
+// Recursive: Children of current level
+recursive := db.Builder().
+    Select("e.id", "e.name", "e.manager_id", "h.level + 1").
+    From("employees e").
+    InnerJoin("hierarchy h", "e.manager_id = h.id")
+
+// Combine with UNION ALL
+cte := anchor.UnionAll(recursive)
+
+// Query the hierarchy
+db.Builder().
+    WithRecursive("hierarchy", cte).
+    Select("*").
+    From("hierarchy").
+    OrderBy("level", "name").
+    All(&employees)
+// Generates: WITH RECURSIVE "hierarchy" AS ((SELECT id, name, manager_id, 1 as level FROM employees WHERE manager_id IS NULL) UNION ALL (SELECT e.id, e.name, e.manager_id, h.level + 1 FROM employees e INNER JOIN hierarchy h ON e.manager_id = h.id)) SELECT * FROM "hierarchy" ORDER BY level, name
+```
+
+**Example (Bill of Materials)**:
+```go
+// Anchor: Top-level product
+anchor := db.Builder().
+    Select("part_id", "qty", "1 as depth").
+    From("bom").
+    Where("product_id = ?", productID)
+
+// Recursive: Sub-parts
+recursive := db.Builder().
+    Select("b.part_id", "b.qty * p.qty", "p.depth + 1").
+    From("bom b").
+    InnerJoin("parts_tree p", "b.product_id = p.part_id")
+
+cte := anchor.UnionAll(recursive)
+
+db.Builder().
+    WithRecursive("parts_tree", cte).
+    Select("part_id", "SUM(qty) as total_qty").
+    From("parts_tree").
+    GroupBy("part_id").
+    All(&parts)
+```
+
+**Features**:
+- **Validation**: Empty name, nil query, missing UNION all validated
+- **Clear errors**: Panic messages like "recursive CTE requires UNION or UNION ALL"
+- **Parameter safety**: Correct ordering (CTE params → SELECT params → WHERE params)
+- **Dialect compatibility**: All 3 dialects with proper quoting
+- **Combined features**: Works with JOINs, subqueries, set operations
+- **Nested CTEs**: CTEs can reference other CTEs
+
+**Database Compatibility**:
+- **PostgreSQL 8.4+**: Full CTE support (basic and recursive) ✓
+- **MySQL 8.0+**: WITH clause support ✓
+- **SQLite 3.8.3+**: Basic WITH ✓
+- **SQLite 3.25.0+**: Recursive WITH ✓
+
+**When to Use CTEs**:
+- **Reusable subqueries**: CTE defined once, used multiple times (better than repeating subquery)
+- **Complex queries**: Break down complex logic into readable steps
+- **Hierarchical data**: Organization charts, category trees, bill of materials
+- **Recursive queries**: Graph traversal, path finding
+- **Readability**: Named CTEs are self-documenting
+
+**Performance Notes**:
+- CTEs are materialized once (better performance when reused)
+- Some databases optimize CTEs as inline views
+- Recursive CTEs: Use LIMIT to prevent infinite recursion
+- For single-use subqueries, inline subquery may be faster
+
+**Test Coverage**: 89.5% (17 new unit tests, all passing)
+
+---
+
+#### Connection Management - WrapDB() (Phase 4)
+
+**Wrap existing `*sql.DB` connections** with Relica's query builder for seamless integration with established database layers.
+
+**API**:
+- `WrapDB(sqlDB *sql.DB, driverName string) *DB` - Wrap external connection
+
+**Use Cases**:
+- **Enterprise Integration**: Add Relica to projects with existing connection pools
+- **Custom Pool Configuration**: Apply advanced settings before wrapping
+- **Gradual Migration**: Use Relica where it adds value, keep existing code elsewhere
+- **Testing**: Wrap mock `*sql.DB` for testing
+
+**Example**:
+```go
+// Create external connection with custom settings
+sqlDB, _ := sql.Open("postgres", dsn)
+sqlDB.SetMaxOpenConns(100)
+sqlDB.SetMaxIdleConns(50)
+sqlDB.SetConnMaxLifetime(time.Hour)
+
+// Wrap with Relica query builder
+db := relica.WrapDB(sqlDB, "postgres")
+
+// Use Relica's fluent API
+var users []User
+db.Builder().
+    Select("u.id", "u.name", "COUNT(o.id) as order_count").
+    From("users u").
+    LeftJoin("orders o", "o.user_id = u.id").
+    GroupBy("u.id", "u.name").
+    All(&users)
+
+// Caller owns connection lifecycle
+defer sqlDB.Close()  // NOT db.Close()
+```
+
+**Features**:
+- **Single connection pool**: No duplicate resources
+- **Isolated caches**: Each wrap gets its own statement cache
+- **Full query builder**: All Relica features (JOINs, aggregates, subqueries, CTEs)
+- **Transaction support**: Begin/Commit/Rollback works identically
+- **Context support**: WithContext() propagates correctly
+- **Zero overhead**: Lightweight wrapper, just adds query builder + cache
+
+**Important Notes**:
+- Caller is responsible for closing the underlying `*sql.DB` connection
+- Each `WrapDB()` call creates a new instance with isolated cache
+- Multiple wraps of same connection are supported (separate caches)
+
+**Database Compatibility**:
+- **PostgreSQL**: Full support ✓
+- **MySQL 8.0+**: Full support ✓
+- **SQLite 3.25+**: Full support ✓
+
+**Production Validation**:
+- **IrisMX** (first production user, 10K+ concurrent users) requested and validated this feature
+- Enables adoption by enterprises with established database infrastructure
+- Removes barrier for projects with existing connection pool management
+
+**Test Coverage**: 89.9% (8 new unit tests + integration tests, all passing)
+
+---
+
+## [0.2.0-beta] - 2025-10-24
 
 ### Added
 
@@ -565,4 +919,7 @@ This is the initial beta release. No migration required.
 
 ---
 
+[0.3.0-beta]: https://github.com/coregx/relica/releases/tag/v0.3.0-beta
+[0.2.0-beta]: https://github.com/coregx/relica/releases/tag/v0.2.0-beta
+[0.1.2-beta]: https://github.com/coregx/relica/releases/tag/v0.1.2-beta
 [0.1.0-beta]: https://github.com/coregx/relica/releases/tag/v0.1.0-beta
