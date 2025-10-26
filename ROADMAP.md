@@ -1,7 +1,7 @@
 # Relica Roadmap
 
-> **Current Version**: v0.4.0-beta (Released: October 26, 2025)
-> **Previous Release**: v0.3.0-beta (Released: October 25, 2025)
+> **Current Version**: v0.4.1-beta (Released: October 26, 2025)
+> **Previous Release**: v0.4.0-beta (Released: October 26, 2025)
 > **Production Ready**: v1.0.0 (Target: Q2 2026)
 
 ---
@@ -14,7 +14,7 @@
 
 ---
 
-## 📍 Current State (v0.3.0-beta)
+## 📍 Current State (v0.4.1-beta)
 
 ### ✅ Completed Features
 
@@ -36,7 +36,7 @@
 
 ### 📊 Metrics
 
-- **Test Coverage**: 92.9% (310+ tests) - improved from 89.9%
+- **Test Coverage**: 93.3% (326+ tests) - improved from 92.9%
 - **Dependencies**: 0 (production), 2 (tests only)
 - **Performance**:
   - Batch operations: 3.3x faster INSERT, 2.5x UPDATE
@@ -250,6 +250,8 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 - **v0.1.2-beta** (2025-10-24) - Expression API (type-safe WHERE clauses)
 - **v0.2.0-beta** (2025-10-24) - JOIN, ORDER BY, Aggregates (production-ready query builder)
 - **v0.3.0-beta** (2025-10-25) - Subqueries, Set Operations, CTEs, WrapDB() (advanced SQL features)
+- **v0.4.0-beta** (2025-10-26) - Wrapper types migration, better documentation, API stability
+- **v0.4.1-beta** (2025-10-26) - Convenience methods (Select, Insert, Update, Delete)
 - **v1.0.0** (Target: Q2 2026) - Production stable release
 
 ---
@@ -263,5 +265,5 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 
 ---
 
-*Last Updated: 2025-10-25*
+*Last Updated: 2025-10-26*
 *Maintained by: COREGX Team*
