@@ -5,6 +5,64 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1-beta] - 2025-10-26
+
+### Added
+
+**API Convenience Methods** - Shorter syntax for common CRUD operations
+
+Added convenience methods to `DB` and `Tx` for improved developer ergonomics:
+- `Select(cols...)` - Create SELECT query without Builder()
+- `Insert(table, data)` - Create INSERT query without Builder()
+- `Update(table)` - Create UPDATE query without Builder()
+- `Delete(table)` - Create DELETE query without Builder()
+
+**Before (v0.4.0)**:
+```go
+db.Builder().Select("*").From("users").All(&users)
+db.Builder().Insert("users", data).Execute()
+db.Builder().Update("users").Set(data).Where("id = ?", 123).Execute()
+db.Builder().Delete("users").Where("id = ?", 123).Execute()
+```
+
+**After (v0.4.1)**:
+```go
+db.Select("*").From("users").All(&users)  // 10 chars shorter!
+db.Insert("users", data).Execute()
+db.Update("users").Set(data).Where("id = ?", 123).Execute()
+db.Delete("users").Where("id = ?", 123).Execute()
+```
+
+**Benefits**:
+- **Shorter code**: Saves ~10 characters per query
+- **More intuitive**: Matches patterns from ozzo-dbx and ActiveRecord
+- **Preserves power**: All query features still available (WHERE, JOIN, ORDER BY, LIMIT, etc.)
+- **Clear guidance**: Godoc recommends Builder() for advanced features (CTEs, UNION, batch ops)
+- **100% backward compatible**: Builder() continues working unchanged
+
+**When to use each approach**:
+- **Convenience methods** (`db.Select()`, `db.Insert()`, etc.): Common CRUD operations
+- **Builder()**: Advanced features (WITH, UNION, BatchInsert, BatchUpdate, Upsert)
+
+**Implementation details**:
+- Zero overhead: Direct delegation to Builder() (inlined by compiler)
+- Same signatures as QueryBuilder methods
+- Works identically in transactions (`tx.Select()`, `tx.Insert()`, etc.)
+- Comprehensive godoc with examples for each method
+
+**Test Coverage**: 93.3% (up from 92.9%)
+- 16 new test cases in `convenience_test.go`
+- Tests cover: DB methods, Tx methods, backward compatibility, complex queries
+- All existing tests passing (no breaking changes)
+
+**Files Changed**:
+- `db.go`: +8 public methods (4 on DB, 4 on Tx) with comprehensive godoc
+- `convenience_test.go`: +430 lines of tests
+- `README.md`: Updated Quick Start and CRUD sections
+- `CHANGELOG.md`: This entry
+
+---
+
 ## [0.4.0-beta] - 2025-10-26
 
 ### Changed - BREAKING
