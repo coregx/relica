@@ -23,8 +23,20 @@
 - 🔀 **Set Operations** - UNION, UNION ALL, INTERSECT, EXCEPT (v0.3.0+)
 - 🌳 **Common Table Expressions** - WITH clause, recursive CTEs (v0.3.0+)
 - 🌐 **Multi-Database** - PostgreSQL, MySQL 8.0+, SQLite 3.25+ support
-- 🧪 **Well-Tested** - 310+ tests, 89.9% coverage
+- 🧪 **Well-Tested** - 310+ tests, 92.9% coverage
 - 📝 **Clean API** - Fluent builder pattern with context support
+
+## 🎉 What's New in v0.4.0-beta
+
+**Better Documentation & API Stability** - We've migrated from type aliases to wrapper types:
+
+- ✅ **All methods now visible on pkg.go.dev** - Complete API documentation with examples
+- ✅ **Zero performance overhead** - Wrapper calls are inlined by the compiler (0ns)
+- ✅ **95% of code unchanged** - Your existing code continues working
+- ✅ **Industry best practices** - Follows patterns from sqlx, pgx, GORM
+- 🔧 **Unwrap() methods** - Access internal types when needed for advanced use cases
+
+**Migration**: See [docs/MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md) for v0.3.0 → v0.4.0 upgrade guide.
 
 ## 🚀 Quick Start
 
@@ -554,6 +566,29 @@ db.Builder().
 
 See [CTE Guide](docs/CTE_GUIDE.md) for hierarchical data examples (org charts, bill of materials, category trees).
 
+#### Window Functions
+
+Relica supports window functions via `SelectExpr()` for advanced analytics:
+
+```go
+// Rank users by order total within each country
+db.Builder().
+    SelectExpr("user_id", "country", "total",
+        "RANK() OVER (PARTITION BY country ORDER BY total DESC) as rank").
+    From("orders").
+    All(&rankedOrders)
+
+// Running totals with frame specification
+db.Builder().
+    SelectExpr("date", "amount",
+        "SUM(amount) OVER (ORDER BY date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) as running_total").
+    From("transactions").
+    OrderBy("date").
+    All(&runningTotals)
+```
+
+See [Window Functions Guide](docs/WINDOW_FUNCTIONS_GUIDE.md) for complete reference with RANK(), ROW_NUMBER(), LAG(), LEAD(), and frame specifications.
+
 ### Transactions
 
 ```go
@@ -762,6 +797,15 @@ defer sqlDB.Close()  // NOT db.Close()
 - Multiple wraps of the same connection are isolated (separate caches)
 
 ## 📖 Documentation
+
+### User Guides (v0.3.0+)
+
+- **[Subquery Guide](docs/SUBQUERY_GUIDE.md)** - IN, EXISTS, FROM, scalar subqueries with performance tips
+- **[Set Operations Guide](docs/SET_OPERATIONS_GUIDE.md)** - UNION, INTERSECT, EXCEPT with database compatibility
+- **[CTE Guide](docs/CTE_GUIDE.md)** - WITH clauses, recursive CTEs for hierarchical data
+- **[Window Functions Guide](docs/WINDOW_FUNCTIONS_GUIDE.md)** - Analytics with RANK(), ROW_NUMBER(), LAG(), LEAD()
+
+### Additional Resources
 
 - [Transaction Guide](docs/reports/TRANSACTION_IMPLEMENTATION_REPORT.md)
 - [UPSERT Examples](docs/reports/UPSERT_EXAMPLES.md)

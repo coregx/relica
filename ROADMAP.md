@@ -1,7 +1,7 @@
 # Relica Roadmap
 
-> **Current Version**: v0.3.0-beta (Ready for Release)
-> **Next Release**: v0.4.0-beta (Target: Q1 2026)
+> **Current Version**: v0.4.0-beta (Released: October 26, 2025)
+> **Previous Release**: v0.3.0-beta (Released: October 25, 2025)
 > **Production Ready**: v1.0.0 (Target: Q2 2026)
 
 ---
@@ -36,7 +36,7 @@
 
 ### 📊 Metrics
 
-- **Test Coverage**: 89.9% (310+ tests)
+- **Test Coverage**: 92.9% (310+ tests) - improved from 89.9%
 - **Dependencies**: 0 (production), 2 (tests only)
 - **Performance**:
   - Batch operations: 3.3x faster INSERT, 2.5x UPDATE
@@ -44,6 +44,7 @@
   - Memory: 100x reduction with LIMIT, 2,500,000x with COUNT
   - Subqueries: EXISTS 5x faster than IN (109ns vs 516ns)
   - Set operations: UNION ALL 2-3x faster than UNION
+  - Wrapper calls: Zero overhead (0ns)
 - **Go Version**: 1.25+
 
 ---
@@ -97,23 +98,44 @@
 
 ---
 
-### v0.4.0-beta (Q1 2026)
+### v0.4.0-beta ✅ (Released: October 26, 2025)
 
-**Goal**: Production hardening & performance
+**Goal**: Better documentation & API stability
 
-**Features**:
-- ⚡ **Query Optimizer** (auto-index hints)
-- 📊 **Query Analyzer** (EXPLAIN integration)
-- 🔍 **Query Debugging** (SQL logging, tracing)
-- 🚀 **Performance Tuning** (connection pooling, prepare caching)
-- 🛡️ **Security Hardening** (SQL injection prevention, audit logging)
+**Features Implemented**:
+- ✅ **Wrapper Types Migration** (breaking change - acceptable in beta)
+  - Replaced type aliases with wrapper types
+  - All 81 methods wrapped with comprehensive godoc
+  - Zero performance overhead
+  - **Result**: pkg.go.dev now shows all methods with examples
+  - **Impact**: 95% of user code requires ZERO changes
+- ✅ **Unwrap() Methods** - Access internal types when needed
+- ✅ **MIGRATION_GUIDE.md** - Detailed v0.3.0 → v0.4.0 migration guide
+- ✅ **Critical Bug Fix**: SELECT "*" quoting issue resolved
 
-**Timeline**: 6-8 weeks
-**Dependencies**: v0.3.0-beta
+**Status**: ✅ Released (92.9% coverage, all tests passing, 0 linting issues)
+**Implementation Time**: 1 week
+**Documentation**: [MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md)
 
 ---
 
-### v1.0.0 (Q1 2026)
+### v0.5.0-beta (Q1 2026)
+
+**Goal**: Production hardening & performance
+
+**Planned Features**:
+- ⚡ **Query Optimizer** (auto-index hints)
+- 📊 **Query Analyzer** (EXPLAIN integration)
+- 🔍 **Query Debugging** (SQL logging, tracing)
+- 🚀 **Performance Tuning** (advanced connection pooling)
+- 🛡️ **Security Hardening** (SQL injection prevention, audit logging)
+
+**Timeline**: 6-8 weeks
+**Dependencies**: v0.4.0-beta ✅
+
+---
+
+### v1.0.0 (Q2 2026)
 
 **Goal**: Production-ready stable release
 

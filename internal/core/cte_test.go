@@ -33,7 +33,7 @@ func TestWith_SingleCTE(t *testing.T) {
 	// Verify WITH clause structure
 	assert.Contains(t, query.sql, `WITH "order_totals" AS`)
 	assert.Contains(t, query.sql, `SELECT "user_id", SUM(total) as total FROM "orders" GROUP BY "user_id"`)
-	assert.Contains(t, query.sql, `SELECT "*" FROM "order_totals" WHERE total > $1`)
+	assert.Contains(t, query.sql, `SELECT * FROM "order_totals" WHERE total > $1`)
 	assert.Len(t, query.params, 1)
 	assert.Equal(t, 1000, query.params[0])
 }
