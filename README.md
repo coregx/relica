@@ -23,7 +23,7 @@
 - 🔀 **Set Operations** - UNION, UNION ALL, INTERSECT, EXCEPT (v0.3.0+)
 - 🌳 **Common Table Expressions** - WITH clause, recursive CTEs (v0.3.0+)
 - 🌐 **Multi-Database** - PostgreSQL, MySQL 8.0+, SQLite 3.25+ support
-- 🧪 **Well-Tested** - 310+ tests, 92.9% coverage
+- 🧪 **Well-Tested** - 326+ tests, 93.3% coverage
 - 📝 **Clean API** - Fluent builder pattern with context support
 
 ## 🎉 What's New in v0.4.1-beta
@@ -856,10 +856,10 @@ go test -bench=. -benchmem ./benchmark/...
 
 ## 📊 Project Status
 
-- **Version**: v0.2.0-beta
+- **Version**: v0.4.1-beta
 - **Go Version**: 1.25+
 - **Production Ready**: Yes (beta)
-- **Test Coverage**: 88.9%
+- **Test Coverage**: 93.3%
 - **Dependencies**: 0 (production), 2 (tests only)
 - **API**: Stable public API, internal packages protected
 
