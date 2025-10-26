@@ -26,17 +26,29 @@
 - 🧪 **Well-Tested** - 310+ tests, 92.9% coverage
 - 📝 **Clean API** - Fluent builder pattern with context support
 
-## 🎉 What's New in v0.4.0-beta
+## 🎉 What's New in v0.4.1-beta
 
-**Better Documentation & API Stability** - We've migrated from type aliases to wrapper types:
+**Convenience Methods** - Shorter, more intuitive API for common operations:
 
-- ✅ **All methods now visible on pkg.go.dev** - Complete API documentation with examples
-- ✅ **Zero performance overhead** - Wrapper calls are inlined by the compiler (0ns)
-- ✅ **95% of code unchanged** - Your existing code continues working
-- ✅ **Industry best practices** - Follows patterns from sqlx, pgx, GORM
-- 🔧 **Unwrap() methods** - Access internal types when needed for advanced use cases
+```go
+// Before (v0.4.0):
+db.Builder().Select("*").From("users").All(&users)
 
-**Migration**: See [docs/MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md) for v0.3.0 → v0.4.0 upgrade guide.
+// After (v0.4.1):
+db.Select("*").From("users").All(&users)  // 10 characters shorter!
+```
+
+- ✅ **Shorter code** - `db.Select()` vs `db.Builder().Select()`
+- ✅ **100% backward compatible** - `Builder()` continues working unchanged
+- ✅ **Zero performance overhead** - Direct delegation to Builder()
+- ✅ **Same power** - All query features still available (WHERE, JOIN, ORDER BY, etc.)
+- 📝 **When to use Builder()** - For advanced features (CTEs, UNION, batch operations)
+
+**Previous: v0.4.0-beta** - Better documentation & API stability:
+- All methods visible on pkg.go.dev with complete documentation
+- Wrapper types following industry best practices (sqlx, pgx, GORM patterns)
+- Unwrap() methods for advanced use cases
+- See [docs/MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md) for v0.3.0 → v0.4.0 upgrade guide
 
 ## 🚀 Quick Start
 
@@ -78,10 +90,9 @@ func main() {
 
     ctx := context.Background()
 
-    // SELECT - Query single row
+    // SELECT - Query single row (v0.4.1+ convenience method)
     var user User
-    err = db.Builder().
-        Select().
+    err = db.Select("*").
         From("users").
         Where("id = ?", 1).
         WithContext(ctx).
@@ -91,36 +102,38 @@ func main() {
     }
     fmt.Printf("User: %+v\n", user)
 
-    // SELECT - Query multiple rows
+    // SELECT - Query multiple rows (convenience method)
     var users []User
-    err = db.Builder().
-        Select().
+    err = db.Select("*").
         From("users").
         Where("age > ?", 18).
         All(&users)
 
-    // INSERT
-    result, err := db.Builder().
-        Insert("users", map[string]interface{}{
-            "name":  "Alice",
-            "email": "alice@example.com",
-        }).
-        Execute()
+    // INSERT (convenience method)
+    result, err := db.Insert("users", map[string]interface{}{
+        "name":  "Alice",
+        "email": "alice@example.com",
+    }).Execute()
 
-    // UPDATE
-    result, err = db.Builder().
-        Update("users").
+    // UPDATE (convenience method)
+    result, err = db.Update("users").
         Set(map[string]interface{}{
             "name": "Alice Updated",
         }).
         Where("id = ?", 1).
         Execute()
 
-    // DELETE
-    result, err = db.Builder().
-        Delete("users").
+    // DELETE (convenience method)
+    result, err = db.Delete("users").
         Where("id = ?", 1).
         Execute()
+
+    // For advanced queries (CTEs, UNION, etc.), use Builder()
+    err = db.Builder().
+        With("stats", statsQuery).
+        Select("*").
+        From("stats").
+        All(&results)
 }
 ```
 
@@ -128,37 +141,37 @@ func main() {
 
 ### CRUD Operations
 
+**New in v0.4.1**: Convenience methods for shorter, more intuitive code!
+
 ```go
-// SELECT
+// SELECT (v0.4.1+ convenience method)
 var user User
-db.Builder().Select().From("users").Where("id = ?", 1).One(&user)
+db.Select("*").From("users").Where("id = ?", 1).One(&user)
 
 // SELECT with multiple conditions
 var users []User
-db.Builder().
-    Select("id", "name", "email").
+db.Select("id", "name", "email").
     From("users").
     Where("age > ?", 18).
     Where("status = ?", "active").
     All(&users)
 
-// INSERT
-db.Builder().Insert("users", map[string]interface{}{
+// INSERT (convenience method)
+db.Insert("users", map[string]interface{}{
     "name": "Bob",
     "email": "bob@example.com",
 }).Execute()
 
-// UPDATE
-db.Builder().
-    Update("users").
+// UPDATE (convenience method)
+db.Update("users").
     Set(map[string]interface{}{"status": "inactive"}).
     Where("last_login < ?", time.Now().AddDate(0, -6, 0)).
     Execute()
 
-// DELETE
-db.Builder().Delete("users").Where("id = ?", 123).Execute()
+// DELETE (convenience method)
+db.Delete("users").Where("id = ?", 123).Execute()
 
-// UPSERT (INSERT ON CONFLICT)
+// For advanced operations, use Builder()
 db.Builder().
     Upsert("users", map[string]interface{}{
         "id":    1,
@@ -168,6 +181,9 @@ db.Builder().
     OnConflict("id").
     DoUpdate("name", "email").
     Execute()
+
+// Builder() is still fully supported for all operations
+db.Builder().Select("*").From("users").All(&users)
 ```
 
 ### Expression API (v0.1.2+)

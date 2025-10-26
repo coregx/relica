@@ -334,6 +334,106 @@ func (d *DB) Builder() *QueryBuilder {
 	return &QueryBuilder{qb: d.db.Builder()}
 }
 
+// Select creates a new SELECT query.
+//
+// This is a convenience method equivalent to db.Builder().Select(cols...).
+// For advanced queries (CTEs, subqueries, UNION), use db.Builder() directly.
+//
+// Example:
+//
+//	var users []User
+//	err := db.Select("id", "name", "email").
+//	    From("users").
+//	    Where("active = ?", true).
+//	    OrderBy("name").
+//	    All(&users)
+//
+//	// For wildcard selection
+//	err := db.Select("*").From("users").All(&users)
+//
+//	// For advanced features, use Builder()
+//	err := db.Builder().
+//	    With("stats", statsQuery).
+//	    Select("*").
+//	    From("stats").
+//	    All(&results)
+func (d *DB) Select(cols ...string) *SelectQuery {
+	return d.Builder().Select(cols...)
+}
+
+// Insert creates a new INSERT query.
+//
+// This is a convenience method equivalent to db.Builder().Insert(table, data).
+// For batch inserts, use db.Builder().BatchInsert().
+//
+// Example:
+//
+//	result, err := db.Insert("users", map[string]interface{}{
+//	    "name":  "Alice",
+//	    "email": "alice@example.com",
+//	}).Execute()
+//	if err != nil {
+//	    return err
+//	}
+//	rows, _ := result.RowsAffected()
+//	fmt.Printf("Inserted %d row(s)\n", rows)
+//
+//	// For batch operations, use Builder()
+//	result, err := db.Builder().
+//	    BatchInsert("users", []string{"name", "email"}).
+//	    Values("Alice", "alice@example.com").
+//	    Values("Bob", "bob@example.com").
+//	    Execute()
+func (d *DB) Insert(table string, data map[string]interface{}) *Query {
+	return d.Builder().Insert(table, data)
+}
+
+// Update creates a new UPDATE query.
+//
+// This is a convenience method equivalent to db.Builder().Update(table).
+// For batch updates, use db.Builder().BatchUpdate().
+//
+// Example:
+//
+//	_, err := db.Update("users").
+//	    Set(map[string]interface{}{"status": "active"}).
+//	    Where("id = ?", 123).
+//	    Execute()
+//	if err != nil {
+//	    return err
+//	}
+//
+//	// For batch operations, use Builder()
+//	_, err := db.Builder().
+//	    BatchUpdate("users", "id").
+//	    Set(1, map[string]interface{}{"status": "active"}).
+//	    Set(2, map[string]interface{}{"status": "inactive"}).
+//	    Execute()
+func (d *DB) Update(table string) *UpdateQuery {
+	return d.Builder().Update(table)
+}
+
+// Delete creates a new DELETE query.
+//
+// This is a convenience method equivalent to db.Builder().Delete(table).
+//
+// Example:
+//
+//	_, err := db.Delete("users").
+//	    Where("id = ?", 123).
+//	    Execute()
+//	if err != nil {
+//	    return err
+//	}
+//
+//	// Delete multiple rows
+//	_, err := db.Delete("users").
+//	    Where("status = ?", "inactive").
+//	    Execute()
+func (d *DB) Delete(table string) *DeleteQuery {
+	return d.Builder().Delete(table)
+}
+
 // Begin starts a transaction with default options.
 //
 // The transaction must be committed or rolled back to release resources.
@@ -502,6 +602,80 @@ func (d *DB) Unwrap() *core.DB {
 //	tx.Builder().Insert("users", data).Execute()
 func (t *Tx) Builder() *QueryBuilder {
 	return &QueryBuilder{qb: t.tx.Builder()}
+}
+
+// Select creates a new SELECT query within the transaction.
+//
+// This is a convenience method equivalent to tx.Builder().Select(cols...).
+//
+// Example:
+//
+//	var users []User
+//	err := tx.Select("*").From("users").Where("id = ?", 123).All(&users)
+//	if err != nil {
+//	    tx.Rollback()
+//	    return err
+//	}
+//
+//	// For advanced features, use Builder()
+//	err := tx.Builder().
+//	    With("stats", statsQuery).
+//	    Select("*").
+//	    From("stats").
+//	    All(&results)
+func (t *Tx) Select(cols ...string) *SelectQuery {
+	return t.Builder().Select(cols...)
+}
+
+// Insert creates a new INSERT query within the transaction.
+//
+// This is a convenience method equivalent to tx.Builder().Insert(table, data).
+//
+// Example:
+//
+//	_, err := tx.Insert("users", map[string]interface{}{
+//	    "name":  "Alice",
+//	    "email": "alice@example.com",
+//	}).Execute()
+//	if err != nil {
+//	    tx.Rollback()
+//	    return err
+//	}
+func (t *Tx) Insert(table string, data map[string]interface{}) *Query {
+	return t.Builder().Insert(table, data)
+}
+
+// Update creates a new UPDATE query within the transaction.
+//
+// This is a convenience method equivalent to tx.Builder().Update(table).
+//
+// Example:
+//
+//	_, err := tx.Update("users").
+//	    Set(map[string]interface{}{"status": "active"}).
+//	    Where("id = ?", 123).
+//	    Execute()
+//	if err != nil {
+//	    tx.Rollback()
+//	    return err
+//	}
+func (t *Tx) Update(table string) *UpdateQuery {
+	return t.Builder().Update(table)
+}
+
+// Delete creates a new DELETE query within the transaction.
+//
+// This is a convenience method equivalent to tx.Builder().Delete(table).
+//
+// Example:
+//
+//	_, err := tx.Delete("users").Where("id = ?", 123).Execute()
+//	if err != nil {
+//	    tx.Rollback()
+//	    return err
+//	}
+func (t *Tx) Delete(table string) *DeleteQuery {
+	return t.Builder().Delete(table)
 }
 
 // Commit commits the transaction.
