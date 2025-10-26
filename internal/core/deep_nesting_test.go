@@ -39,7 +39,7 @@ func TestSubquery_DeepNesting_3Levels(t *testing.T) {
 	require.NotNil(t, query)
 
 	// Verify SQL has 3 nested SELECTs
-	assert.Contains(t, query.sql, `SELECT "*" FROM "level1_table"`)
+	assert.Contains(t, query.sql, `SELECT * FROM "level1_table"`)
 	assert.Contains(t, query.sql, `"id" IN (SELECT "parent_id" FROM "level2_table"`)
 	assert.Contains(t, query.sql, `"id" IN (SELECT "id" FROM "level3_table"`)
 
@@ -98,7 +98,7 @@ func TestCTE_Nested_3Levels(t *testing.T) {
 	assert.Contains(t, query.sql, `SELECT "id", SUM(doubled) as total FROM "cte2" GROUP BY "id"`)
 
 	// Verify main query references final CTE
-	assert.Contains(t, query.sql, `SELECT "*" FROM "cte3"`)
+	assert.Contains(t, query.sql, `SELECT * FROM "cte3"`)
 
 	// Verify parameters from all CTEs (2 params: 1 from cte1, 10 from cte2)
 	assert.Equal(t, 2, len(query.params))
@@ -189,7 +189,7 @@ func TestParameterOrdering_DeepNesting(t *testing.T) {
 	assert.True(t, paramValues["val4"], "val4 should be in parameters")
 
 	// Verify SQL structure contains nested IN clauses
-	assert.Contains(t, query.sql, `SELECT "*" FROM "t1"`)
+	assert.Contains(t, query.sql, `SELECT * FROM "t1"`)
 	assert.Contains(t, query.sql, `"id" IN`)
 	assert.Contains(t, query.sql, `SELECT "id" FROM "t2"`)
 	assert.Contains(t, query.sql, `SELECT "id" FROM "t3"`)

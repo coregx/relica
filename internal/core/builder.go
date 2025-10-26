@@ -631,6 +631,9 @@ func (sq *SelectQuery) buildSelect(dialect dialects.Dialect) string {
 	for _, col := range sq.columns {
 		// Determine column type and format accordingly
 		switch {
+		case col == "*":
+			// Wildcard - use as-is, don't quote
+			parts = append(parts, "*")
 		case strings.Contains(col, "("):
 			// Aggregate function or expression - use as-is
 			parts = append(parts, col)

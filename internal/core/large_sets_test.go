@@ -148,7 +148,7 @@ func TestInSubquery_LargeList(t *testing.T) {
 	require.NotNil(t, query)
 
 	// Verify SQL generated correctly
-	assert.Contains(t, query.sql, `SELECT "*" FROM "main_table"`)
+	assert.Contains(t, query.sql, `SELECT * FROM "main_table"`)
 	assert.Contains(t, query.sql, `"id" IN (SELECT "id" FROM "large_table")`)
 
 	// No parameters in this case (no WHERE in subquery)

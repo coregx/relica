@@ -23,8 +23,20 @@
 - 🔀 **Set Operations** - UNION, UNION ALL, INTERSECT, EXCEPT (v0.3.0+)
 - 🌳 **Common Table Expressions** - WITH clause, recursive CTEs (v0.3.0+)
 - 🌐 **Multi-Database** - PostgreSQL, MySQL 8.0+, SQLite 3.25+ support
-- 🧪 **Well-Tested** - 310+ tests, 89.9% coverage
+- 🧪 **Well-Tested** - 310+ tests, 92.9% coverage
 - 📝 **Clean API** - Fluent builder pattern with context support
+
+## 🎉 What's New in v0.4.0-beta
+
+**Better Documentation & API Stability** - We've migrated from type aliases to wrapper types:
+
+- ✅ **All methods now visible on pkg.go.dev** - Complete API documentation with examples
+- ✅ **Zero performance overhead** - Wrapper calls are inlined by the compiler (0ns)
+- ✅ **95% of code unchanged** - Your existing code continues working
+- ✅ **Industry best practices** - Follows patterns from sqlx, pgx, GORM
+- 🔧 **Unwrap() methods** - Access internal types when needed for advanced use cases
+
+**Migration**: See [docs/MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md) for v0.3.0 → v0.4.0 upgrade guide.
 
 ## 🚀 Quick Start
 
