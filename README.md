@@ -27,29 +27,7 @@
 - 🧪 **Well-Tested** - 326+ tests, 93.3% coverage
 - 📝 **Clean API** - Fluent builder pattern with context support
 
-## 🎉 What's New in v0.4.1-beta
-
-**Convenience Methods** - Shorter, more intuitive API for common operations:
-
-```go
-// Before (v0.4.0):
-db.Builder().Select("*").From("users").All(&users)
-
-// After (v0.4.1):
-db.Select("*").From("users").All(&users)  // 10 characters shorter!
-```
-
-- ✅ **Shorter code** - `db.Select()` vs `db.Builder().Select()`
-- ✅ **100% backward compatible** - `Builder()` continues working unchanged
-- ✅ **Zero performance overhead** - Direct delegation to Builder()
-- ✅ **Same power** - All query features still available (WHERE, JOIN, ORDER BY, etc.)
-- 📝 **When to use Builder()** - For advanced features (CTEs, UNION, batch operations)
-
-**Previous: v0.4.0-beta** - Better documentation & API stability:
-- All methods visible on pkg.go.dev with complete documentation
-- Wrapper types following industry best practices (sqlx, pgx, GORM patterns)
-- Unwrap() methods for advanced use cases
-- See [docs/MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md) for v0.3.0 → v0.4.0 upgrade guide
+> **Latest Release:** See [CHANGELOG.md](CHANGELOG.md) for version history and [GitHub Releases](https://github.com/coregx/relica/releases) for release notes.
 
 ## 🚀 Quick Start
 

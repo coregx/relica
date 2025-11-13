@@ -5,6 +5,91 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2025-11-14
+
+### Added
+
+**Enterprise Security Features**
+- SQL injection prevention with pattern-based validation (OWASP Top 10 coverage)
+- Audit logging with context tracking (user, IP, request ID) and security events
+- Parameter hashing for privacy compliance (GDPR, HIPAA, PCI-DSS, SOC2)
+- Three audit levels: writes-only, reads+writes, all operations
+- Strict mode for maximum security
+- <2% performance overhead for protected queries
+
+**Query Optimizer**
+- Phase 1: Missing index detection and query cost analysis
+- Phase 2: Advanced index analysis (covering indexes, index-only scans)
+- Phase 3: Database-specific hints and recommendations
+- Phase 4: Complete documentation and integration examples
+- Automatic optimization suggestions for slow queries
+- Support for PostgreSQL, MySQL, and SQLite dialects
+
+**Query Analyzer**
+- EXPLAIN plan integration for all three databases
+- Automatic query performance analysis
+- Execution time tracking and threshold-based alerts
+- Integration with Query Optimizer for actionable recommendations
+- Async analysis to avoid blocking query execution
+
+**SQL Logging & Distributed Tracing**
+- Structured logging with slog integration
+- OpenTelemetry tracing support for distributed systems
+- Automatic parameter sanitization (masks sensitive data)
+- Query execution time tracking
+- Context propagation for request correlation
+- Support for both legacy and modern tracing APIs
+
+**Performance Monitoring**
+- Advanced connection pool management and health checks
+- Statement cache warming for reduced cold-start latency
+- Query pinning for critical queries (always cached)
+- Connection pool statistics and metrics
+- Health monitoring with automatic degradation detection
+- Performance tuning recommendations
+
+**Comprehensive Documentation** (10,000+ lines)
+- Migration guides: GORM → Relica, sqlx → Relica (1,400 lines)
+- User guides: Getting Started, Best Practices, Troubleshooting (2,000 lines)
+- Advanced guides: Production Deployment, Performance Tuning, Advanced Patterns
+- Security guides: Security Features, Security Testing, Compliance (1,360 lines)
+- Performance docs: Performance Comparison, Tuning Guide, Benchmarks (450 lines)
+- Feature guides: Query Optimizer, Query Analyzer, SQL Logging (5,000+ lines)
+
+### Changed
+
+- Removed "beta" suffix from version (v0.x allows breaking changes per semver)
+- Upgraded codecov-action from v4 to v5 in CI/CD workflow
+- Added minimum 70% coverage requirement with Codecov integration
+- Organized private documentation into docs/dev/ (excluded from repository)
+
+### Fixed
+
+- Resolved 8 golangci-lint warnings:
+  - Removed unnecessary type conversion in Stats() method
+  - Renamed unused context parameter in analyzeQuery()
+  - Extracted validation logic to reduce nesting complexity
+  - Extracted logging logic to improve code maintainability
+  - Added justified nolint directives for complex query execution paths
+- Fixed code formatting issues across 14 files (gofmt compliance)
+- Added .gitignore patterns for private documentation and navigation files
+
+### Documentation
+
+- Added comprehensive migration guides for GORM and sqlx users
+- Created 6 detailed user guides covering all experience levels
+- Added security documentation with compliance checklists
+- Created performance comparison with industry benchmarks
+- Updated README.md to follow 2025 best practices (removed version news)
+- All guide headers updated to v0.5.0
+
+### Internal
+
+- Moved private documentation to docs/dev/ (COMPETITIVE_ANALYSIS.md, PERFORMANCE_BASELINE.md, architecture/)
+- Added INDEX.md pattern to .gitignore for internal navigation files
+- Created backup branches for safe Git history rewriting
+- Cleaned all commit messages (removed AI attribution for professional output)
+
 ## [0.4.1-beta] - 2025-10-26
 
 ### Added
