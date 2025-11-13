@@ -359,6 +359,52 @@ func (d *DB) IsHealthy() bool {
 	return d.db.IsHealthy()
 }
 
+// WarmCache pre-warms the statement cache by preparing frequently-used queries.
+//
+// This improves performance at startup by avoiding cache misses for common queries.
+// The queries are prepared synchronously in the order provided.
+// Returns the number of successfully prepared queries and any error encountered.
+//
+// Example:
+//
+//	n, err := db.WarmCache([]string{
+//	    "SELECT * FROM users WHERE id = ?",
+//	    "INSERT INTO logs (message, level) VALUES (?, ?)",
+//	    "UPDATE users SET last_login = ? WHERE id = ?",
+//	})
+//	if err != nil {
+//	    log.Warn("Failed to warm cache", "error", err, "warmed", n)
+//	}
+func (d *DB) WarmCache(queries []string) (int, error) {
+	return d.db.WarmCache(queries)
+}
+
+// PinQuery marks a query as pinned in the statement cache, preventing eviction.
+//
+// Pinned queries remain in cache indefinitely, useful for frequently-used queries.
+// Returns false if the query is not in cache (call WarmCache first).
+//
+// Example:
+//
+//	// Warm and pin critical queries
+//	queries := []string{"SELECT * FROM users WHERE id = ?"}
+//	db.WarmCache(queries)
+//	db.PinQuery(queries[0])  // Will never be evicted
+func (d *DB) PinQuery(query string) bool {
+	return d.db.PinQuery(query)
+}
+
+// UnpinQuery removes the pin from a cached query, allowing normal LRU eviction.
+//
+// Returns false if the query is not in cache or not pinned.
+//
+// Example:
+//
+//	db.UnpinQuery("SELECT * FROM users WHERE id = ?")
+func (d *DB) UnpinQuery(query string) bool {
+	return d.db.UnpinQuery(query)
+}
+
 // Builder returns a new QueryBuilder for constructing queries.
 //
 // The query builder provides a fluent interface for building

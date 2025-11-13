@@ -353,6 +353,40 @@ func (db *DB) IsHealthy() bool {
 	return db.healthChecker.isHealthy()
 }
 
+// WarmCache pre-warms the statement cache by preparing frequently-used queries.
+// This improves performance at startup by avoiding cache misses for common queries.
+// The queries are prepared synchronously in the order provided.
+// Returns the number of successfully prepared queries and any error encountered.
+func (db *DB) WarmCache(queries []string) (int, error) {
+	// Use background context since this is typically called at startup
+	ctx := context.Background()
+
+	warmed := 0
+	for _, query := range queries {
+		stmt, err := db.sqlDB.PrepareContext(ctx, query)
+		if err != nil {
+			return warmed, err
+		}
+		db.stmtCache.Set(query, stmt)
+		warmed++
+	}
+
+	return warmed, nil
+}
+
+// PinQuery marks a query as pinned in the statement cache, preventing eviction.
+// Pinned queries remain in cache indefinitely, useful for frequently-used queries.
+// Returns false if the query is not in cache (call WarmCache first).
+func (db *DB) PinQuery(query string) bool {
+	return db.stmtCache.Pin(query)
+}
+
+// UnpinQuery removes the pin from a cached query, allowing normal LRU eviction.
+// Returns false if the query is not in cache or not pinned.
+func (db *DB) UnpinQuery(query string) bool {
+	return db.stmtCache.Unpin(query)
+}
+
 // ExecContext executes a raw SQL query (INSERT/UPDATE/DELETE).
 func (db *DB) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
 	return db.sqlDB.ExecContext(ctx, query, args...)
