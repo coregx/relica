@@ -15,6 +15,7 @@
 - ⚡ **High Performance** - LRU statement cache, batch operations (3.3x faster)
 - 🎯 **Type-Safe** - Reflection-based struct scanning with compile-time checks
 - 🔒 **Transaction Support** - Full ACID with all isolation levels
+- 🛡️ **Enterprise Security** - SQL injection prevention, audit logging, compliance (v0.5.0-beta+)
 - 📦 **Batch Operations** - Efficient multi-row INSERT and UPDATE
 - 🔗 **JOIN Operations** - INNER, LEFT, RIGHT, FULL, CROSS JOIN support (v0.2.0+)
 - 📊 **Sorting & Pagination** - ORDER BY, LIMIT, OFFSET (v0.2.0+)
@@ -811,6 +812,78 @@ defer sqlDB.Close()  // NOT db.Close()
 - Each `WrapDB()` call creates a new Relica instance with its own statement cache
 - The caller is responsible for closing the underlying `*sql.DB` connection
 - Multiple wraps of the same connection are isolated (separate caches)
+
+## 🛡️ Enterprise Security (v0.5.0-beta+)
+
+Relica provides enterprise-grade security features for protecting your database operations:
+
+### SQL Injection Prevention
+
+**Pattern-based detection** of OWASP Top 10 SQL injection attacks with <2% overhead:
+
+```go
+import "github.com/coregx/relica/internal/security"
+
+// Create validator
+validator := security.NewValidator()
+
+// Enable validation on DB connection
+db, err := relica.Open("postgres", dsn,
+    relica.WithValidator(validator),
+)
+
+// All ExecContext and QueryContext calls are now validated
+_, err = db.ExecContext(ctx, "SELECT * FROM users WHERE id = ?", userID)
+// Malicious queries blocked: stacked queries, UNION attacks, comment injection, etc.
+```
+
+**Detected attack vectors:**
+- Tautology attacks (`1 OR 1=1`)
+- Comment injection (`admin'--`)
+- Stacked queries (`; DROP TABLE`)
+- UNION attacks
+- Command execution (`xp_cmdshell`, `exec()`)
+- Information schema access
+- Timing attacks (`pg_sleep`, `benchmark`)
+
+### Audit Logging
+
+**Comprehensive operation tracking** for GDPR, HIPAA, PCI-DSS, SOC2 compliance:
+
+```go
+// Create logger
+logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+    Level: slog.LevelInfo,
+}))
+
+// Create auditor with desired level
+auditor := security.NewAuditor(logger, security.AuditReads)
+
+// Enable auditing
+db, err := relica.Open("postgres", dsn,
+    relica.WithAuditLog(auditor),
+)
+
+// Add context metadata for forensics
+ctx := security.WithUser(ctx, "john.doe@example.com")
+ctx = security.WithClientIP(ctx, "192.168.1.100")
+ctx = security.WithRequestID(ctx, "req-12345")
+
+// All operations are logged with metadata
+_, err = db.ExecContext(ctx, "UPDATE users SET status = ? WHERE id = ?", 2, 123)
+```
+
+**Audit log includes:**
+- Timestamp, user, client IP, request ID
+- Operation (INSERT, UPDATE, DELETE, SELECT)
+- Query execution time
+- Success/failure status
+- **Parameter hashing** (NOT raw values) for GDPR compliance
+
+### Security Guides
+
+- **[Security Guide](docs/guides/SECURITY.md)** - Complete security features overview
+- **[Security Testing Guide](docs/guides/SECURITY_TESTING.md)** - OWASP-based testing examples
 
 ## 📖 Documentation
 
