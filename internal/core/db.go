@@ -410,6 +410,31 @@ func (db *DB) UnpinQuery(query string) bool {
 	return db.stmtCache.Unpin(query)
 }
 
+// validateQueryAndParams validates query and parameters if validator is enabled.
+// Logs security events if auditor is enabled.
+// Returns error if validation fails.
+func (db *DB) validateQueryAndParams(ctx context.Context, query string, args []interface{}) error {
+	if db.validator == nil {
+		return nil
+	}
+
+	if err := db.validator.ValidateQuery(query); err != nil {
+		if db.auditor != nil {
+			db.auditor.LogSecurityEvent(ctx, "query_blocked", query, err)
+		}
+		return err
+	}
+
+	if err := db.validator.ValidateParams(args); err != nil {
+		if db.auditor != nil {
+			db.auditor.LogSecurityEvent(ctx, "params_blocked", query, err)
+		}
+		return err
+	}
+
+	return nil
+}
+
 // ExecContext executes a raw SQL query (INSERT/UPDATE/DELETE).
 // If a validator is configured, the query and parameters are validated before execution.
 // If an auditor is configured, the operation is logged to the audit trail.
@@ -418,21 +443,8 @@ func (db *DB) ExecContext(ctx context.Context, query string, args ...interface{}
 	start := time.Now()
 
 	// Validate query and parameters if validator is enabled
-	if db.validator != nil {
-		if err := db.validator.ValidateQuery(query); err != nil {
-			// Log security event if auditor is enabled
-			if db.auditor != nil {
-				db.auditor.LogSecurityEvent(ctx, "query_blocked", query, err)
-			}
-			return nil, err
-		}
-		if err := db.validator.ValidateParams(args); err != nil {
-			// Log security event if auditor is enabled
-			if db.auditor != nil {
-				db.auditor.LogSecurityEvent(ctx, "params_blocked", query, err)
-			}
-			return nil, err
-		}
+	if err := db.validateQueryAndParams(ctx, query, args); err != nil {
+		return nil, err
 	}
 
 	// Execute query
@@ -457,21 +469,8 @@ func (db *DB) QueryContext(ctx context.Context, query string, args ...interface{
 	start := time.Now()
 
 	// Validate query and parameters if validator is enabled
-	if db.validator != nil {
-		if err := db.validator.ValidateQuery(query); err != nil {
-			// Log security event if auditor is enabled
-			if db.auditor != nil {
-				db.auditor.LogSecurityEvent(ctx, "query_blocked", query, err)
-			}
-			return nil, err
-		}
-		if err := db.validator.ValidateParams(args); err != nil {
-			// Log security event if auditor is enabled
-			if db.auditor != nil {
-				db.auditor.LogSecurityEvent(ctx, "params_blocked", query, err)
-			}
-			return nil, err
-		}
+	if err := db.validateQueryAndParams(ctx, query, args); err != nil {
+		return nil, err
 	}
 
 	// Execute query

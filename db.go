@@ -341,7 +341,7 @@ func (d *DB) WithContext(ctx context.Context) *DB {
 //	    log.Warn("Database health check failed")
 //	}
 func (d *DB) Stats() PoolStats {
-	return PoolStats(d.db.Stats())
+	return d.db.Stats()
 }
 
 // IsHealthy returns true if the database connection is healthy.

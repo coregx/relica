@@ -9,7 +9,8 @@ import (
 
 // analyzeQuery performs query optimization analysis asynchronously.
 // This method is called in a goroutine to avoid blocking query execution.
-func (q *Query) analyzeQuery(ctx context.Context, executionTime time.Duration) {
+// The ctx parameter is intentionally unused as we create a new timeout context.
+func (q *Query) analyzeQuery(_ context.Context, executionTime time.Duration) {
 	// Use a timeout context to prevent hanging
 	analyzeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

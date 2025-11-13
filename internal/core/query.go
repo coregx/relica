@@ -44,6 +44,38 @@ func (q *Query) prepareStatement(ctx context.Context) (*sql.Stmt, bool, error) {
 	return stmt, false, nil // false = cached, don't close
 }
 
+// logExecutionResult logs query execution results if logger is enabled.
+func (q *Query) logExecutionResult(result sql.Result, err error, elapsed time.Duration) {
+	if q.db.logger == nil {
+		return
+	}
+
+	maskedParams := q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params))
+
+	if err != nil {
+		q.db.logger.Error("query execution failed",
+			"sql", q.sql,
+			"params", maskedParams,
+			"duration_ms", elapsed.Milliseconds(),
+			"database", q.db.driverName,
+			"error", err,
+		)
+		return
+	}
+
+	var rowsAffected int64
+	if result != nil {
+		rowsAffected, _ = result.RowsAffected()
+	}
+	q.db.logger.Info("query executed",
+		"sql", q.sql,
+		"params", maskedParams,
+		"duration_ms", elapsed.Milliseconds(),
+		"rows_affected", rowsAffected,
+		"database", q.db.driverName,
+	)
+}
+
 // Execute runs the query and returns results.
 // If query is part of a transaction, bypasses statement cache and uses transaction connection.
 func (q *Query) Execute() (sql.Result, error) {
@@ -85,29 +117,7 @@ func (q *Query) Execute() (sql.Result, error) {
 	elapsed := time.Since(start)
 
 	// Log query execution
-	if q.db.logger != nil {
-		if err != nil {
-			q.db.logger.Error("query execution failed",
-				"sql", q.sql,
-				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-				"duration_ms", elapsed.Milliseconds(),
-				"database", q.db.driverName,
-				"error", err,
-			)
-		} else {
-			var rowsAffected int64
-			if result != nil {
-				rowsAffected, _ = result.RowsAffected()
-			}
-			q.db.logger.Info("query executed",
-				"sql", q.sql,
-				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-				"duration_ms", elapsed.Milliseconds(),
-				"rows_affected", rowsAffected,
-				"database", q.db.driverName,
-			)
-		}
-	}
+	q.logExecutionResult(result, err, elapsed)
 
 	// Add tracing attributes
 	if newSpan != nil {
@@ -132,6 +142,8 @@ func (q *Query) Execute() (sql.Result, error) {
 
 // One fetches a single row into a struct.
 // If query is part of a transaction, uses transaction connection.
+//
+//nolint:cyclop,gocyclo,gocognit,funlen // Query execution requires comprehensive error handling, logging, and tracing
 func (q *Query) One(dest interface{}) error {
 	ctx := q.ctx
 	if ctx == nil {
@@ -279,6 +291,8 @@ func (q *Query) One(dest interface{}) error {
 
 // All fetches all rows into a slice of structs.
 // If query is part of a transaction, uses transaction connection.
+//
+//nolint:cyclop,funlen // Query execution requires comprehensive error handling, logging, and tracing
 func (q *Query) All(dest interface{}) error {
 	ctx := q.ctx
 	if ctx == nil {
