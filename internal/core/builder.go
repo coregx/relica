@@ -23,7 +23,7 @@ func newAnalyzerForDB(db *DB) (analyzer.Analyzer, error) {
 	case "mysql":
 		return analyzer.NewMySQLAnalyzer(db.sqlDB), nil
 	case "sqlite", "sqlite3":
-		return nil, fmt.Errorf("SQLite EXPLAIN support not yet implemented (coming in v0.5.0)")
+		return analyzer.NewSQLiteAnalyzer(db.sqlDB), nil
 	default:
 		return nil, fmt.Errorf("EXPLAIN not supported for driver: %s", db.driverName)
 	}

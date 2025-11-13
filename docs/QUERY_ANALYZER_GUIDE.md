@@ -1,7 +1,7 @@
 # Query Analyzer Guide
 
 > **Available in**: Relica v0.5.0-beta+
-> **Supported databases**: PostgreSQL, MySQL (SQLite coming soon)
+> **Supported databases**: PostgreSQL, MySQL, SQLite
 
 ---
 
@@ -404,14 +404,121 @@ fmt.Printf("Full Scan: %v\n", plan.FullScan)           // false
 - Access types: `ALL` (full scan), `index`, `range`, `ref`, `eq_ref`, `const`, `system`
 - Cost is in MySQL-specific units (not comparable to PostgreSQL)
 
-### SQLite (Coming in v0.6.0)
+### SQLite
 
-**Planned:**
-- 🚧 EXPLAIN QUERY PLAN
-- 🚧 Text format parsing
-- 🚧 Basic index detection
-- ❌ Cost estimates (not available)
-- ❌ EXPLAIN ANALYZE (not available)
+**Supported:**
+- ✅ EXPLAIN QUERY PLAN (text format)
+- ✅ Index detection (USING INDEX, COVERING INDEX)
+- ✅ Full table scan detection (SCAN without index)
+- ✅ Primary key usage detection
+- ✅ Automatic index detection
+- ❌ Cost estimates (not provided by SQLite)
+- ❌ Row estimates (not provided by SQLite)
+- ❌ EXPLAIN ANALYZE (SQLite doesn't support this)
+
+**Metrics:**
+- `Cost`: Always 0 (SQLite doesn't provide cost)
+- `EstimatedRows`: Always 0 (SQLite doesn't provide estimates)
+- `UsesIndex`: true if "USING INDEX" or "USING INTEGER PRIMARY KEY" found
+- `IndexName`: Name of index used (or "PRIMARY KEY")
+- `FullScan`: true if "SCAN" without "USING"
+- `RawOutput`: Text output from EXPLAIN QUERY PLAN
+
+**Example Output:**
+```go
+db, _ := relica.NewDB("sqlite3", "file:test.db")
+plan, _ := db.Builder().
+    Select("*").
+    From("users").
+    Where("email = ?", "alice@example.com").
+    Explain()
+
+fmt.Printf("Uses Index: %v\n", plan.UsesIndex)    // true
+fmt.Printf("Index Name: %s\n", plan.IndexName)    // email_idx
+fmt.Printf("Full Scan: %v\n", plan.FullScan)      // false
+fmt.Printf("Database: %s\n", plan.Database)       // sqlite
+
+// Raw output example:
+// SEARCH users USING INDEX email_idx (email=?)
+fmt.Println(plan.RawOutput)
+```
+
+**SQLite-Specific Notes:**
+- EXPLAIN QUERY PLAN returns text, not JSON (unlike PostgreSQL/MySQL)
+- No cost estimates or row counts available
+- ExplainAnalyze() returns error (not supported by SQLite)
+- Index usage patterns:
+  - `SEARCH ... USING INDEX idx_name` - Index scan
+  - `SEARCH ... USING COVERING INDEX idx_name` - Covering index (no table lookup)
+  - `SEARCH ... USING INTEGER PRIMARY KEY` - Primary key lookup
+  - `SEARCH ... USING AUTOMATIC ...` - Automatically created temporary index
+  - `SCAN table_name` - Full table scan (no index)
+- SQLite's output format is simpler but less detailed than PostgreSQL/MySQL
+
+**Example Use Cases:**
+
+1. **Verify index usage:**
+```go
+plan, _ := db.Builder().
+    Select("*").
+    From("users").
+    Where("email = ?", "alice@example.com").
+    Explain()
+
+if !plan.UsesIndex {
+    log.Println("WARNING: Query not using index!")
+    log.Printf("Consider: CREATE INDEX idx_email ON users(email)")
+}
+```
+
+2. **Detect full table scans:**
+```go
+plan, _ := db.Builder().
+    Select("*").
+    From("large_table").
+    Where("status = ?", 1).
+    Explain()
+
+if plan.FullScan {
+    log.Printf("WARNING: Full table scan detected on large_table")
+    log.Printf("Raw plan: %s", plan.RawOutput)
+}
+```
+
+3. **Verify covering index:**
+```go
+// Query only indexed columns
+plan, _ := db.Builder().
+    Select("email").
+    From("users").
+    Where("email = ?", "alice@example.com").
+    Explain()
+
+// Check for "COVERING INDEX" in raw output
+if strings.Contains(strings.ToUpper(plan.RawOutput), "COVERING INDEX") {
+    log.Println("Using covering index (no table access needed)")
+}
+```
+
+4. **Analyze JOIN queries:**
+```go
+plan, _ := db.Builder().
+    Select("u.name", "o.total").
+    From("users u").
+    InnerJoin("orders o", "u.id = o.user_id").
+    Where("u.email = ?", "alice@example.com").
+    Explain()
+
+// SQLite shows plan for each table
+fmt.Println(plan.RawOutput)
+// Output:
+// SEARCH users USING INDEX idx_email (email=?)
+// SEARCH orders USING INDEX idx_user_id (user_id=?)
+
+if plan.UsesIndex {
+    log.Printf("JOIN uses indexes: %s", plan.IndexName)
+}
+```
 
 ---
 
@@ -518,4 +625,4 @@ See `docs/examples/query_analyzer/` for more examples:
 ---
 
 *Guide updated*: 2025-01-24 for v0.5.0-beta
-*Database support*: PostgreSQL ✅, MySQL ✅, SQLite 🚧
+*Database support*: PostgreSQL ✅, MySQL ✅, SQLite ✅
