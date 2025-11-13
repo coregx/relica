@@ -112,13 +112,15 @@ jobs:
         go test -v -race -coverprofile=coverage.out -covermode=atomic $(go list ./... | grep -v "github.com/coregx/relica/test")
 
     - name: Upload coverage to Codecov
-      if: matrix.os == 'ubuntu-latest'
-      uses: codecov/codecov-action@v4
+      if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.25'
+      uses: codecov/codecov-action@v5
       with:
+        token: ${{ secrets.CODECOV_TOKEN }}
         files: ./coverage.out
         flags: unittests
-        name: codecov-umbrella
+        name: codecov-unit
         fail_ci_if_error: false
+        verbose: true
 
   # Integration tests - PostgreSQL and MySQL via services
   integration-tests:
