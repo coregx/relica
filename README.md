@@ -903,7 +903,21 @@ Switching from another library? We've got you covered:
   - Statement caching benefits
   - Using both together
 
-### User Guides (v0.3.0+)
+### Comprehensive User Guides (v0.5.0-beta+)
+
+**Getting Started:**
+- **[Getting Started Guide](docs/guides/GETTING_STARTED.md)** - Installation, first query, CRUD operations, common patterns
+- **[Best Practices Guide](docs/guides/BEST_PRACTICES.md)** - Repository pattern, error handling, testing strategies
+
+**Production:**
+- **[Production Deployment Guide](docs/guides/PRODUCTION_DEPLOYMENT.md)** - Configuration, health checks, Docker/Kubernetes, monitoring
+- **[Performance Tuning Guide](docs/guides/PERFORMANCE_TUNING.md)** - Query optimization, connection pooling, caching strategies
+- **[Troubleshooting Guide](docs/guides/TROUBLESHOOTING.md)** - Common errors and solutions
+
+**Advanced:**
+- **[Advanced Patterns Guide](docs/guides/ADVANCED_PATTERNS.md)** - Complex queries, CTEs, window functions, UPSERT
+
+### SQL Feature Guides (v0.3.0+)
 
 - **[Subquery Guide](docs/SUBQUERY_GUIDE.md)** - IN, EXISTS, FROM, scalar subqueries with performance tips
 - **[Set Operations Guide](docs/SET_OPERATIONS_GUIDE.md)** - UNION, INTERSECT, EXCEPT with database compatibility
