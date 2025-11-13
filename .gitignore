@@ -8,6 +8,7 @@ vendor/
 
 # Test artifacts
 coverage.out
+coverage*.out
 *.test
 coverage.txt
 coverage-unit.txt
