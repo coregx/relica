@@ -1,7 +1,7 @@
 # Query Analyzer Guide
 
 > **Available in**: Relica v0.5.0-beta+
-> **Supported databases**: PostgreSQL (MySQL & SQLite coming soon)
+> **Supported databases**: PostgreSQL, MySQL (SQLite coming soon)
 
 ---
 
@@ -363,13 +363,46 @@ fmt.Printf("Uses Index: %v\n", plan.UsesIndex)         // true
 fmt.Printf("Index Name: %s\n", plan.IndexName)         // users_email_idx
 ```
 
-### MySQL (Coming in v0.5.0)
+### MySQL
 
-**Planned:**
-- 🚧 EXPLAIN FORMAT=JSON
-- 🚧 Index usage detection
-- 🚧 Rows examined tracking
-- ❌ EXPLAIN ANALYZE (not in MySQL 8.0)
+**Supported:**
+- ✅ EXPLAIN FORMAT=JSON
+- ✅ Index detection (ref, range, index, eq_ref, const)
+- ✅ Full table scan detection (access_type = ALL)
+- ✅ Rows examined/produced tracking
+- ✅ JOIN analysis (nested loop)
+- ⚠️ EXPLAIN ANALYZE (MySQL 8.0.18+ only)
+
+**Metrics:**
+- `Cost`: MySQL cost units (query_cost in JSON)
+- `EstimatedRows`: Rows examined per scan
+- `RowsExamined`: Total rows scanned
+- `RowsProduced`: Total rows produced
+- `UsesIndex`: true if index used (key != "")
+- `IndexName`: Name of index used
+- `FullScan`: true if access_type = "ALL"
+
+**Example Output:**
+```go
+db, _ := relica.NewDB("mysql", "user:pass@tcp(localhost:3306)/db")
+plan, _ := db.Builder().
+    Select("*").
+    From("users").
+    Where("email = ?", "alice@example.com").
+    Explain()
+
+fmt.Printf("Cost: %.2f\n", plan.Cost)                  // 1.20
+fmt.Printf("Estimated Rows: %d\n", plan.EstimatedRows) // 1
+fmt.Printf("Uses Index: %v\n", plan.UsesIndex)         // true
+fmt.Printf("Index Name: %s\n", plan.IndexName)         // email_idx
+fmt.Printf("Full Scan: %v\n", plan.FullScan)           // false
+```
+
+**MySQL-Specific Notes:**
+- EXPLAIN ANALYZE requires MySQL 8.0.18+
+- Older MySQL versions only support EXPLAIN (estimates only)
+- Access types: `ALL` (full scan), `index`, `range`, `ref`, `eq_ref`, `const`, `system`
+- Cost is in MySQL-specific units (not comparable to PostgreSQL)
 
 ### SQLite (Coming in v0.6.0)
 
@@ -485,4 +518,4 @@ See `docs/examples/query_analyzer/` for more examples:
 ---
 
 *Guide updated*: 2025-01-24 for v0.5.0-beta
-*Database support*: PostgreSQL ✅, MySQL 🚧, SQLite 🚧
+*Database support*: PostgreSQL ✅, MySQL ✅, SQLite 🚧

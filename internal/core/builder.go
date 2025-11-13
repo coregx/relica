@@ -21,7 +21,7 @@ func newAnalyzerForDB(db *DB) (analyzer.Analyzer, error) {
 	case "postgres", "postgresql":
 		return analyzer.NewPostgresAnalyzer(db.sqlDB), nil
 	case "mysql":
-		return nil, fmt.Errorf("MySQL EXPLAIN support not yet implemented (coming in v0.5.0)")
+		return analyzer.NewMySQLAnalyzer(db.sqlDB), nil
 	case "sqlite", "sqlite3":
 		return nil, fmt.Errorf("SQLite EXPLAIN support not yet implemented (coming in v0.5.0)")
 	default:
