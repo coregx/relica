@@ -70,6 +70,21 @@ const (
 
 	// SuggestionFullScan indicates a full table scan is being performed
 	SuggestionFullScan SuggestionType = "full_scan"
+
+	// SuggestionCompositeIndex indicates a composite index would improve multi-column filtering
+	SuggestionCompositeIndex SuggestionType = "composite_index"
+
+	// SuggestionCoveringIndex indicates a covering index would enable index-only scans
+	SuggestionCoveringIndex SuggestionType = "covering_index"
+
+	// SuggestionJoinOptimize indicates JOIN optimization opportunities
+	SuggestionJoinOptimize SuggestionType = "join_optimize"
+
+	// SuggestionFunctionIndex indicates a function-based index could help with function calls in WHERE
+	SuggestionFunctionIndex SuggestionType = "function_index"
+
+	// SuggestionQueryRewrite indicates query rewriting could improve performance
+	SuggestionQueryRewrite SuggestionType = "query_rewrite"
 )
 
 // Severity indicates the importance of an optimization suggestion.

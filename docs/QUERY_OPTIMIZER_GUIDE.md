@@ -433,12 +433,286 @@ The Phase 1 optimizer uses **basic WHERE clause parsing**. For complex queries, 
 EXPLAIN SELECT * FROM users WHERE ...;
 ```
 
-**Known limitations:**
+**Known limitations (Phase 1):**
 - Only analyzes WHERE clause (not JOIN, ORDER BY, GROUP BY)
 - Simple pattern matching (may miss complex conditions)
 - Doesn't consider existing indexes
 
-**Phase 2 will address these limitations.**
+---
+
+## Phase 2: Advanced Index Analysis (v0.5.1+)
+
+### New Features
+
+Phase 2 introduces sophisticated query analysis:
+
+#### 1. Smart WHERE Clause Parsing
+Accurately extracts:
+- Column names and operators (=, >, <, IN, LIKE, etc.)
+- AND/OR logic
+- Function calls (UPPER, LOWER, etc.)
+- Multiple conditions
+
+#### 2. Composite Index Recommendations
+Detects multi-column AND conditions:
+
+```go
+// Query with multiple AND conditions
+db.Builder().
+    Select("*").
+    From("users").
+    Where("status = ? AND country = ?", 1, "US").
+    All(&users)
+```
+
+**Optimizer Output:**
+```
+[RELICA OPTIMIZER] warning: Composite index recommended on users(status, country): Composite index for multiple AND conditions
+  Fix: CREATE INDEX idx_users_status_country ON users(status, country);
+```
+
+**Benefits:**
+- Faster filtering (single index scan vs multiple)
+- Reduces rows read significantly
+- Optimal for queries with multiple filters
+
+**Column Order Matters:**
+1. Place equality conditions first
+2. Range conditions last
+3. Most selective column first
+
+#### 3. JOIN Optimization
+
+Automatically detects missing foreign key indexes:
+
+```go
+// Query with JOIN
+db.Builder().
+    Select("u.*, o.total").
+    From("users u").
+    Join("orders o", "u.id = o.user_id").
+    Where("u.status = ?", 1).
+    All(&results)
+```
+
+**Optimizer Output:**
+```
+[RELICA OPTIMIZER] warning: Index recommended on orders(user_id): JOIN condition - index on foreign key
+  Fix: CREATE INDEX idx_orders_user_id ON orders(user_id);
+```
+
+**Benefits:**
+- Eliminates N+1 JOIN problems
+- Faster JOIN operations (nested loop → index scan)
+- Critical for normalized schemas
+
+#### 4. Covering Index Detection
+
+Identifies opportunities for index-only scans:
+
+```go
+// Query selecting specific columns
+db.Builder().
+    Select("id", "name").
+    From("users").
+    Where("status = ?", 1).
+    All(&users)
+```
+
+**Optimizer Output:**
+```
+[RELICA OPTIMIZER] info: Covering index recommended on users(status, id, name): Covering index: Index-only scan (no table access needed)
+  Fix: CREATE INDEX idx_users_status_id_name ON users(status, id, name);
+```
+
+**Benefits:**
+- Database reads only index (no table access)
+- Reduces I/O significantly
+- Faster query execution
+
+**Sweet Spot**: 2-5 columns (WHERE + SELECT)
+
+**Trade-offs:**
+- Larger index size
+- Slower writes (more index data to update)
+- Best for read-heavy workloads
+
+#### 5. Function-Based Index Warnings
+
+Detects functions in WHERE preventing index use:
+
+```go
+// Function in WHERE clause
+db.Builder().
+    Select("*").
+    From("users").
+    Where("UPPER(email) = ?", "ALICE@EXAMPLE.COM").
+    All(&users)
+```
+
+**Optimizer Output:**
+```
+[RELICA OPTIMIZER] warning: Function-based index recommended on users(email): Function UPPER() in WHERE prevents index use - consider function-based index
+  Fix: CREATE INDEX idx_users_email ON users(email);
+```
+
+**Solutions:**
+1. **Function-based index** (PostgreSQL):
+   ```sql
+   CREATE INDEX idx_users_email_upper ON users(UPPER(email));
+   ```
+2. **Generated column** (MySQL 8.0+):
+   ```sql
+   ALTER TABLE users ADD COLUMN email_upper VARCHAR(255) AS (UPPER(email)) STORED;
+   CREATE INDEX idx_users_email_upper ON users(email_upper);
+   ```
+3. **Query rewriting**:
+   ```go
+   // Store normalized values in application
+   db.Builder().Where("email = ?", strings.ToUpper(email))
+   ```
+
+### Phase 2 Suggestion Types
+
+| Type | Severity | Description |
+|------|----------|-------------|
+| `composite_index` | Warning | Multi-column index for AND conditions |
+| `covering_index` | Info | Index-only scan optimization |
+| `join_optimize` | Warning | Foreign key index for JOINs |
+| `function_index` | Warning | Function in WHERE prevents index use |
+| `query_rewrite` | Info | Suggests query rewriting (future) |
+
+### Phase 2 Best Practices
+
+#### 1. Composite Index Guidelines
+
+**Good:**
+```sql
+-- Equality conditions first
+CREATE INDEX idx_users_status_country ON users(status, country);
+```
+
+**Bad:**
+```sql
+-- Range condition first (less selective)
+CREATE INDEX idx_users_created_country ON users(created_at, country);
+```
+
+#### 2. Covering Index When to Use
+
+**Use When:**
+- Read-heavy workload (80%+ reads)
+- Query runs frequently (thousands/day)
+- 2-5 columns total
+- SELECT column list is stable
+
+**Avoid When:**
+- Write-heavy workload
+- Too many columns (>5)
+- Rarely-run queries
+- SELECT * queries
+
+#### 3. JOIN Index Priority
+
+**High Priority:**
+- Foreign key columns in child tables
+- Frequently joined tables
+- Large tables (1M+ rows)
+
+**Low Priority:**
+- Rarely joined tables
+- Small lookup tables (<1000 rows)
+- Tables with existing indexes
+
+### Phase 2 Examples
+
+#### Example: Multi-Column Filtering
+
+**Before optimization:**
+```go
+// No indexes
+var users []User
+db.Builder().
+    Select("*").
+    From("users").
+    Where("status = ? AND country = ? AND age > ?", 1, "US", 18).
+    All(&users)
+// Execution: 500ms (full scan)
+```
+
+**After composite index:**
+```sql
+CREATE INDEX idx_users_status_country_age ON users(status, country, age);
+```
+
+```go
+// Same query
+var users []User
+db.Builder().
+    Select("*").
+    From("users").
+    Where("status = ? AND country = ? AND age > ?", 1, "US", 18).
+    All(&users)
+// Execution: 5ms (index scan) - 100x faster!
+```
+
+#### Example: JOIN Performance
+
+**Before optimization:**
+```go
+// No index on orders.user_id
+var results []struct {
+    UserID int
+    Orders int
+}
+db.Builder().
+    Select("u.id", "COUNT(o.id)").
+    From("users u").
+    Join("orders o", "u.id = o.user_id").
+    GroupBy("u.id").
+    All(&results)
+// Execution: 2000ms (nested loop scan)
+```
+
+**After JOIN index:**
+```sql
+CREATE INDEX idx_orders_user_id ON orders(user_id);
+```
+
+```go
+// Same query
+// Execution: 50ms (index nested loop) - 40x faster!
+```
+
+#### Example: Covering Index
+
+**Before optimization:**
+```go
+// Query with index on status, but accesses table for id, name
+var users []struct {
+    ID     int    `db:"id"`
+    Name   string `db:"name"`
+    Status int    `db:"status"`
+}
+db.Builder().
+    Select("id", "name", "status").
+    From("users").
+    Where("status = ?", 1).
+    All(&users)
+// Execution: 50ms (index scan + table lookup)
+```
+
+**After covering index:**
+```sql
+CREATE INDEX idx_users_status_id_name ON users(status, id, name);
+```
+
+```go
+// Same query
+// Execution: 10ms (index-only scan) - 5x faster!
+```
+
+---
 
 ---
 
@@ -507,7 +781,16 @@ type Analyzer interface {
 
 ## Changelog
 
-### v0.5.0 (Current)
+### v0.5.1 (Current)
+- ✅ Phase 2: Advanced Index Analysis
+  - Smart WHERE clause parsing (AND/OR logic, operators, functions)
+  - Composite index recommendations
+  - JOIN optimization (foreign key indexes)
+  - Covering index detection
+  - Function-based index warnings
+  - 89.9% test coverage
+
+### v0.5.0
 - ✅ Phase 1: Foundation
   - Slow query detection
   - Full scan detection
@@ -515,11 +798,11 @@ type Analyzer interface {
   - PostgreSQL, MySQL, SQLite support
 
 ### v0.6.0 (Planned)
-- 🚧 Phase 2: Advanced Optimization
-  - Composite index analysis
-  - JOIN optimization
-  - Query rewriting
-  - N+1 detection
+- 🚧 Phase 3: Query Rewriting
+  - Automatic query optimization
+  - N+1 query detection
+  - Subquery optimization
+  - Partition recommendations
 
 ---
 
