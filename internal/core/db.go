@@ -5,10 +5,18 @@ package core
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	"github.com/coregx/relica/internal/cache"
 	"github.com/coregx/relica/internal/dialects"
 )
+
+// Optimizer interface for query optimization analysis.
+// Forward declaration to avoid import cycle.
+type Optimizer interface {
+	Analyze(ctx context.Context, query string, args []interface{}, executionTime time.Duration) (interface{}, error)
+	Suggest(analysis interface{}) []interface{}
+}
 
 // DB represents the main database connection with caching and tracing.
 type DB struct {
@@ -17,6 +25,7 @@ type DB struct {
 	stmtCache  *cache.StmtCache
 	dialect    dialects.Dialect
 	tracer     Tracer
+	optimizer  Optimizer // Query optimizer (nil = disabled)
 	params     []string
 	ctx        context.Context
 }
@@ -57,6 +66,14 @@ func WithMaxIdleConns(n int) Option {
 func WithStmtCacheCapacity(capacity int) Option {
 	return func(db *DB) {
 		db.stmtCache = cache.NewStmtCacheWithCapacity(capacity)
+	}
+}
+
+// WithOptimizer enables query optimization analysis with the given optimizer.
+// The optimizer will analyze query execution plans and provide suggestions for improvements.
+func WithOptimizer(optimizer Optimizer) Option {
+	return func(db *DB) {
+		db.optimizer = optimizer
 	}
 }
 
