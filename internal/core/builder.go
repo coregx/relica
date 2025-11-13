@@ -7,8 +7,27 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/coregx/relica/internal/analyzer"
 	"github.com/coregx/relica/internal/dialects"
 )
+
+// QueryPlan represents a unified query execution plan from database EXPLAIN.
+// Type alias from internal/analyzer package.
+type QueryPlan = analyzer.QueryPlan
+
+// newAnalyzerForDB creates a database-specific analyzer.
+func newAnalyzerForDB(db *DB) (analyzer.Analyzer, error) {
+	switch db.driverName {
+	case "postgres", "postgresql":
+		return analyzer.NewPostgresAnalyzer(db.sqlDB), nil
+	case "mysql":
+		return nil, fmt.Errorf("MySQL EXPLAIN support not yet implemented (coming in v0.5.0)")
+	case "sqlite", "sqlite3":
+		return nil, fmt.Errorf("SQLite EXPLAIN support not yet implemented (coming in v0.5.0)")
+	default:
+		return nil, fmt.Errorf("EXPLAIN not supported for driver: %s", db.driverName)
+	}
+}
 
 // QueryBuilder constructs type-safe queries.
 // When tx is not nil, all queries execute within that transaction.
@@ -983,6 +1002,76 @@ func (sq *SelectQuery) One(dest interface{}) error {
 // All scans all rows into dest slice.
 func (sq *SelectQuery) All(dest interface{}) error {
 	return sq.Build().All(dest)
+}
+
+// Explain analyzes the query execution plan without executing the query.
+// Returns QueryPlan with estimated metrics (cost, rows, index usage).
+// Currently only supported for PostgreSQL databases.
+//
+// Example:
+//
+//	plan, err := db.Builder().
+//	    Select("*").
+//	    From("users").
+//	    Where("email = ?", "alice@example.com").
+//	    Explain()
+//	if err != nil {
+//	    return err
+//	}
+//	fmt.Printf("Cost: %.2f, Rows: %d, Uses Index: %v\n",
+//	    plan.Cost, plan.EstimatedRows, plan.UsesIndex)
+func (sq *SelectQuery) Explain() (*QueryPlan, error) {
+	return sq.explainQuery(false)
+}
+
+// ExplainAnalyze analyzes the query execution plan AND executes the query.
+// Returns QueryPlan with both estimated and actual metrics.
+// Currently only supported for PostgreSQL databases.
+//
+// WARNING: This method ACTUALLY EXECUTES the query, including any side effects
+// (INSERT, UPDATE, DELETE in CTEs, triggers, etc.). Use with caution.
+//
+// Example:
+//
+//	plan, err := db.Builder().
+//	    Select("*").
+//	    From("users").
+//	    Where("status = ?", 1).
+//	    ExplainAnalyze()
+//	if err != nil {
+//	    return err
+//	}
+//	fmt.Printf("Actual Time: %v, Actual Rows: %d, Buffers Hit: %d\n",
+//	    plan.ActualTime, plan.ActualRows, plan.BuffersHit)
+func (sq *SelectQuery) ExplainAnalyze() (*QueryPlan, error) {
+	return sq.explainQuery(true)
+}
+
+// explainQuery implements query analysis using database EXPLAIN functionality.
+func (sq *SelectQuery) explainQuery(withAnalyze bool) (*QueryPlan, error) {
+	// Build the SELECT query
+	sqlQuery, params := sq.buildSQL(sq.builder.db.dialect)
+
+	// Context priority: query ctx > builder ctx > background
+	ctx := sq.ctx
+	if ctx == nil {
+		ctx = sq.builder.ctx
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	// Create analyzer based on database driver
+	queryAnalyzer, err := newAnalyzerForDB(sq.builder.db)
+	if err != nil {
+		return nil, err
+	}
+
+	// Execute EXPLAIN
+	if withAnalyze {
+		return queryAnalyzer.ExplainAnalyze(ctx, sqlQuery, params)
+	}
+	return queryAnalyzer.Explain(ctx, sqlQuery, params)
 }
 
 // selectQueryExpression is an adapter that allows SelectQuery to implement the Expression interface.
