@@ -22,17 +22,18 @@ type Optimizer interface {
 
 // DB represents the main database connection with caching and tracing.
 type DB struct {
-	sqlDB      *sql.DB
-	driverName string
-	stmtCache  *cache.StmtCache
-	dialect    dialects.Dialect
-	oldTracer  Tracer             // Deprecated: kept for backward compatibility
-	logger     logger.Logger      // Structured logger for query logging
-	tracer     tracer.Tracer      // Distributed tracer for observability
-	sanitizer  *logger.Sanitizer  // Sanitizes sensitive data in logs
-	optimizer  Optimizer          // Query optimizer (nil = disabled)
-	params     []string
-	ctx        context.Context
+	sqlDB         *sql.DB
+	driverName    string
+	stmtCache     *cache.StmtCache
+	dialect       dialects.Dialect
+	oldTracer     Tracer             // Deprecated: kept for backward compatibility
+	logger        logger.Logger      // Structured logger for query logging
+	tracer        tracer.Tracer      // Distributed tracer for observability
+	sanitizer     *logger.Sanitizer  // Sanitizes sensitive data in logs
+	optimizer     Optimizer          // Query optimizer (nil = disabled)
+	healthChecker *healthChecker     // Health checker for connection monitoring (nil = disabled)
+	params        []string
+	ctx           context.Context
 }
 
 // Tx represents a database transaction.
@@ -64,6 +65,36 @@ func WithMaxOpenConns(n int) Option {
 func WithMaxIdleConns(n int) Option {
 	return func(db *DB) {
 		db.sqlDB.SetMaxIdleConns(n)
+	}
+}
+
+// WithConnMaxLifetime sets the maximum amount of time a connection may be reused.
+// Expired connections may be closed lazily before reuse.
+// If duration <= 0, connections are not closed due to a connection's age.
+func WithConnMaxLifetime(d time.Duration) Option {
+	return func(db *DB) {
+		db.sqlDB.SetConnMaxLifetime(d)
+	}
+}
+
+// WithConnMaxIdleTime sets the maximum amount of time a connection may be idle.
+// Expired connections may be closed lazily before reuse.
+// If duration <= 0, connections are not closed due to a connection's idle time.
+func WithConnMaxIdleTime(d time.Duration) Option {
+	return func(db *DB) {
+		db.sqlDB.SetConnMaxIdleTime(d)
+	}
+}
+
+// WithHealthCheck enables periodic health checks on database connections.
+// The health checker pings the database at the specified interval to detect dead connections.
+// If interval <= 0, health checks are disabled.
+func WithHealthCheck(interval time.Duration) Option {
+	return func(db *DB) {
+		if interval > 0 {
+			db.healthChecker = newHealthChecker(db.sqlDB, db.logger, interval)
+			db.healthChecker.start()
+		}
 	}
 }
 
@@ -173,6 +204,11 @@ func WrapDB(sqlDB *sql.DB, driverName string) *DB {
 
 // Close releases all database resources.
 func (db *DB) Close() error {
+	// Stop health checker if running
+	if db.healthChecker != nil {
+		db.healthChecker.shutdown()
+	}
+
 	db.stmtCache.Clear()
 	return db.sqlDB.Close()
 }
@@ -243,6 +279,112 @@ func (tx *Tx) Commit() error {
 // Rollback rolls back the transaction.
 func (tx *Tx) Rollback() error {
 	return tx.tx.Rollback()
+}
+
+// PoolStats represents database connection pool statistics.
+type PoolStats struct {
+	// MaxOpenConnections is the maximum number of open connections to the database.
+	MaxOpenConnections int
+
+	// OpenConnections is the number of established connections both in use and idle.
+	OpenConnections int
+
+	// InUse is the number of connections currently in use.
+	InUse int
+
+	// Idle is the number of idle connections.
+	Idle int
+
+	// WaitCount is the total number of connections waited for.
+	WaitCount int64
+
+	// WaitDuration is the total time blocked waiting for a new connection.
+	WaitDuration time.Duration
+
+	// MaxIdleClosed is the total number of connections closed due to SetMaxIdleConns.
+	MaxIdleClosed int64
+
+	// MaxIdleTimeClosed is the total number of connections closed due to SetConnMaxIdleTime.
+	MaxIdleTimeClosed int64
+
+	// MaxLifetimeClosed is the total number of connections closed due to SetConnMaxLifetime.
+	MaxLifetimeClosed int64
+
+	// Healthy indicates whether the last health check was successful.
+	// Always true if health checks are disabled.
+	Healthy bool
+
+	// LastHealthCheck is the time of the most recent health check.
+	// Zero if health checks are disabled.
+	LastHealthCheck time.Time
+}
+
+// Stats returns database connection pool statistics.
+func (db *DB) Stats() PoolStats {
+	stats := db.sqlDB.Stats()
+
+	poolStats := PoolStats{
+		MaxOpenConnections: stats.MaxOpenConnections,
+		OpenConnections:    stats.OpenConnections,
+		InUse:              stats.InUse,
+		Idle:               stats.Idle,
+		WaitCount:          stats.WaitCount,
+		WaitDuration:       stats.WaitDuration,
+		MaxIdleClosed:      stats.MaxIdleClosed,
+		MaxIdleTimeClosed:  stats.MaxIdleTimeClosed,
+		MaxLifetimeClosed:  stats.MaxLifetimeClosed,
+		Healthy:            true,
+	}
+
+	if db.healthChecker != nil {
+		poolStats.Healthy = db.healthChecker.isHealthy()
+		poolStats.LastHealthCheck = db.healthChecker.lastCheck()
+	}
+
+	return poolStats
+}
+
+// IsHealthy returns true if the database connection is healthy.
+// Always returns true if health checks are disabled.
+func (db *DB) IsHealthy() bool {
+	if db.healthChecker == nil {
+		return true
+	}
+	return db.healthChecker.isHealthy()
+}
+
+// WarmCache pre-warms the statement cache by preparing frequently-used queries.
+// This improves performance at startup by avoiding cache misses for common queries.
+// The queries are prepared synchronously in the order provided.
+// Returns the number of successfully prepared queries and any error encountered.
+func (db *DB) WarmCache(queries []string) (int, error) {
+	// Use background context since this is typically called at startup
+	ctx := context.Background()
+
+	warmed := 0
+	for _, query := range queries {
+		stmt, err := db.sqlDB.PrepareContext(ctx, query)
+		if err != nil {
+			return warmed, err
+		}
+		db.stmtCache.Set(query, stmt)
+		warmed++
+	}
+
+	return warmed, nil
+}
+
+// PinQuery marks a query as pinned in the statement cache, preventing eviction.
+// Pinned queries remain in cache indefinitely, useful for frequently-used queries.
+// Returns false if the query is not in cache (call WarmCache first).
+func (db *DB) PinQuery(query string) bool {
+	return db.stmtCache.Pin(query)
+}
+
+// UnpinQuery removes the pin from a cached query, allowing normal LRU eviction.
+// Returns false if the query is not in cache or not pinned.
+func (db *DB) UnpinQuery(query string) bool {
+	return db.stmtCache.Unpin(query)
 }
 
 // ExecContext executes a raw SQL query (INSERT/UPDATE/DELETE).

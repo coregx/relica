@@ -173,6 +173,10 @@ type Query struct {
 //	tx, err := db.BeginTx(ctx, opts)
 type TxOptions = core.TxOptions
 
+// PoolStats represents database connection pool statistics.
+// It provides insights into connection pool health and usage patterns.
+type PoolStats = core.PoolStats
+
 // Option is a functional option for configuring DB.
 //
 // Example:
@@ -318,6 +322,87 @@ func (d *DB) Close() error {
 //	db.Builder().Select("*").From("users").All(&users)
 func (d *DB) WithContext(ctx context.Context) *DB {
 	return &DB{db: d.db.WithContext(ctx)}
+}
+
+// Stats returns database connection pool statistics.
+//
+// Stats provides insights into connection pool usage including:
+//   - Number of open/idle/in-use connections
+//   - Wait count and duration
+//   - Connections closed due to max lifetime/idle time
+//   - Health check status (if enabled)
+//
+// Example:
+//
+//	stats := db.Stats()
+//	fmt.Printf("Open: %d, Idle: %d, InUse: %d\n",
+//	    stats.OpenConnections, stats.Idle, stats.InUse)
+//	if !stats.Healthy {
+//	    log.Warn("Database health check failed")
+//	}
+func (d *DB) Stats() PoolStats {
+	return PoolStats(d.db.Stats())
+}
+
+// IsHealthy returns true if the database connection is healthy.
+// Always returns true if health checks are disabled.
+//
+// This is a convenience method that calls Stats() internally.
+//
+// Example:
+//
+//	if !db.IsHealthy() {
+//	    log.Error("Database connection unhealthy")
+//	    // Attempt reconnection or alert
+//	}
+func (d *DB) IsHealthy() bool {
+	return d.db.IsHealthy()
+}
+
+// WarmCache pre-warms the statement cache by preparing frequently-used queries.
+//
+// This improves performance at startup by avoiding cache misses for common queries.
+// The queries are prepared synchronously in the order provided.
+// Returns the number of successfully prepared queries and any error encountered.
+//
+// Example:
+//
+//	n, err := db.WarmCache([]string{
+//	    "SELECT * FROM users WHERE id = ?",
+//	    "INSERT INTO logs (message, level) VALUES (?, ?)",
+//	    "UPDATE users SET last_login = ? WHERE id = ?",
+//	})
+//	if err != nil {
+//	    log.Warn("Failed to warm cache", "error", err, "warmed", n)
+//	}
+func (d *DB) WarmCache(queries []string) (int, error) {
+	return d.db.WarmCache(queries)
+}
+
+// PinQuery marks a query as pinned in the statement cache, preventing eviction.
+//
+// Pinned queries remain in cache indefinitely, useful for frequently-used queries.
+// Returns false if the query is not in cache (call WarmCache first).
+//
+// Example:
+//
+//	// Warm and pin critical queries
+//	queries := []string{"SELECT * FROM users WHERE id = ?"}
+//	db.WarmCache(queries)
+//	db.PinQuery(queries[0])  // Will never be evicted
+func (d *DB) PinQuery(query string) bool {
+	return d.db.PinQuery(query)
+}
+
+// UnpinQuery removes the pin from a cached query, allowing normal LRU eviction.
+//
+// Returns false if the query is not in cache or not pinned.
+//
+// Example:
+//
+//	db.UnpinQuery("SELECT * FROM users WHERE id = ?")
+func (d *DB) UnpinQuery(query string) bool {
+	return d.db.UnpinQuery(query)
 }
 
 // Builder returns a new QueryBuilder for constructing queries.
@@ -1423,6 +1508,36 @@ var WithMaxOpenConns = core.WithMaxOpenConns
 
 // WithMaxIdleConns sets the maximum number of idle connections.
 var WithMaxIdleConns = core.WithMaxIdleConns
+
+// WithConnMaxLifetime sets the maximum amount of time a connection may be reused.
+// Expired connections may be closed lazily before reuse.
+// If duration <= 0, connections are not closed due to a connection's age.
+//
+// Example:
+//
+//	db, err := relica.Open("postgres", dsn,
+//	    relica.WithConnMaxLifetime(5*time.Minute))
+var WithConnMaxLifetime = core.WithConnMaxLifetime
+
+// WithConnMaxIdleTime sets the maximum amount of time a connection may be idle.
+// Expired connections may be closed lazily before reuse.
+// If duration <= 0, connections are not closed due to a connection's idle time.
+//
+// Example:
+//
+//	db, err := relica.Open("postgres", dsn,
+//	    relica.WithConnMaxIdleTime(1*time.Minute))
+var WithConnMaxIdleTime = core.WithConnMaxIdleTime
+
+// WithHealthCheck enables periodic health checks on database connections.
+// The health checker pings the database at the specified interval to detect dead connections.
+// If interval <= 0, health checks are disabled.
+//
+// Example:
+//
+//	db, err := relica.Open("postgres", dsn,
+//	    relica.WithHealthCheck(30*time.Second))
+var WithHealthCheck = core.WithHealthCheck
 
 // WithStmtCacheCapacity sets the prepared statement cache capacity.
 var WithStmtCacheCapacity = core.WithStmtCacheCapacity
