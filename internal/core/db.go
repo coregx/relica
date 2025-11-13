@@ -10,6 +10,7 @@ import (
 	"github.com/coregx/relica/internal/cache"
 	"github.com/coregx/relica/internal/dialects"
 	"github.com/coregx/relica/internal/logger"
+	"github.com/coregx/relica/internal/security"
 	"github.com/coregx/relica/internal/tracer"
 )
 
@@ -32,6 +33,7 @@ type DB struct {
 	sanitizer     *logger.Sanitizer  // Sanitizes sensitive data in logs
 	optimizer     Optimizer          // Query optimizer (nil = disabled)
 	healthChecker *healthChecker     // Health checker for connection monitoring (nil = disabled)
+	validator     *security.Validator // SQL injection validator (nil = disabled)
 	params        []string
 	ctx           context.Context
 }
@@ -110,6 +112,15 @@ func WithStmtCacheCapacity(capacity int) Option {
 func WithOptimizer(optimizer Optimizer) Option {
 	return func(db *DB) {
 		db.optimizer = optimizer
+	}
+}
+
+// WithValidator enables SQL injection prevention with the given validator.
+// If not set, no SQL validation is performed (queries execute as-is).
+// Use security.NewValidator() for default validation or security.NewValidator(security.WithStrict(true)) for strict mode.
+func WithValidator(validator *security.Validator) Option {
+	return func(db *DB) {
+		db.validator = validator
 	}
 }
 
@@ -388,16 +399,42 @@ func (db *DB) UnpinQuery(query string) bool {
 }
 
 // ExecContext executes a raw SQL query (INSERT/UPDATE/DELETE).
+// If a validator is configured, the query and parameters are validated before execution.
 func (db *DB) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+	// Validate query and parameters if validator is enabled
+	if db.validator != nil {
+		if err := db.validator.ValidateQuery(query); err != nil {
+			return nil, err
+		}
+		if err := db.validator.ValidateParams(args); err != nil {
+			return nil, err
+		}
+	}
+
 	return db.sqlDB.ExecContext(ctx, query, args...)
 }
 
 // QueryContext executes a raw SQL query and returns rows.
+// If a validator is configured, the query and parameters are validated before execution.
 func (db *DB) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+	// Validate query and parameters if validator is enabled
+	if db.validator != nil {
+		if err := db.validator.ValidateQuery(query); err != nil {
+			return nil, err
+		}
+		if err := db.validator.ValidateParams(args); err != nil {
+			return nil, err
+		}
+	}
+
 	return db.sqlDB.QueryContext(ctx, query, args...)
 }
 
 // QueryRowContext executes a raw SQL query expected to return at most one row.
+// Note: Due to database/sql API constraints, QueryRowContext does NOT support validation.
+// Use QueryContext() instead if you need validation, or ensure the query is safe before calling this method.
 func (db *DB) QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row {
+	// Note: We cannot validate here because QueryRowContext cannot return errors.
+	// Validation must be done at a higher level (QueryBuilder) or users should use QueryContext.
 	return db.sqlDB.QueryRowContext(ctx, query, args...)
 }
