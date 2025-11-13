@@ -52,6 +52,12 @@ protoc-*.tar.gz
 # Development docs (kanban, reports, internal notes)
 docs/dev/
 
+# Private documentation (internal research, analysis, planning)
+docs/INDEX.md
+docs/COMPETITIVE_ANALYSIS.md
+docs/PERFORMANCE_BASELINE.md
+docs/architecture/
+
 # Temporary files
 *.tmp
 *.swp
