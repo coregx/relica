@@ -110,7 +110,14 @@ func (q *Query) One(dest interface{}) error {
 		return err
 	}
 
-	q.db.tracer.Record(ctx, time.Since(start), nil)
+	elapsed := time.Since(start)
+	q.db.tracer.Record(ctx, elapsed, nil)
+
+	// Analyze query performance if optimizer is enabled (async to not block)
+	if q.db.optimizer != nil {
+		go q.analyzeQuery(ctx, elapsed)
+	}
+
 	return nil
 }
 
@@ -149,6 +156,13 @@ func (q *Query) All(dest interface{}) error {
 		return err
 	}
 
-	q.db.tracer.Record(ctx, time.Since(start), nil)
+	elapsed := time.Since(start)
+	q.db.tracer.Record(ctx, elapsed, nil)
+
+	// Analyze query performance if optimizer is enabled (async to not block)
+	if q.db.optimizer != nil {
+		go q.analyzeQuery(ctx, elapsed)
+	}
+
 	return nil
 }
