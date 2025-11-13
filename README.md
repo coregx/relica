@@ -887,6 +887,22 @@ _, err = db.ExecContext(ctx, "UPDATE users SET status = ? WHERE id = ?", 2, 123)
 
 ## 📖 Documentation
 
+### Migration Guides (v0.5.0-beta+)
+
+Switching from another library? We've got you covered:
+
+- **[Migration from GORM](docs/guides/MIGRATION_FROM_GORM.md)** - Complete guide for GORM users
+  - ORM vs Query Builder philosophy
+  - Side-by-side API comparisons
+  - Association handling (Preload → JOIN)
+  - Gradual migration strategies
+
+- **[Migration from sqlx](docs/guides/MIGRATION_FROM_SQLX.md)** - Complete guide for sqlx users
+  - Drop-in replacement patterns
+  - Query builder advantages
+  - Statement caching benefits
+  - Using both together
+
 ### User Guides (v0.3.0+)
 
 - **[Subquery Guide](docs/SUBQUERY_GUIDE.md)** - IN, EXISTS, FROM, scalar subqueries with performance tips
