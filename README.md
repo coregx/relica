@@ -926,6 +926,7 @@ Switching from another library? We've got you covered:
 
 ### Additional Resources
 
+- **[Performance Comparison](docs/PERFORMANCE_COMPARISON.md)** - Benchmarks vs GORM, sqlx, sqlc, database/sql
 - [Transaction Guide](docs/reports/TRANSACTION_IMPLEMENTATION_REPORT.md)
 - [UPSERT Examples](docs/reports/UPSERT_EXAMPLES.md)
 - [Batch Operations](docs/reports/BATCH_OPERATIONS.md)
