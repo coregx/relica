@@ -5,20 +5,39 @@ package core
 import (
 	"context"
 	"database/sql"
+	"strings"
+	"time"
 
 	"github.com/coregx/relica/internal/cache"
 	"github.com/coregx/relica/internal/dialects"
+	"github.com/coregx/relica/internal/logger"
+	"github.com/coregx/relica/internal/security"
+	"github.com/coregx/relica/internal/tracer"
 )
+
+// Optimizer interface for query optimization analysis.
+// Forward declaration to avoid import cycle.
+type Optimizer interface {
+	Analyze(ctx context.Context, query string, args []interface{}, executionTime time.Duration) (interface{}, error)
+	Suggest(analysis interface{}) []interface{}
+}
 
 // DB represents the main database connection with caching and tracing.
 type DB struct {
-	sqlDB      *sql.DB
-	driverName string
-	stmtCache  *cache.StmtCache
-	dialect    dialects.Dialect
-	tracer     Tracer
-	params     []string
-	ctx        context.Context
+	sqlDB         *sql.DB
+	driverName    string
+	stmtCache     *cache.StmtCache
+	dialect       dialects.Dialect
+	oldTracer     Tracer              // Deprecated: kept for backward compatibility
+	logger        logger.Logger       // Structured logger for query logging
+	tracer        tracer.Tracer       // Distributed tracer for observability
+	sanitizer     *logger.Sanitizer   // Sanitizes sensitive data in logs
+	optimizer     Optimizer           // Query optimizer (nil = disabled)
+	healthChecker *healthChecker      // Health checker for connection monitoring (nil = disabled)
+	validator     *security.Validator // SQL injection validator (nil = disabled)
+	auditor       *security.Auditor   // Audit logger for security compliance (nil = disabled)
+	params        []string
+	ctx           context.Context
 }
 
 // Tx represents a database transaction.
@@ -53,10 +72,91 @@ func WithMaxIdleConns(n int) Option {
 	}
 }
 
+// WithConnMaxLifetime sets the maximum amount of time a connection may be reused.
+// Expired connections may be closed lazily before reuse.
+// If duration <= 0, connections are not closed due to a connection's age.
+func WithConnMaxLifetime(d time.Duration) Option {
+	return func(db *DB) {
+		db.sqlDB.SetConnMaxLifetime(d)
+	}
+}
+
+// WithConnMaxIdleTime sets the maximum amount of time a connection may be idle.
+// Expired connections may be closed lazily before reuse.
+// If duration <= 0, connections are not closed due to a connection's idle time.
+func WithConnMaxIdleTime(d time.Duration) Option {
+	return func(db *DB) {
+		db.sqlDB.SetConnMaxIdleTime(d)
+	}
+}
+
+// WithHealthCheck enables periodic health checks on database connections.
+// The health checker pings the database at the specified interval to detect dead connections.
+// If interval <= 0, health checks are disabled.
+func WithHealthCheck(interval time.Duration) Option {
+	return func(db *DB) {
+		if interval > 0 {
+			db.healthChecker = newHealthChecker(db.sqlDB, db.logger, interval)
+			db.healthChecker.start()
+		}
+	}
+}
+
 // WithStmtCacheCapacity sets the prepared statement cache capacity.
 func WithStmtCacheCapacity(capacity int) Option {
 	return func(db *DB) {
 		db.stmtCache = cache.NewStmtCacheWithCapacity(capacity)
+	}
+}
+
+// WithOptimizer enables query optimization analysis with the given optimizer.
+// The optimizer will analyze query execution plans and provide suggestions for improvements.
+func WithOptimizer(optimizer Optimizer) Option {
+	return func(db *DB) {
+		db.optimizer = optimizer
+	}
+}
+
+// WithValidator enables SQL injection prevention with the given validator.
+// If not set, no SQL validation is performed (queries execute as-is).
+// Use security.NewValidator() for default validation or security.NewValidator(security.WithStrict(true)) for strict mode.
+func WithValidator(validator *security.Validator) Option {
+	return func(db *DB) {
+		db.validator = validator
+	}
+}
+
+// WithAuditLog enables audit logging with the given auditor.
+// If not set, no audit logging is performed.
+// Use security.NewAuditor(logger, security.AuditWrites) for write-only auditing,
+// or security.NewAuditor(logger, security.AuditAll) for complete audit trail.
+func WithAuditLog(auditor *security.Auditor) Option {
+	return func(db *DB) {
+		db.auditor = auditor
+	}
+}
+
+// WithLogger sets the logger for the database.
+// If not set, a NoopLogger is used (zero overhead when logging is disabled).
+func WithLogger(l logger.Logger) Option {
+	return func(db *DB) {
+		db.logger = l
+	}
+}
+
+// WithTracer sets the distributed tracer for the database.
+// If not set, a NoopTracer is used (zero overhead when tracing is disabled).
+func WithTracer(t tracer.Tracer) Option {
+	return func(db *DB) {
+		db.tracer = t
+	}
+}
+
+// WithSensitiveFields sets the list of sensitive field names for parameter masking.
+// If not set, default sensitive field patterns are used (password, token, api_key, etc.).
+func WithSensitiveFields(fields []string) Option {
+	return func(db *DB) {
+		db.sanitizer = logger.NewSanitizer(fields)
 	}
 }
 
@@ -73,7 +173,10 @@ func NewDB(driverName, dsn string) (*DB, error) {
 		driverName: driverName,
 		stmtCache:  cache.NewStmtCache(),
 		dialect:    dialect,
-		tracer:     NewNoOpTracer(),
+		oldTracer:  NewNoOpTracer(),
+		logger:     &logger.NoopLogger{},
+		tracer:     &tracer.NoopTracer{},
+		sanitizer:  logger.NewSanitizer(nil),
 	}, nil
 }
 
@@ -115,12 +218,20 @@ func WrapDB(sqlDB *sql.DB, driverName string) *DB {
 		driverName: driverName,
 		stmtCache:  cache.NewStmtCache(),
 		dialect:    dialect,
-		tracer:     NewNoOpTracer(),
+		oldTracer:  NewNoOpTracer(),
+		logger:     &logger.NoopLogger{},
+		tracer:     &tracer.NoopTracer{},
+		sanitizer:  logger.NewSanitizer(nil),
 	}
 }
 
 // Close releases all database resources.
 func (db *DB) Close() error {
+	// Stop health checker if running
+	if db.healthChecker != nil {
+		db.healthChecker.shutdown()
+	}
+
 	db.stmtCache.Clear()
 	return db.sqlDB.Close()
 }
@@ -193,17 +304,229 @@ func (tx *Tx) Rollback() error {
 	return tx.tx.Rollback()
 }
 
+// PoolStats represents database connection pool statistics.
+type PoolStats struct {
+	// MaxOpenConnections is the maximum number of open connections to the database.
+	MaxOpenConnections int
+
+	// OpenConnections is the number of established connections both in use and idle.
+	OpenConnections int
+
+	// InUse is the number of connections currently in use.
+	InUse int
+
+	// Idle is the number of idle connections.
+	Idle int
+
+	// WaitCount is the total number of connections waited for.
+	WaitCount int64
+
+	// WaitDuration is the total time blocked waiting for a new connection.
+	WaitDuration time.Duration
+
+	// MaxIdleClosed is the total number of connections closed due to SetMaxIdleConns.
+	MaxIdleClosed int64
+
+	// MaxIdleTimeClosed is the total number of connections closed due to SetConnMaxIdleTime.
+	MaxIdleTimeClosed int64
+
+	// MaxLifetimeClosed is the total number of connections closed due to SetConnMaxLifetime.
+	MaxLifetimeClosed int64
+
+	// Healthy indicates whether the last health check was successful.
+	// Always true if health checks are disabled.
+	Healthy bool
+
+	// LastHealthCheck is the time of the most recent health check.
+	// Zero if health checks are disabled.
+	LastHealthCheck time.Time
+}
+
+// Stats returns database connection pool statistics.
+func (db *DB) Stats() PoolStats {
+	stats := db.sqlDB.Stats()
+
+	poolStats := PoolStats{
+		MaxOpenConnections: stats.MaxOpenConnections,
+		OpenConnections:    stats.OpenConnections,
+		InUse:              stats.InUse,
+		Idle:               stats.Idle,
+		WaitCount:          stats.WaitCount,
+		WaitDuration:       stats.WaitDuration,
+		MaxIdleClosed:      stats.MaxIdleClosed,
+		MaxIdleTimeClosed:  stats.MaxIdleTimeClosed,
+		MaxLifetimeClosed:  stats.MaxLifetimeClosed,
+		Healthy:            true,
+	}
+
+	if db.healthChecker != nil {
+		poolStats.Healthy = db.healthChecker.isHealthy()
+		poolStats.LastHealthCheck = db.healthChecker.lastCheck()
+	}
+
+	return poolStats
+}
+
+// IsHealthy returns true if the database connection is healthy.
+// Always returns true if health checks are disabled.
+func (db *DB) IsHealthy() bool {
+	if db.healthChecker == nil {
+		return true
+	}
+	return db.healthChecker.isHealthy()
+}
+
+// WarmCache pre-warms the statement cache by preparing frequently-used queries.
+// This improves performance at startup by avoiding cache misses for common queries.
+// The queries are prepared synchronously in the order provided.
+// Returns the number of successfully prepared queries and any error encountered.
+func (db *DB) WarmCache(queries []string) (int, error) {
+	// Use background context since this is typically called at startup
+	ctx := context.Background()
+
+	warmed := 0
+	for _, query := range queries {
+		stmt, err := db.sqlDB.PrepareContext(ctx, query)
+		if err != nil {
+			return warmed, err
+		}
+		db.stmtCache.Set(query, stmt)
+		warmed++
+	}
+
+	return warmed, nil
+}
+
+// PinQuery marks a query as pinned in the statement cache, preventing eviction.
+// Pinned queries remain in cache indefinitely, useful for frequently-used queries.
+// Returns false if the query is not in cache (call WarmCache first).
+func (db *DB) PinQuery(query string) bool {
+	return db.stmtCache.Pin(query)
+}
+
+// UnpinQuery removes the pin from a cached query, allowing normal LRU eviction.
+// Returns false if the query is not in cache or not pinned.
+func (db *DB) UnpinQuery(query string) bool {
+	return db.stmtCache.Unpin(query)
+}
+
+// validateQueryAndParams validates query and parameters if validator is enabled.
+// Logs security events if auditor is enabled.
+// Returns error if validation fails.
+func (db *DB) validateQueryAndParams(ctx context.Context, query string, args []interface{}) error {
+	if db.validator == nil {
+		return nil
+	}
+
+	if err := db.validator.ValidateQuery(query); err != nil {
+		if db.auditor != nil {
+			db.auditor.LogSecurityEvent(ctx, "query_blocked", query, err)
+		}
+		return err
+	}
+
+	if err := db.validator.ValidateParams(args); err != nil {
+		if db.auditor != nil {
+			db.auditor.LogSecurityEvent(ctx, "params_blocked", query, err)
+		}
+		return err
+	}
+
+	return nil
+}
+
 // ExecContext executes a raw SQL query (INSERT/UPDATE/DELETE).
+// If a validator is configured, the query and parameters are validated before execution.
+// If an auditor is configured, the operation is logged to the audit trail.
 func (db *DB) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
-	return db.sqlDB.ExecContext(ctx, query, args...)
+	// Track execution time for audit log
+	start := time.Now()
+
+	// Validate query and parameters if validator is enabled
+	if err := db.validateQueryAndParams(ctx, query, args); err != nil {
+		return nil, err
+	}
+
+	// Execute query
+	result, err := db.sqlDB.ExecContext(ctx, query, args...)
+	duration := time.Since(start)
+
+	// Audit log if enabled
+	if db.auditor != nil {
+		// Detect operation type (simplified)
+		operation := detectOperation(query)
+		db.auditor.LogOperation(ctx, operation, query, args, result, err, duration)
+	}
+
+	return result, err
 }
 
 // QueryContext executes a raw SQL query and returns rows.
+// If a validator is configured, the query and parameters are validated before execution.
+// If an auditor is configured, the operation is logged to the audit trail.
 func (db *DB) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
-	return db.sqlDB.QueryContext(ctx, query, args...)
+	// Track execution time for audit log
+	start := time.Now()
+
+	// Validate query and parameters if validator is enabled
+	if err := db.validateQueryAndParams(ctx, query, args); err != nil {
+		return nil, err
+	}
+
+	// Execute query
+	rows, err := db.sqlDB.QueryContext(ctx, query, args...)
+	duration := time.Since(start)
+
+	// Audit log if enabled
+	if db.auditor != nil {
+		// For SELECT queries, result is nil (we can't get row count without consuming rows)
+		db.auditor.LogOperation(ctx, "SELECT", query, args, nil, err, duration)
+	}
+
+	return rows, err
 }
 
 // QueryRowContext executes a raw SQL query expected to return at most one row.
+// Note: Due to database/sql API constraints, QueryRowContext does NOT support validation.
+// Use QueryContext() instead if you need validation, or ensure the query is safe before calling this method.
 func (db *DB) QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row {
+	// Note: We cannot validate here because QueryRowContext cannot return errors.
+	// Validation must be done at a higher level (QueryBuilder) or users should use QueryContext.
 	return db.sqlDB.QueryRowContext(ctx, query, args...)
+}
+
+// detectOperation attempts to detect the SQL operation type from a query string.
+// Returns the operation type (INSERT, UPDATE, DELETE, SELECT, etc.) for audit logging.
+func detectOperation(query string) string {
+	// Convert to uppercase for matching
+	upper := strings.ToUpper(strings.TrimSpace(query))
+
+	// Match common operations
+	if strings.HasPrefix(upper, "INSERT") {
+		return "INSERT"
+	}
+	if strings.HasPrefix(upper, "UPDATE") {
+		return "UPDATE"
+	}
+	if strings.HasPrefix(upper, "DELETE") {
+		return "DELETE"
+	}
+	if strings.HasPrefix(upper, "SELECT") {
+		return "SELECT"
+	}
+	if strings.HasPrefix(upper, "CREATE") {
+		return "CREATE"
+	}
+	if strings.HasPrefix(upper, "DROP") {
+		return "DROP"
+	}
+	if strings.HasPrefix(upper, "ALTER") {
+		return "ALTER"
+	}
+	if strings.HasPrefix(upper, "TRUNCATE") {
+		return "TRUNCATE"
+	}
+
+	// Unknown operation
+	return "UNKNOWN"
 }

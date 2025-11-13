@@ -8,6 +8,7 @@ vendor/
 
 # Test artifacts
 coverage.out
+coverage*.out
 *.test
 coverage.txt
 coverage-unit.txt
@@ -48,8 +49,11 @@ protoc-*.tar.gz
 .goco/
 .goda/
 
-# Development docs (kanban, reports, internal notes)
+# Development docs (kanban, reports, internal notes, private documentation)
 docs/dev/
+
+# Private navigation files (internal index files)
+INDEX.md
 
 # Temporary files
 *.tmp

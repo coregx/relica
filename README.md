@@ -15,6 +15,7 @@
 - ⚡ **High Performance** - LRU statement cache, batch operations (3.3x faster)
 - 🎯 **Type-Safe** - Reflection-based struct scanning with compile-time checks
 - 🔒 **Transaction Support** - Full ACID with all isolation levels
+- 🛡️ **Enterprise Security** - SQL injection prevention, audit logging, compliance (v0.5.0+)
 - 📦 **Batch Operations** - Efficient multi-row INSERT and UPDATE
 - 🔗 **JOIN Operations** - INNER, LEFT, RIGHT, FULL, CROSS JOIN support (v0.2.0+)
 - 📊 **Sorting & Pagination** - ORDER BY, LIMIT, OFFSET (v0.2.0+)
@@ -26,29 +27,7 @@
 - 🧪 **Well-Tested** - 326+ tests, 93.3% coverage
 - 📝 **Clean API** - Fluent builder pattern with context support
 
-## 🎉 What's New in v0.4.1-beta
-
-**Convenience Methods** - Shorter, more intuitive API for common operations:
-
-```go
-// Before (v0.4.0):
-db.Builder().Select("*").From("users").All(&users)
-
-// After (v0.4.1):
-db.Select("*").From("users").All(&users)  // 10 characters shorter!
-```
-
-- ✅ **Shorter code** - `db.Select()` vs `db.Builder().Select()`
-- ✅ **100% backward compatible** - `Builder()` continues working unchanged
-- ✅ **Zero performance overhead** - Direct delegation to Builder()
-- ✅ **Same power** - All query features still available (WHERE, JOIN, ORDER BY, etc.)
-- 📝 **When to use Builder()** - For advanced features (CTEs, UNION, batch operations)
-
-**Previous: v0.4.0-beta** - Better documentation & API stability:
-- All methods visible on pkg.go.dev with complete documentation
-- Wrapper types following industry best practices (sqlx, pgx, GORM patterns)
-- Unwrap() methods for advanced use cases
-- See [docs/MIGRATION_GUIDE.md](docs/MIGRATION_GUIDE.md) for v0.3.0 → v0.4.0 upgrade guide
+> **Latest Release:** See [CHANGELOG.md](CHANGELOG.md) for version history and [GitHub Releases](https://github.com/coregx/relica/releases) for release notes.
 
 ## 🚀 Quick Start
 
@@ -812,9 +791,111 @@ defer sqlDB.Close()  // NOT db.Close()
 - The caller is responsible for closing the underlying `*sql.DB` connection
 - Multiple wraps of the same connection are isolated (separate caches)
 
+## 🛡️ Enterprise Security (v0.5.0+)
+
+Relica provides enterprise-grade security features for protecting your database operations:
+
+### SQL Injection Prevention
+
+**Pattern-based detection** of OWASP Top 10 SQL injection attacks with <2% overhead:
+
+```go
+import "github.com/coregx/relica/internal/security"
+
+// Create validator
+validator := security.NewValidator()
+
+// Enable validation on DB connection
+db, err := relica.Open("postgres", dsn,
+    relica.WithValidator(validator),
+)
+
+// All ExecContext and QueryContext calls are now validated
+_, err = db.ExecContext(ctx, "SELECT * FROM users WHERE id = ?", userID)
+// Malicious queries blocked: stacked queries, UNION attacks, comment injection, etc.
+```
+
+**Detected attack vectors:**
+- Tautology attacks (`1 OR 1=1`)
+- Comment injection (`admin'--`)
+- Stacked queries (`; DROP TABLE`)
+- UNION attacks
+- Command execution (`xp_cmdshell`, `exec()`)
+- Information schema access
+- Timing attacks (`pg_sleep`, `benchmark`)
+
+### Audit Logging
+
+**Comprehensive operation tracking** for GDPR, HIPAA, PCI-DSS, SOC2 compliance:
+
+```go
+// Create logger
+logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+    Level: slog.LevelInfo,
+}))
+
+// Create auditor with desired level
+auditor := security.NewAuditor(logger, security.AuditReads)
+
+// Enable auditing
+db, err := relica.Open("postgres", dsn,
+    relica.WithAuditLog(auditor),
+)
+
+// Add context metadata for forensics
+ctx := security.WithUser(ctx, "john.doe@example.com")
+ctx = security.WithClientIP(ctx, "192.168.1.100")
+ctx = security.WithRequestID(ctx, "req-12345")
+
+// All operations are logged with metadata
+_, err = db.ExecContext(ctx, "UPDATE users SET status = ? WHERE id = ?", 2, 123)
+```
+
+**Audit log includes:**
+- Timestamp, user, client IP, request ID
+- Operation (INSERT, UPDATE, DELETE, SELECT)
+- Query execution time
+- Success/failure status
+- **Parameter hashing** (NOT raw values) for GDPR compliance
+
+### Security Guides
+
+- **[Security Guide](docs/guides/SECURITY.md)** - Complete security features overview
+- **[Security Testing Guide](docs/guides/SECURITY_TESTING.md)** - OWASP-based testing examples
+
 ## 📖 Documentation
 
-### User Guides (v0.3.0+)
+### Migration Guides (v0.5.0+)
+
+Switching from another library? We've got you covered:
+
+- **[Migration from GORM](docs/guides/MIGRATION_FROM_GORM.md)** - Complete guide for GORM users
+  - ORM vs Query Builder philosophy
+  - Side-by-side API comparisons
+  - Association handling (Preload → JOIN)
+  - Gradual migration strategies
+
+- **[Migration from sqlx](docs/guides/MIGRATION_FROM_SQLX.md)** - Complete guide for sqlx users
+  - Drop-in replacement patterns
+  - Query builder advantages
+  - Statement caching benefits
+  - Using both together
+
+### Comprehensive User Guides (v0.5.0+)
+
+**Getting Started:**
+- **[Getting Started Guide](docs/guides/GETTING_STARTED.md)** - Installation, first query, CRUD operations, common patterns
+- **[Best Practices Guide](docs/guides/BEST_PRACTICES.md)** - Repository pattern, error handling, testing strategies
+
+**Production:**
+- **[Production Deployment Guide](docs/guides/PRODUCTION_DEPLOYMENT.md)** - Configuration, health checks, Docker/Kubernetes, monitoring
+- **[Performance Tuning Guide](docs/guides/PERFORMANCE_TUNING.md)** - Query optimization, connection pooling, caching strategies
+- **[Troubleshooting Guide](docs/guides/TROUBLESHOOTING.md)** - Common errors and solutions
+
+**Advanced:**
+- **[Advanced Patterns Guide](docs/guides/ADVANCED_PATTERNS.md)** - Complex queries, CTEs, window functions, UPSERT
+
+### SQL Feature Guides (v0.3.0+)
 
 - **[Subquery Guide](docs/SUBQUERY_GUIDE.md)** - IN, EXISTS, FROM, scalar subqueries with performance tips
 - **[Set Operations Guide](docs/SET_OPERATIONS_GUIDE.md)** - UNION, INTERSECT, EXCEPT with database compatibility
@@ -823,6 +904,7 @@ defer sqlDB.Close()  // NOT db.Close()
 
 ### Additional Resources
 
+- **[Performance Comparison](docs/PERFORMANCE_COMPARISON.md)** - Benchmarks vs GORM, sqlx, sqlc, database/sql
 - [Transaction Guide](docs/reports/TRANSACTION_IMPLEMENTATION_REPORT.md)
 - [UPSERT Examples](docs/reports/UPSERT_EXAMPLES.md)
 - [Batch Operations](docs/reports/BATCH_OPERATIONS.md)

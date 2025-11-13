@@ -28,8 +28,9 @@ type StmtCache struct {
 
 // cacheEntry represents a single cached prepared statement.
 type cacheEntry struct {
-	key  string
-	stmt *sql.Stmt
+	key    string
+	stmt   *sql.Stmt
+	pinned bool // If true, entry won't be evicted by LRU
 }
 
 // NewStmtCache creates a new prepared statement cache with default capacity.
@@ -102,20 +103,28 @@ func (sc *StmtCache) Set(key string, stmt *sql.Stmt) {
 }
 
 // evictOldest removes and closes the least recently used statement.
+// Pinned statements are skipped during eviction.
 // Must be called with lock held.
 func (sc *StmtCache) evictOldest() {
-	elem := sc.lruList.Back()
-	if elem == nil {
+	// Find the oldest unpinned entry
+	for elem := sc.lruList.Back(); elem != nil; elem = elem.Prev() {
+		entry := elem.Value.(*cacheEntry)
+		if entry.pinned {
+			continue // Skip pinned entries
+		}
+
+		// Found unpinned entry, evict it
+		sc.lruList.Remove(elem)
+		delete(sc.items, entry.key)
+
+		// Close the evicted statement (best effort).
+		_ = entry.stmt.Close()
+		sc.evictions.Add(1)
 		return
 	}
 
-	sc.lruList.Remove(elem)
-	entry := elem.Value.(*cacheEntry)
-	delete(sc.items, entry.key)
-
-	// Close the evicted statement (best effort).
-	_ = entry.stmt.Close()
-	sc.evictions.Add(1)
+	// All entries are pinned - this should not normally happen
+	// as callers should ensure unpinned space is available
 }
 
 // Clear closes and removes all cached prepared statements.
@@ -142,6 +151,53 @@ type Stats struct {
 	Misses    uint64  // Number of cache misses.
 	Evictions uint64  // Number of evicted statements.
 	HitRate   float64 // Cache hit rate (hits / total requests).
+}
+
+// Pin marks a cached statement as pinned, preventing it from being evicted.
+// Pinned statements remain in cache until explicitly unpinned or cleared.
+// Returns true if the key was found and pinned, false otherwise.
+func (sc *StmtCache) Pin(key string) bool {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+
+	elem, exists := sc.items[key]
+	if !exists {
+		return false
+	}
+
+	entry := elem.Value.(*cacheEntry)
+	entry.pinned = true
+	return true
+}
+
+// Unpin removes the pin from a cached statement, allowing it to be evicted normally.
+// Returns true if the key was found and unpinned, false otherwise.
+func (sc *StmtCache) Unpin(key string) bool {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+
+	elem, exists := sc.items[key]
+	if !exists {
+		return false
+	}
+
+	entry := elem.Value.(*cacheEntry)
+	entry.pinned = false
+	return true
+}
+
+// IsPinned returns true if the given key is pinned.
+func (sc *StmtCache) IsPinned(key string) bool {
+	sc.mu.RLock()
+	defer sc.mu.RUnlock()
+
+	elem, exists := sc.items[key]
+	if !exists {
+		return false
+	}
+
+	entry := elem.Value.(*cacheEntry)
+	return entry.pinned
 }
 
 // Stats returns cache statistics.

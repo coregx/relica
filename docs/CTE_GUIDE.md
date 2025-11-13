@@ -959,11 +959,11 @@ db.Builder().
 
 Complete working examples available in Relica repository:
 
-- `examples/cte/basic.go` - Simple CTE examples
-- `examples/cte/multiple.go` - Multiple CTE patterns
-- `examples/cte/recursive_hierarchy.go` - Org chart traversal
-- `examples/cte/recursive_tree.go` - Category tree examples
-- `examples/cte/bill_of_materials.go` - BOM calculations
+- `reference/cte/basic.go` - Simple CTE examples
+- `reference/cte/multiple.go` - Multiple CTE patterns
+- `reference/cte/recursive_hierarchy.go` - Org chart traversal
+- `reference/cte/recursive_tree.go` - Category tree examples
+- `reference/cte/bill_of_materials.go` - BOM calculations
 
 ## Further Reading
 
