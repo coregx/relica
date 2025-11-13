@@ -52,6 +52,8 @@ import (
 	"database/sql"
 
 	"github.com/coregx/relica/internal/core"
+	"github.com/coregx/relica/internal/logger"
+	"github.com/coregx/relica/internal/tracer"
 )
 
 // DB represents a database connection with query building capabilities.
@@ -1424,6 +1426,62 @@ var WithMaxIdleConns = core.WithMaxIdleConns
 
 // WithStmtCacheCapacity sets the prepared statement cache capacity.
 var WithStmtCacheCapacity = core.WithStmtCacheCapacity
+
+// WithLogger sets the logger for database query logging.
+// If not set, a NoopLogger is used (zero overhead when logging is disabled).
+//
+// Example:
+//
+//	import "log/slog"
+//	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+//	db, err := relica.Open("postgres", dsn,
+//	    relica.WithLogger(logger.NewSlogAdapter(logger)))
+var WithLogger = core.WithLogger
+
+// WithTracer sets the distributed tracer for query observability.
+// If not set, a NoopTracer is used (zero overhead when tracing is disabled).
+//
+// Example:
+//
+//	import "go.opentelemetry.io/otel"
+//	tracer := otel.Tracer("relica")
+//	db, err := relica.Open("postgres", dsn,
+//	    relica.WithTracer(tracer.NewOtelTracer(tracer)))
+var WithTracer = core.WithTracer
+
+// WithSensitiveFields sets the list of sensitive field names for parameter masking.
+// If not set, default sensitive field patterns are used.
+//
+// Example:
+//
+//	db, err := relica.Open("postgres", dsn,
+//	    relica.WithSensitiveFields([]string{"password", "token", "api_key"}))
+var WithSensitiveFields = core.WithSensitiveFields
+
+// Logger defines the logging interface for Relica.
+// Implementations should handle structured logging with key-value pairs.
+type Logger = logger.Logger
+
+// NoopLogger is a logger that does nothing (zero overhead when logging is disabled).
+type NoopLogger = logger.NoopLogger
+
+// SlogAdapter wraps log/slog.Logger to implement the Logger interface.
+type SlogAdapter = logger.SlogAdapter
+
+// NewSlogAdapter creates a new logger adapter wrapping an slog.Logger.
+var NewSlogAdapter = logger.NewSlogAdapter
+
+// Tracer defines the tracing interface for Relica.
+type Tracer = tracer.Tracer
+
+// NoopTracer is a tracer that does nothing (zero overhead when tracing is disabled).
+type NoopTracer = tracer.NoopTracer
+
+// OtelTracer wraps an OpenTelemetry tracer to implement the Tracer interface.
+type OtelTracer = tracer.OtelTracer
+
+// NewOtelTracer creates a new OpenTelemetry tracer adapter.
+var NewOtelTracer = tracer.NewOtelTracer
 
 // ============================================================================
 // Re-export expression builders
