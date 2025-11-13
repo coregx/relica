@@ -9,6 +9,8 @@ import (
 
 	"github.com/coregx/relica/internal/cache"
 	"github.com/coregx/relica/internal/dialects"
+	"github.com/coregx/relica/internal/logger"
+	"github.com/coregx/relica/internal/tracer"
 )
 
 // Optimizer interface for query optimization analysis.
@@ -24,8 +26,11 @@ type DB struct {
 	driverName string
 	stmtCache  *cache.StmtCache
 	dialect    dialects.Dialect
-	tracer     Tracer
-	optimizer  Optimizer // Query optimizer (nil = disabled)
+	oldTracer  Tracer             // Deprecated: kept for backward compatibility
+	logger     logger.Logger      // Structured logger for query logging
+	tracer     tracer.Tracer      // Distributed tracer for observability
+	sanitizer  *logger.Sanitizer  // Sanitizes sensitive data in logs
+	optimizer  Optimizer          // Query optimizer (nil = disabled)
 	params     []string
 	ctx        context.Context
 }
@@ -77,6 +82,30 @@ func WithOptimizer(optimizer Optimizer) Option {
 	}
 }
 
+// WithLogger sets the logger for the database.
+// If not set, a NoopLogger is used (zero overhead when logging is disabled).
+func WithLogger(l logger.Logger) Option {
+	return func(db *DB) {
+		db.logger = l
+	}
+}
+
+// WithTracer sets the distributed tracer for the database.
+// If not set, a NoopTracer is used (zero overhead when tracing is disabled).
+func WithTracer(t tracer.Tracer) Option {
+	return func(db *DB) {
+		db.tracer = t
+	}
+}
+
+// WithSensitiveFields sets the list of sensitive field names for parameter masking.
+// If not set, default sensitive field patterns are used (password, token, api_key, etc.).
+func WithSensitiveFields(fields []string) Option {
+	return func(db *DB) {
+		db.sanitizer = logger.NewSanitizer(fields)
+	}
+}
+
 // NewDB creates a new DB instance.
 func NewDB(driverName, dsn string) (*DB, error) {
 	sqlDB, err := sql.Open(driverName, dsn)
@@ -90,7 +119,10 @@ func NewDB(driverName, dsn string) (*DB, error) {
 		driverName: driverName,
 		stmtCache:  cache.NewStmtCache(),
 		dialect:    dialect,
-		tracer:     NewNoOpTracer(),
+		oldTracer:  NewNoOpTracer(),
+		logger:     &logger.NoopLogger{},
+		tracer:     &tracer.NoopTracer{},
+		sanitizer:  logger.NewSanitizer(nil),
 	}, nil
 }
 
@@ -132,7 +164,10 @@ func WrapDB(sqlDB *sql.DB, driverName string) *DB {
 		driverName: driverName,
 		stmtCache:  cache.NewStmtCache(),
 		dialect:    dialect,
-		tracer:     NewNoOpTracer(),
+		oldTracer:  NewNoOpTracer(),
+		logger:     &logger.NoopLogger{},
+		tracer:     &tracer.NoopTracer{},
+		sanitizer:  logger.NewSanitizer(nil),
 	}
 }
 

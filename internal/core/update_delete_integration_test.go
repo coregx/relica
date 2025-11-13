@@ -7,6 +7,8 @@ import (
 
 	"github.com/coregx/relica/internal/cache"
 	"github.com/coregx/relica/internal/dialects"
+	"github.com/coregx/relica/internal/logger"
+	"github.com/coregx/relica/internal/tracer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
@@ -24,7 +26,10 @@ func TestUpdateIntegration_SQLite(t *testing.T) {
 		driverName: "sqlite",
 		stmtCache:  cache.NewStmtCache(),
 		dialect:    dialects.GetDialect("sqlite"),
-		tracer:     NewNoOpTracer(),
+		oldTracer:  NewNoOpTracer(),
+		logger:     &logger.NoopLogger{},
+		tracer:     &tracer.NoopTracer{},
+		sanitizer:  logger.NewSanitizer(nil),
 		ctx:        context.Background(),
 	}
 
@@ -174,7 +179,10 @@ func TestDeleteIntegration_SQLite(t *testing.T) {
 		driverName: "sqlite",
 		stmtCache:  cache.NewStmtCache(),
 		dialect:    dialects.GetDialect("sqlite"),
-		tracer:     NewNoOpTracer(),
+		oldTracer:  NewNoOpTracer(),
+		logger:     &logger.NoopLogger{},
+		tracer:     &tracer.NoopTracer{},
+		sanitizer:  logger.NewSanitizer(nil),
 		ctx:        context.Background(),
 	}
 	require.NoError(t, err)
@@ -328,7 +336,10 @@ func TestUpdateDelete_Consistency(t *testing.T) {
 		driverName: "sqlite",
 		stmtCache:  cache.NewStmtCache(),
 		dialect:    dialects.GetDialect("sqlite"),
-		tracer:     NewNoOpTracer(),
+		oldTracer:  NewNoOpTracer(),
+		logger:     &logger.NoopLogger{},
+		tracer:     &tracer.NoopTracer{},
+		sanitizer:  logger.NewSanitizer(nil),
 		ctx:        context.Background(),
 	}
 	require.NoError(t, err)
@@ -414,7 +425,10 @@ func TestUpdateDelete_StatementCaching(t *testing.T) {
 		driverName: "sqlite",
 		stmtCache:  cache.NewStmtCache(),
 		dialect:    dialects.GetDialect("sqlite"),
-		tracer:     NewNoOpTracer(),
+		oldTracer:  NewNoOpTracer(),
+		logger:     &logger.NoopLogger{},
+		tracer:     &tracer.NoopTracer{},
+		sanitizer:  logger.NewSanitizer(nil),
 		ctx:        context.Background(),
 	}
 	require.NoError(t, err)
