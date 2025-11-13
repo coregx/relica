@@ -5,6 +5,7 @@ package core
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 
 	"github.com/coregx/relica/internal/cache"
@@ -27,13 +28,14 @@ type DB struct {
 	driverName    string
 	stmtCache     *cache.StmtCache
 	dialect       dialects.Dialect
-	oldTracer     Tracer             // Deprecated: kept for backward compatibility
-	logger        logger.Logger      // Structured logger for query logging
-	tracer        tracer.Tracer      // Distributed tracer for observability
-	sanitizer     *logger.Sanitizer  // Sanitizes sensitive data in logs
-	optimizer     Optimizer          // Query optimizer (nil = disabled)
-	healthChecker *healthChecker     // Health checker for connection monitoring (nil = disabled)
+	oldTracer     Tracer              // Deprecated: kept for backward compatibility
+	logger        logger.Logger       // Structured logger for query logging
+	tracer        tracer.Tracer       // Distributed tracer for observability
+	sanitizer     *logger.Sanitizer   // Sanitizes sensitive data in logs
+	optimizer     Optimizer           // Query optimizer (nil = disabled)
+	healthChecker *healthChecker      // Health checker for connection monitoring (nil = disabled)
 	validator     *security.Validator // SQL injection validator (nil = disabled)
+	auditor       *security.Auditor   // Audit logger for security compliance (nil = disabled)
 	params        []string
 	ctx           context.Context
 }
@@ -121,6 +123,16 @@ func WithOptimizer(optimizer Optimizer) Option {
 func WithValidator(validator *security.Validator) Option {
 	return func(db *DB) {
 		db.validator = validator
+	}
+}
+
+// WithAuditLog enables audit logging with the given auditor.
+// If not set, no audit logging is performed.
+// Use security.NewAuditor(logger, security.AuditWrites) for write-only auditing,
+// or security.NewAuditor(logger, security.AuditAll) for complete audit trail.
+func WithAuditLog(auditor *security.Auditor) Option {
+	return func(db *DB) {
+		db.auditor = auditor
 	}
 }
 
@@ -400,34 +412,79 @@ func (db *DB) UnpinQuery(query string) bool {
 
 // ExecContext executes a raw SQL query (INSERT/UPDATE/DELETE).
 // If a validator is configured, the query and parameters are validated before execution.
+// If an auditor is configured, the operation is logged to the audit trail.
 func (db *DB) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+	// Track execution time for audit log
+	start := time.Now()
+
 	// Validate query and parameters if validator is enabled
 	if db.validator != nil {
 		if err := db.validator.ValidateQuery(query); err != nil {
+			// Log security event if auditor is enabled
+			if db.auditor != nil {
+				db.auditor.LogSecurityEvent(ctx, "query_blocked", query, err)
+			}
 			return nil, err
 		}
 		if err := db.validator.ValidateParams(args); err != nil {
+			// Log security event if auditor is enabled
+			if db.auditor != nil {
+				db.auditor.LogSecurityEvent(ctx, "params_blocked", query, err)
+			}
 			return nil, err
 		}
 	}
 
-	return db.sqlDB.ExecContext(ctx, query, args...)
+	// Execute query
+	result, err := db.sqlDB.ExecContext(ctx, query, args...)
+	duration := time.Since(start)
+
+	// Audit log if enabled
+	if db.auditor != nil {
+		// Detect operation type (simplified)
+		operation := detectOperation(query)
+		db.auditor.LogOperation(ctx, operation, query, args, result, err, duration)
+	}
+
+	return result, err
 }
 
 // QueryContext executes a raw SQL query and returns rows.
 // If a validator is configured, the query and parameters are validated before execution.
+// If an auditor is configured, the operation is logged to the audit trail.
 func (db *DB) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+	// Track execution time for audit log
+	start := time.Now()
+
 	// Validate query and parameters if validator is enabled
 	if db.validator != nil {
 		if err := db.validator.ValidateQuery(query); err != nil {
+			// Log security event if auditor is enabled
+			if db.auditor != nil {
+				db.auditor.LogSecurityEvent(ctx, "query_blocked", query, err)
+			}
 			return nil, err
 		}
 		if err := db.validator.ValidateParams(args); err != nil {
+			// Log security event if auditor is enabled
+			if db.auditor != nil {
+				db.auditor.LogSecurityEvent(ctx, "params_blocked", query, err)
+			}
 			return nil, err
 		}
 	}
 
-	return db.sqlDB.QueryContext(ctx, query, args...)
+	// Execute query
+	rows, err := db.sqlDB.QueryContext(ctx, query, args...)
+	duration := time.Since(start)
+
+	// Audit log if enabled
+	if db.auditor != nil {
+		// For SELECT queries, result is nil (we can't get row count without consuming rows)
+		db.auditor.LogOperation(ctx, "SELECT", query, args, nil, err, duration)
+	}
+
+	return rows, err
 }
 
 // QueryRowContext executes a raw SQL query expected to return at most one row.
@@ -437,4 +494,40 @@ func (db *DB) QueryRowContext(ctx context.Context, query string, args ...interfa
 	// Note: We cannot validate here because QueryRowContext cannot return errors.
 	// Validation must be done at a higher level (QueryBuilder) or users should use QueryContext.
 	return db.sqlDB.QueryRowContext(ctx, query, args...)
+}
+
+// detectOperation attempts to detect the SQL operation type from a query string.
+// Returns the operation type (INSERT, UPDATE, DELETE, SELECT, etc.) for audit logging.
+func detectOperation(query string) string {
+	// Convert to uppercase for matching
+	upper := strings.ToUpper(strings.TrimSpace(query))
+
+	// Match common operations
+	if strings.HasPrefix(upper, "INSERT") {
+		return "INSERT"
+	}
+	if strings.HasPrefix(upper, "UPDATE") {
+		return "UPDATE"
+	}
+	if strings.HasPrefix(upper, "DELETE") {
+		return "DELETE"
+	}
+	if strings.HasPrefix(upper, "SELECT") {
+		return "SELECT"
+	}
+	if strings.HasPrefix(upper, "CREATE") {
+		return "CREATE"
+	}
+	if strings.HasPrefix(upper, "DROP") {
+		return "DROP"
+	}
+	if strings.HasPrefix(upper, "ALTER") {
+		return "ALTER"
+	}
+	if strings.HasPrefix(upper, "TRUNCATE") {
+		return "TRUNCATE"
+	}
+
+	// Unknown operation
+	return "UNKNOWN"
 }
