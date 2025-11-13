@@ -53,9 +53,10 @@ func (o *BasicOptimizer) Analyze(ctx context.Context, query string, args []inter
 }
 
 // Suggest generates optimization suggestions based on analysis results.
+// Phase 2: Enhanced with composite, covering, JOIN, and function-based index suggestions.
 func (o *BasicOptimizer) Suggest(analysis *Analysis) []Suggestion {
 	// Pre-allocate slice with estimated capacity
-	suggestions := make([]Suggestion, 0, 3)
+	suggestions := make([]Suggestion, 0, 10)
 
 	// Slow query warning
 	if analysis.SlowQuery {
@@ -75,12 +76,14 @@ func (o *BasicOptimizer) Suggest(analysis *Analysis) []Suggestion {
 		})
 	}
 
-	// Index recommendations
+	// Index recommendations (Phase 2: categorize by type)
 	for _, idx := range analysis.MissingIndexes {
+		suggestionType := categorizeIndexRecommendation(idx)
+
 		suggestions = append(suggestions, Suggestion{
-			Type:     SuggestionIndexMissing,
-			Severity: SeverityWarning,
-			Message:  fmt.Sprintf("Consider adding index on %s(%s): %s", idx.Table, strings.Join(idx.Columns, ", "), idx.Reason),
+			Type:     suggestionType,
+			Severity: determineSeverity(suggestionType),
+			Message:  fmt.Sprintf("%s on %s(%s): %s", suggestionTypeMessage(suggestionType), idx.Table, strings.Join(idx.Columns, ", "), idx.Reason),
 			SQL:      generateIndexSQL(idx),
 		})
 	}
@@ -88,8 +91,66 @@ func (o *BasicOptimizer) Suggest(analysis *Analysis) []Suggestion {
 	return suggestions
 }
 
+// categorizeIndexRecommendation determines the suggestion type based on index recommendation.
+func categorizeIndexRecommendation(idx IndexRecommendation) SuggestionType {
+	reason := strings.ToLower(idx.Reason)
+
+	// Covering index
+	if strings.Contains(reason, "covering index") {
+		return SuggestionCoveringIndex
+	}
+
+	// Composite index
+	if len(idx.Columns) > 1 && strings.Contains(reason, "composite") {
+		return SuggestionCompositeIndex
+	}
+
+	// JOIN optimization
+	if strings.Contains(reason, "join") || strings.Contains(reason, "foreign key") {
+		return SuggestionJoinOptimize
+	}
+
+	// Function-based index
+	if strings.Contains(reason, "function") {
+		return SuggestionFunctionIndex
+	}
+
+	// Default: missing index
+	return SuggestionIndexMissing
+}
+
+// determineSeverity determines severity based on suggestion type.
+func determineSeverity(suggestionType SuggestionType) Severity {
+	switch suggestionType {
+	case SuggestionFunctionIndex:
+		return SeverityWarning
+	case SuggestionCompositeIndex, SuggestionJoinOptimize:
+		return SeverityWarning
+	case SuggestionCoveringIndex:
+		return SeverityInfo
+	default:
+		return SeverityWarning
+	}
+}
+
+// suggestionTypeMessage returns a human-readable prefix for suggestion type.
+func suggestionTypeMessage(suggestionType SuggestionType) string {
+	switch suggestionType {
+	case SuggestionCompositeIndex:
+		return "Composite index recommended"
+	case SuggestionCoveringIndex:
+		return "Covering index recommended"
+	case SuggestionJoinOptimize:
+		return "Index recommended"
+	case SuggestionFunctionIndex:
+		return "Function-based index recommended"
+	default:
+		return "Index recommended"
+	}
+}
+
 // detectMissingIndexes analyzes the query to recommend indexes.
-// This is a basic implementation that parses WHERE clauses.
+// Phase 2: Enhanced with composite index, JOIN, and covering index analysis.
 func (o *BasicOptimizer) detectMissingIndexes(query string, _ *analyzer.QueryPlan) []IndexRecommendation {
 	var recommendations []IndexRecommendation
 
@@ -99,19 +160,32 @@ func (o *BasicOptimizer) detectMissingIndexes(query string, _ *analyzer.QueryPla
 		return recommendations
 	}
 
-	// Extract WHERE clause columns
-	whereColumns := extractWhereColumns(query)
-	if len(whereColumns) == 0 {
-		return recommendations
+	// Parse WHERE clause
+	whereText := extractWhereClauseText(strings.ToLower(query))
+	if whereText != "" {
+		whereClause, err := ParseWhereClause("where " + whereText)
+		if err == nil && whereClause != nil {
+			// Analyze WHERE conditions
+			recommendations = append(recommendations, o.analyzeWhereIndexes(whereClause, table)...)
+		}
 	}
 
-	// Recommend index on WHERE columns
-	recommendations = append(recommendations, IndexRecommendation{
-		Table:   table,
-		Columns: whereColumns,
-		Type:    "btree", // Default to btree for most databases
-		Reason:  "WHERE clause filtering without index usage",
-	})
+	// Analyze JOIN clauses
+	joins := extractJoinClauses(query)
+	for _, join := range joins {
+		recommendations = append(recommendations, o.analyzeJoinIndexes(join)...)
+	}
+
+	// Analyze covering index opportunities
+	coveringAnalysis := AnalyzeCoveringIndex(query)
+	if coveringAnalysis.Recommended {
+		recommendations = append(recommendations, IndexRecommendation{
+			Table:   table,
+			Columns: coveringAnalysis.Columns,
+			Type:    "btree",
+			Reason:  fmt.Sprintf("Covering index: %s", coveringAnalysis.Benefit),
+		})
+	}
 
 	return recommendations
 }
@@ -180,6 +254,94 @@ func isSQLKeyword(word string) bool {
 		"then": true, "else": true, "end": true, "exists": true,
 	}
 	return keywords[word]
+}
+
+// analyzeWhereIndexes recommends indexes based on WHERE conditions.
+// Phase 2: Detects single-column, composite, and function-based index opportunities.
+func (o *BasicOptimizer) analyzeWhereIndexes(where *WhereClause, table string) []IndexRecommendation {
+	if len(where.Conditions) == 0 {
+		return nil
+	}
+
+	var recommendations []IndexRecommendation
+	compositeColumns, hasFunctions := o.analyzeConditions(where.Conditions, table, &recommendations)
+
+	// Add composite or single column index recommendations
+	recommendations = append(recommendations, o.buildCompositeRecommendation(where.Logic, compositeColumns, hasFunctions, table)...)
+
+	return recommendations
+}
+
+// analyzeConditions analyzes individual conditions and returns columns for composite index.
+func (o *BasicOptimizer) analyzeConditions(conditions []Condition, table string, recommendations *[]IndexRecommendation) ([]string, bool) {
+	var compositeColumns []string
+	hasFunctions := false
+
+	for _, cond := range conditions {
+		if cond.Function != "" {
+			hasFunctions = true
+			*recommendations = append(*recommendations, IndexRecommendation{
+				Table:   table,
+				Columns: []string{cond.Column},
+				Type:    "btree",
+				Reason:  fmt.Sprintf("Function %s() in WHERE prevents index use - consider function-based index", cond.Function),
+			})
+			continue
+		}
+
+		if cond.Operator == "=" || cond.Operator == "IN" {
+			compositeColumns = append(compositeColumns, cond.Column)
+		}
+	}
+
+	return compositeColumns, hasFunctions
+}
+
+// buildCompositeRecommendation creates composite or single column index recommendations.
+func (o *BasicOptimizer) buildCompositeRecommendation(logic LogicType, columns []string, hasFunctions bool, table string) []IndexRecommendation {
+	if logic != LogicAND || len(columns) == 0 || hasFunctions {
+		return nil
+	}
+
+	reason := "Single column index for WHERE filtering"
+	if len(columns) >= 2 {
+		reason = "Composite index for multiple AND conditions"
+	}
+
+	return []IndexRecommendation{{
+		Table:   table,
+		Columns: columns,
+		Type:    "btree",
+		Reason:  reason,
+	}}
+}
+
+// analyzeJoinIndexes recommends indexes for JOIN columns.
+// Phase 2: Detects missing foreign key indexes.
+func (o *BasicOptimizer) analyzeJoinIndexes(join string) []IndexRecommendation {
+	var recommendations []IndexRecommendation
+
+	// Extract JOIN ON columns
+	leftCol, rightCol := extractJoinColumns(join)
+	if leftCol == "" || rightCol == "" {
+		return recommendations
+	}
+
+	// Recommend index on the right table (foreign key side)
+	// Example: users.id = orders.user_id -> index on orders(user_id)
+	rightTable := extractTableNameFromColumn(rightCol)
+	rightColumn := extractColumnName(rightCol)
+
+	if rightTable != "" && rightColumn != "" {
+		recommendations = append(recommendations, IndexRecommendation{
+			Table:   rightTable,
+			Columns: []string{rightColumn},
+			Type:    "btree",
+			Reason:  "JOIN condition - index on foreign key",
+		})
+	}
+
+	return recommendations
 }
 
 // generateIndexSQL generates a CREATE INDEX statement for the recommendation.

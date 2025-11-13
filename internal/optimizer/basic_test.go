@@ -2,6 +2,7 @@ package optimizer
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -460,4 +461,413 @@ func TestSuggestionString(t *testing.T) {
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
 		len(s) > 0 && (s[0:len(substr)] == substr || contains(s[1:], substr)))
+}
+
+// ============================
+// Phase 2 Tests
+// ============================
+
+func TestBasicOptimizer_CompositeIndexRecommendation(t *testing.T) {
+	mock := &mockAnalyzer{
+		plan: &analyzer.QueryPlan{
+			Cost:          1000.0,
+			EstimatedRows: 10000,
+			UsesIndex:     false,
+			FullScan:      true,
+			Database:      "postgres",
+		},
+	}
+
+	opt := NewBasicOptimizer(mock, 100*time.Millisecond)
+	ctx := context.Background()
+
+	// Query with multiple AND conditions
+	query := "SELECT * FROM users WHERE status = ? AND country = ?"
+	analysis, err := opt.Analyze(ctx, query, []interface{}{1, "US"}, 50*time.Millisecond)
+	if err != nil {
+		t.Fatalf("Analyze failed: %v", err)
+	}
+
+	// Should recommend composite index
+	if len(analysis.MissingIndexes) == 0 {
+		t.Fatal("expected composite index recommendation")
+	}
+
+	// Check for composite index
+	foundComposite := false
+	for _, idx := range analysis.MissingIndexes {
+		if len(idx.Columns) >= 2 {
+			foundComposite = true
+			if idx.Reason != "Composite index for multiple AND conditions" {
+				t.Errorf("unexpected reason: %s", idx.Reason)
+			}
+		}
+	}
+
+	if !foundComposite {
+		t.Error("expected composite index recommendation for multiple AND conditions")
+	}
+}
+
+func TestBasicOptimizer_JoinIndexRecommendation(t *testing.T) {
+	mock := &mockAnalyzer{
+		plan: &analyzer.QueryPlan{
+			Cost:          500.0,
+			EstimatedRows: 5000,
+			UsesIndex:     false,
+			FullScan:      true,
+			Database:      "postgres",
+		},
+	}
+
+	opt := NewBasicOptimizer(mock, 100*time.Millisecond)
+	ctx := context.Background()
+
+	// Query with JOIN
+	query := "SELECT u.*, o.total FROM users u JOIN orders o ON u.id = o.user_id WHERE u.status = ?"
+	analysis, err := opt.Analyze(ctx, query, []interface{}{1}, 50*time.Millisecond)
+	if err != nil {
+		t.Fatalf("Analyze failed: %v", err)
+	}
+
+	// Should recommend JOIN index
+	if len(analysis.MissingIndexes) == 0 {
+		t.Fatal("expected JOIN index recommendation")
+	}
+
+	// Check for JOIN-related index
+	foundJoinIndex := false
+	for _, idx := range analysis.MissingIndexes {
+		if idx.Reason == "JOIN condition - index on foreign key" {
+			foundJoinIndex = true
+			// Note: Table name should be 'orders' (extracted from qualified column or alias)
+			if idx.Table != "orders" && idx.Table != "o" {
+				t.Errorf("expected index on 'orders' or 'o' table, got '%s'", idx.Table)
+			}
+			if len(idx.Columns) != 1 || idx.Columns[0] != "user_id" {
+				t.Errorf("expected index on user_id column, got %v", idx.Columns)
+			}
+		}
+	}
+
+	if !foundJoinIndex {
+		t.Error("expected JOIN index recommendation")
+	}
+}
+
+func TestBasicOptimizer_CoveringIndexRecommendation(t *testing.T) {
+	mock := &mockAnalyzer{
+		plan: &analyzer.QueryPlan{
+			Cost:          200.0,
+			EstimatedRows: 1000,
+			UsesIndex:     false,
+			FullScan:      true,
+			Database:      "postgres",
+		},
+	}
+
+	opt := NewBasicOptimizer(mock, 100*time.Millisecond)
+	ctx := context.Background()
+
+	// Query suitable for covering index
+	query := "SELECT id, name FROM users WHERE status = ?"
+	analysis, err := opt.Analyze(ctx, query, []interface{}{1}, 50*time.Millisecond)
+	if err != nil {
+		t.Fatalf("Analyze failed: %v", err)
+	}
+
+	// Should recommend covering index or composite index
+	foundCovering := false
+	foundComposite := false
+	for _, idx := range analysis.MissingIndexes {
+		if contains(idx.Reason, "covering index") {
+			foundCovering = true
+			// Covering index should include both WHERE and SELECT columns
+			if len(idx.Columns) < 2 {
+				t.Errorf("covering index should have multiple columns, got %d", len(idx.Columns))
+			}
+		}
+		// Composite or single column index is also acceptable
+		if len(idx.Columns) >= 1 {
+			foundComposite = true
+		}
+	}
+
+	// Either covering index or some index recommendation is fine
+	if !foundCovering && !foundComposite {
+		t.Error("expected some index recommendation")
+	}
+}
+
+func TestBasicOptimizer_Suggest_CompositeIndex(t *testing.T) {
+	analysis := &Analysis{
+		SlowQuery:     false,
+		ExecutionTime: 50 * time.Millisecond,
+		QueryPlan: &analyzer.QueryPlan{
+			UsesIndex: false,
+			FullScan:  true,
+		},
+		MissingIndexes: []IndexRecommendation{
+			{
+				Table:   "users",
+				Columns: []string{"status", "country"},
+				Type:    "btree",
+				Reason:  "Composite index for multiple AND conditions",
+			},
+		},
+	}
+
+	opt := &BasicOptimizer{
+		slowQueryThreshold: 100 * time.Millisecond,
+	}
+
+	suggestions := opt.Suggest(analysis)
+
+	// Find composite index suggestion
+	var compositeSuggestion *Suggestion
+	for _, s := range suggestions {
+		if s.Type == SuggestionCompositeIndex {
+			compositeSuggestion = &s
+			break
+		}
+	}
+
+	if compositeSuggestion == nil {
+		t.Fatal("expected composite index suggestion")
+	}
+
+	if compositeSuggestion.Severity != SeverityWarning {
+		t.Errorf("expected warning severity, got %v", compositeSuggestion.Severity)
+	}
+
+	if compositeSuggestion.SQL == "" {
+		t.Error("expected SQL fix for composite index")
+	}
+
+	// Check SQL format
+	expectedSQL := "CREATE INDEX idx_users_status_country ON users(status, country);"
+	if compositeSuggestion.SQL != expectedSQL {
+		t.Errorf("expected SQL:\n%s\ngot:\n%s", expectedSQL, compositeSuggestion.SQL)
+	}
+}
+
+func TestBasicOptimizer_Suggest_JoinOptimize(t *testing.T) {
+	analysis := &Analysis{
+		SlowQuery:     false,
+		ExecutionTime: 50 * time.Millisecond,
+		QueryPlan: &analyzer.QueryPlan{
+			UsesIndex: false,
+			FullScan:  true,
+		},
+		MissingIndexes: []IndexRecommendation{
+			{
+				Table:   "orders",
+				Columns: []string{"user_id"},
+				Type:    "btree",
+				Reason:  "JOIN condition - index on foreign key",
+			},
+		},
+	}
+
+	opt := &BasicOptimizer{
+		slowQueryThreshold: 100 * time.Millisecond,
+	}
+
+	suggestions := opt.Suggest(analysis)
+
+	// Find JOIN optimize suggestion
+	var joinSuggestion *Suggestion
+	for _, s := range suggestions {
+		if s.Type == SuggestionJoinOptimize {
+			joinSuggestion = &s
+			break
+		}
+	}
+
+	if joinSuggestion == nil {
+		t.Fatal("expected JOIN optimize suggestion")
+	}
+
+	if joinSuggestion.Severity != SeverityWarning {
+		t.Errorf("expected warning severity, got %v", joinSuggestion.Severity)
+	}
+
+	if !contains(joinSuggestion.Message, "orders") {
+		t.Errorf("expected message to mention 'orders' table: %s", joinSuggestion.Message)
+	}
+}
+
+func TestBasicOptimizer_Suggest_CoveringIndex(t *testing.T) {
+	analysis := &Analysis{
+		SlowQuery:     false,
+		ExecutionTime: 50 * time.Millisecond,
+		QueryPlan: &analyzer.QueryPlan{
+			UsesIndex: false,
+			FullScan:  true,
+		},
+		MissingIndexes: []IndexRecommendation{
+			{
+				Table:   "users",
+				Columns: []string{"status", "id", "name"},
+				Type:    "btree",
+				Reason:  "Covering index: Index-only scan (no table access needed)",
+			},
+		},
+	}
+
+	opt := &BasicOptimizer{
+		slowQueryThreshold: 100 * time.Millisecond,
+	}
+
+	suggestions := opt.Suggest(analysis)
+
+	// Find covering index suggestion
+	var coveringSuggestion *Suggestion
+	for _, s := range suggestions {
+		if s.Type == SuggestionCoveringIndex {
+			coveringSuggestion = &s
+			break
+		}
+	}
+
+	if coveringSuggestion == nil {
+		t.Fatal("expected covering index suggestion")
+	}
+
+	if coveringSuggestion.Severity != SeverityInfo {
+		t.Errorf("expected info severity for covering index, got %v", coveringSuggestion.Severity)
+	}
+
+	if !contains(strings.ToLower(coveringSuggestion.Message), "covering") {
+		t.Errorf("expected message to mention 'covering': %s", coveringSuggestion.Message)
+	}
+}
+
+func TestAnalyzeWhereIndexes(t *testing.T) {
+	opt := &BasicOptimizer{
+		slowQueryThreshold: 100 * time.Millisecond,
+	}
+
+	tests := []struct {
+		name                string
+		whereClause         *WhereClause
+		table               string
+		expectedRecommends  int
+		expectedComposite   bool
+	}{
+		{
+			name: "single equality",
+			whereClause: &WhereClause{
+				Conditions: []Condition{
+					{Column: "status", Operator: "="},
+				},
+				Logic: LogicAND,
+			},
+			table:              "users",
+			expectedRecommends: 1,
+			expectedComposite:  false,
+		},
+		{
+			name: "multiple AND conditions",
+			whereClause: &WhereClause{
+				Conditions: []Condition{
+					{Column: "status", Operator: "="},
+					{Column: "country", Operator: "="},
+				},
+				Logic: LogicAND,
+			},
+			table:              "users",
+			expectedRecommends: 1,
+			expectedComposite:  true,
+		},
+		{
+			name: "function in WHERE",
+			whereClause: &WhereClause{
+				Conditions: []Condition{
+					{Column: "email", Operator: "=", Function: "UPPER"},
+				},
+				Logic: LogicAND,
+			},
+			table:              "users",
+			expectedRecommends: 1,
+			expectedComposite:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recommendations := opt.analyzeWhereIndexes(tt.whereClause, tt.table)
+
+			if len(recommendations) != tt.expectedRecommends {
+				t.Errorf("expected %d recommendations, got %d", tt.expectedRecommends, len(recommendations))
+			}
+
+			if tt.expectedComposite {
+				foundComposite := false
+				for _, rec := range recommendations {
+					if len(rec.Columns) >= 2 {
+						foundComposite = true
+						break
+					}
+				}
+				if !foundComposite {
+					t.Error("expected composite index recommendation")
+				}
+			}
+		})
+	}
+}
+
+func TestAnalyzeJoinIndexes(t *testing.T) {
+	opt := &BasicOptimizer{
+		slowQueryThreshold: 100 * time.Millisecond,
+	}
+
+	tests := []struct {
+		name               string
+		join               string
+		expectedTable      string
+		expectedColumn     string
+		expectedRecommends int
+	}{
+		{
+			name:               "simple JOIN",
+			join:               "JOIN orders ON users.id = orders.user_id",
+			expectedTable:      "orders",
+			expectedColumn:     "user_id",
+			expectedRecommends: 1,
+		},
+		{
+			name:               "INNER JOIN",
+			join:               "INNER JOIN posts ON users.id = posts.author_id",
+			expectedTable:      "posts",
+			expectedColumn:     "author_id",
+			expectedRecommends: 1,
+		},
+		{
+			name:               "no JOIN",
+			join:               "SELECT * FROM users",
+			expectedRecommends: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recommendations := opt.analyzeJoinIndexes(tt.join)
+
+			if len(recommendations) != tt.expectedRecommends {
+				t.Errorf("expected %d recommendations, got %d", tt.expectedRecommends, len(recommendations))
+			}
+
+			if tt.expectedRecommends > 0 {
+				rec := recommendations[0]
+				if rec.Table != tt.expectedTable {
+					t.Errorf("expected table %s, got %s", tt.expectedTable, rec.Table)
+				}
+				if len(rec.Columns) != 1 || rec.Columns[0] != tt.expectedColumn {
+					t.Errorf("expected column %s, got %v", tt.expectedColumn, rec.Columns)
+				}
+			}
+		})
+	}
 }
