@@ -12,20 +12,39 @@ import (
 
 // BasicOptimizer provides fundamental query optimization analysis.
 // It detects slow queries, full table scans, and recommends missing indexes.
+//
+// Phase 3: Enhanced with database-specific hints for PostgreSQL, MySQL, and SQLite.
 type BasicOptimizer struct {
 	analyzer           analyzer.Analyzer
 	slowQueryThreshold time.Duration
+	databaseHints      *DatabaseHints
 }
 
 // NewBasicOptimizer creates a new BasicOptimizer with the given analyzer and slow query threshold.
 // If threshold is 0 or negative, defaults to 100ms.
+//
+// Phase 3: Automatically detects database type and initializes database-specific hints.
+//
+// Example:
+//
+//	analyzer := analyzer.NewPostgresAnalyzer(db)
+//	optimizer := NewBasicOptimizer(analyzer, 100*time.Millisecond)
+//
+//	analysis, err := optimizer.Analyze(ctx, query, args, executionTime)
+//	suggestions := optimizer.Suggest(analysis)
+//	// Now includes PostgreSQL-specific hints (ANALYZE, parallel queries, etc.)
 func NewBasicOptimizer(queryAnalyzer analyzer.Analyzer, threshold time.Duration) *BasicOptimizer {
 	if threshold <= 0 {
 		threshold = 100 * time.Millisecond
 	}
+
+	// Detect database type from a test query plan
+	database := detectDatabaseType(queryAnalyzer)
+
 	return &BasicOptimizer{
 		analyzer:           queryAnalyzer,
 		slowQueryThreshold: threshold,
+		databaseHints:      NewDatabaseHints(database),
 	}
 }
 
@@ -54,9 +73,10 @@ func (o *BasicOptimizer) Analyze(ctx context.Context, query string, args []inter
 
 // Suggest generates optimization suggestions based on analysis results.
 // Phase 2: Enhanced with composite, covering, JOIN, and function-based index suggestions.
+// Phase 3: Enhanced with database-specific hints (PostgreSQL, MySQL, SQLite).
 func (o *BasicOptimizer) Suggest(analysis *Analysis) []Suggestion {
-	// Pre-allocate slice with estimated capacity
-	suggestions := make([]Suggestion, 0, 10)
+	// Pre-allocate slice with estimated capacity (increased for database hints)
+	suggestions := make([]Suggestion, 0, 15)
 
 	// Slow query warning
 	if analysis.SlowQuery {
@@ -86,6 +106,12 @@ func (o *BasicOptimizer) Suggest(analysis *Analysis) []Suggestion {
 			Message:  fmt.Sprintf("%s on %s(%s): %s", suggestionTypeMessage(suggestionType), idx.Table, strings.Join(idx.Columns, ", "), idx.Reason),
 			SQL:      generateIndexSQL(idx),
 		})
+	}
+
+	// Phase 3: Database-specific hints
+	if o.databaseHints != nil {
+		dbHints := o.databaseHints.GetAllHints(analysis)
+		suggestions = append(suggestions, dbHints...)
 	}
 
 	return suggestions
@@ -350,4 +376,18 @@ func generateIndexSQL(idx IndexRecommendation) string {
 	columnList := strings.Join(idx.Columns, ", ")
 
 	return fmt.Sprintf("CREATE INDEX %s ON %s(%s);", indexName, idx.Table, columnList)
+}
+
+// detectDatabaseType attempts to determine the database type from the analyzer.
+// Returns one of: "postgres", "mysql", "sqlite", or "unknown".
+func detectDatabaseType(queryAnalyzer analyzer.Analyzer) string {
+	// Try to get a query plan with a simple query
+	// The QueryPlan.Database field should contain the database type
+	ctx := context.Background()
+	plan, err := queryAnalyzer.Explain(ctx, "SELECT 1", nil)
+	if err != nil || plan == nil {
+		return "unknown"
+	}
+
+	return plan.Database
 }
