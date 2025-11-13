@@ -9,6 +9,8 @@ name: Tests
 # Branch Strategy:
 # - main branch: Production-ready code only (protected)
 # - develop branch: Active development (default for PRs)
+# - release/* branches: Release candidates (must pass CI before merge to main)
+# - hotfix/* branches: Emergency fixes for production (must pass CI)
 # - Pull requests: Must pass all tests before merge
 
 on:
@@ -16,6 +18,8 @@ on:
     branches:
       - main
       - develop
+      - 'release/**'
+      - 'hotfix/**'
   pull_request:
     branches:
       - main
