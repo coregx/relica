@@ -2,7 +2,7 @@
 
 > **Quick Start Guide** - From Zero to Production in 15 Minutes
 >
-> **Version**: v0.5.0-beta
+> **Version**: v0.5.0
 > **Last Updated**: 2025-11-13
 
 ---

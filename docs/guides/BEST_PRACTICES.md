@@ -2,7 +2,7 @@
 
 > **Production-Ready Patterns for Relica**
 >
-> **Version**: v0.5.0-beta
+> **Version**: v0.5.0
 > **Last Updated**: 2025-11-13
 
 ---

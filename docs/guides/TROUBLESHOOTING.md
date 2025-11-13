@@ -1,7 +1,7 @@
 # Troubleshooting Guide
 
 > **Common Issues and Solutions**
-> **Version**: v0.5.0-beta
+> **Version**: v0.5.0
 
 ---
 

@@ -1182,4 +1182,4 @@ Found a bug or have a suggestion?
 ---
 
 *Last Updated: 2025-01-13*
-*Relica Version: v0.5.0-beta*
+*Relica Version: v0.5.0*

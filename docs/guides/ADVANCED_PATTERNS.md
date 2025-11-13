@@ -1,7 +1,7 @@
 # Advanced Patterns Guide
 
 > **Advanced Query Building Techniques**
-> **Version**: v0.5.0-beta
+> **Version**: v0.5.0
 
 ---
 

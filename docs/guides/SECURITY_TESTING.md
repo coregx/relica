@@ -2,7 +2,7 @@
 
 > **Testing Relica's Security Features** - Validator & Auditor Integration
 >
-> **Version**: v0.5.0-beta
+> **Version**: v0.5.0
 > **Last Updated**: 2025-11-13
 
 ---

@@ -1,7 +1,7 @@
 # Production Deployment Guide
 
 > **Deploy Relica Applications to Production**
-> **Version**: v0.5.0-beta
+> **Version**: v0.5.0
 
 ---
 

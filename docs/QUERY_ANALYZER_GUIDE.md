@@ -1,6 +1,6 @@
 # Query Analyzer Guide
 
-> **Available in**: Relica v0.5.0-beta+
+> **Available in**: Relica v0.5.0+
 > **Supported databases**: PostgreSQL, MySQL, SQLite
 
 ---
@@ -624,5 +624,5 @@ See `docs/examples/query_analyzer/` for more examples:
 
 ---
 
-*Guide updated*: 2025-01-24 for v0.5.0-beta
+*Guide updated*: 2025-01-24 for v0.5.0
 *Database support*: PostgreSQL ✅, MySQL ✅, SQLite ✅

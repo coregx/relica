@@ -2,7 +2,7 @@
 
 > **Relica vs GORM, sqlx, sqlc, and raw database/sql**
 >
-> **Version**: v0.5.0-beta
+> **Version**: v0.5.0
 > **Last Updated**: 2025-11-13
 
 ---
@@ -397,4 +397,4 @@ func BenchmarkReplicaSelect(b *testing.B) {
 
 ---
 
-*Benchmarks run on 2025-11-13 with Relica v0.5.0-beta. Results may vary based on hardware, database configuration, and workload.*
+*Benchmarks run on 2025-11-13 with Relica v0.5.0. Results may vary based on hardware, database configuration, and workload.*

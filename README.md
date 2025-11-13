@@ -15,7 +15,7 @@
 - ⚡ **High Performance** - LRU statement cache, batch operations (3.3x faster)
 - 🎯 **Type-Safe** - Reflection-based struct scanning with compile-time checks
 - 🔒 **Transaction Support** - Full ACID with all isolation levels
-- 🛡️ **Enterprise Security** - SQL injection prevention, audit logging, compliance (v0.5.0-beta+)
+- 🛡️ **Enterprise Security** - SQL injection prevention, audit logging, compliance (v0.5.0+)
 - 📦 **Batch Operations** - Efficient multi-row INSERT and UPDATE
 - 🔗 **JOIN Operations** - INNER, LEFT, RIGHT, FULL, CROSS JOIN support (v0.2.0+)
 - 📊 **Sorting & Pagination** - ORDER BY, LIMIT, OFFSET (v0.2.0+)
@@ -813,7 +813,7 @@ defer sqlDB.Close()  // NOT db.Close()
 - The caller is responsible for closing the underlying `*sql.DB` connection
 - Multiple wraps of the same connection are isolated (separate caches)
 
-## 🛡️ Enterprise Security (v0.5.0-beta+)
+## 🛡️ Enterprise Security (v0.5.0+)
 
 Relica provides enterprise-grade security features for protecting your database operations:
 
@@ -887,7 +887,7 @@ _, err = db.ExecContext(ctx, "UPDATE users SET status = ? WHERE id = ?", 2, 123)
 
 ## 📖 Documentation
 
-### Migration Guides (v0.5.0-beta+)
+### Migration Guides (v0.5.0+)
 
 Switching from another library? We've got you covered:
 
@@ -903,7 +903,7 @@ Switching from another library? We've got you covered:
   - Statement caching benefits
   - Using both together
 
-### Comprehensive User Guides (v0.5.0-beta+)
+### Comprehensive User Guides (v0.5.0+)
 
 **Getting Started:**
 - **[Getting Started Guide](docs/guides/GETTING_STARTED.md)** - Installation, first query, CRUD operations, common patterns

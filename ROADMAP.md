@@ -119,7 +119,7 @@
 
 ---
 
-### v0.5.0-beta (Q1 2026)
+### v0.5.0 (Q1 2025)
 
 **Goal**: Production hardening & performance
 
