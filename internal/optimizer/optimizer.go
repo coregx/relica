@@ -85,6 +85,35 @@ const (
 
 	// SuggestionQueryRewrite indicates query rewriting could improve performance
 	SuggestionQueryRewrite SuggestionType = "query_rewrite"
+
+	// Database-specific suggestions (Phase 3)
+
+	// SuggestionPostgresAnalyze suggests running ANALYZE to update statistics
+	SuggestionPostgresAnalyze SuggestionType = "postgres_analyze"
+
+	// SuggestionPostgresParallel suggests enabling parallel query execution
+	SuggestionPostgresParallel SuggestionType = "postgres_parallel"
+
+	// SuggestionPostgresCacheHit indicates low buffer cache hit ratio
+	SuggestionPostgresCacheHit SuggestionType = "postgres_cache_hit"
+
+	// SuggestionMySQLIndexHint suggests using index hints
+	SuggestionMySQLIndexHint SuggestionType = "mysql_index_hint"
+
+	// SuggestionMySQLOptimize suggests running OPTIMIZE TABLE
+	SuggestionMySQLOptimize SuggestionType = "mysql_optimize"
+
+	// SuggestionMySQLBufferPool suggests tuning InnoDB buffer pool
+	SuggestionMySQLBufferPool SuggestionType = "mysql_buffer_pool"
+
+	// SuggestionSQLiteAnalyze suggests running ANALYZE for query planner
+	SuggestionSQLiteAnalyze SuggestionType = "sqlite_analyze"
+
+	// SuggestionSQLiteVacuum suggests running VACUUM for maintenance
+	SuggestionSQLiteVacuum SuggestionType = "sqlite_vacuum"
+
+	// SuggestionSQLiteWAL suggests enabling WAL mode
+	SuggestionSQLiteWAL SuggestionType = "sqlite_wal"
 )
 
 // Severity indicates the importance of an optimization suggestion.
@@ -114,4 +143,20 @@ type IndexRecommendation struct {
 
 	// Reason explains why this index is recommended
 	Reason string
+}
+
+// IndexName returns the suggested name for this index.
+// Format: idx_<table>_<column1>_<column2>_...
+func (i IndexRecommendation) IndexName() string {
+	if len(i.Columns) == 0 {
+		return fmt.Sprintf("idx_%s", i.Table)
+	}
+	columnsPart := ""
+	for idx, col := range i.Columns {
+		if idx > 0 {
+			columnsPart += "_"
+		}
+		columnsPart += col
+	}
+	return fmt.Sprintf("idx_%s_%s", i.Table, columnsPart)
 }
