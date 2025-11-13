@@ -27,17 +27,17 @@ const (
 // AuditEvent represents a single database operation for audit logging.
 type AuditEvent struct {
 	Timestamp    time.Time `json:"timestamp"`
-	User         string    `json:"user,omitempty"`         // User from context
-	Operation    string    `json:"operation"`              // SELECT, INSERT, UPDATE, DELETE
-	Table        string    `json:"table,omitempty"`        // Target table (if detectable)
-	AffectedRows int64     `json:"affected_rows"`          // Number of rows affected
-	SQL          string    `json:"sql"`                    // Query string
-	ParamsHash   string    `json:"params_hash,omitempty"`  // SHA256 hash of parameters
-	ClientIP     string    `json:"client_ip,omitempty"`    // Client IP from context
-	RequestID    string    `json:"request_id,omitempty"`   // Request ID from context
-	Success      bool      `json:"success"`                // Whether operation succeeded
-	Error        string    `json:"error,omitempty"`        // Error message if failed
-	Duration     int64     `json:"duration_ms,omitempty"`  // Query execution time in milliseconds
+	User         string    `json:"user,omitempty"`        // User from context
+	Operation    string    `json:"operation"`             // SELECT, INSERT, UPDATE, DELETE
+	Table        string    `json:"table,omitempty"`       // Target table (if detectable)
+	AffectedRows int64     `json:"affected_rows"`         // Number of rows affected
+	SQL          string    `json:"sql"`                   // Query string
+	ParamsHash   string    `json:"params_hash,omitempty"` // SHA256 hash of parameters
+	ClientIP     string    `json:"client_ip,omitempty"`   // Client IP from context
+	RequestID    string    `json:"request_id,omitempty"`  // Request ID from context
+	Success      bool      `json:"success"`               // Whether operation succeeded
+	Error        string    `json:"error,omitempty"`       // Error message if failed
+	Duration     int64     `json:"duration_ms,omitempty"` // Query execution time in milliseconds
 }
 
 // Auditor handles audit logging of database operations.

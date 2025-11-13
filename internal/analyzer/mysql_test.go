@@ -396,11 +396,11 @@ func TestUpdateMySQLTableMetrics(t *testing.T) {
 	t.Run("table_with_index", func(t *testing.T) {
 		plan := &QueryPlan{}
 		table := &mysqlTableAccess{
-			TableName:            "users",
-			AccessType:           "ref",
-			Key:                  "email_idx",
-			RowsExaminedPerScan:  10,
-			RowsProducedPerJoin:  10,
+			TableName:           "users",
+			AccessType:          "ref",
+			Key:                 "email_idx",
+			RowsExaminedPerScan: 10,
+			RowsProducedPerJoin: 10,
 		}
 
 		updateMySQLTableMetrics(table, plan)
@@ -425,11 +425,11 @@ func TestUpdateMySQLTableMetrics(t *testing.T) {
 	t.Run("table_full_scan", func(t *testing.T) {
 		plan := &QueryPlan{}
 		table := &mysqlTableAccess{
-			TableName:            "users",
-			AccessType:           "ALL",
-			Key:                  "",
-			RowsExaminedPerScan:  1000,
-			RowsProducedPerJoin:  1000,
+			TableName:           "users",
+			AccessType:          "ALL",
+			Key:                 "",
+			RowsExaminedPerScan: 1000,
+			RowsProducedPerJoin: 1000,
 		}
 
 		updateMySQLTableMetrics(table, plan)
@@ -454,11 +454,11 @@ func TestUpdateMySQLTableMetrics(t *testing.T) {
 			RowsProduced:  50,
 		}
 		table := &mysqlTableAccess{
-			TableName:            "orders",
-			AccessType:           "ref",
-			Key:                  "idx",
-			RowsExaminedPerScan:  25,
-			RowsProducedPerJoin:  25,
+			TableName:           "orders",
+			AccessType:          "ref",
+			Key:                 "idx",
+			RowsExaminedPerScan: 25,
+			RowsProducedPerJoin: 25,
 		}
 
 		updateMySQLTableMetrics(table, plan)
@@ -490,18 +490,18 @@ func TestExtractMySQLMetrics(t *testing.T) {
 				NestedLoop: &mysqlNestedLoop{
 					Table: []*mysqlTableAccess{
 						{
-							TableName:            "users",
-							AccessType:           "ALL",
-							Key:                  "",
-							RowsExaminedPerScan:  100,
-							RowsProducedPerJoin:  100,
+							TableName:           "users",
+							AccessType:          "ALL",
+							Key:                 "",
+							RowsExaminedPerScan: 100,
+							RowsProducedPerJoin: 100,
 						},
 						{
-							TableName:            "orders",
-							AccessType:           "ref",
-							Key:                  "user_id_idx",
-							RowsExaminedPerScan:  50,
-							RowsProducedPerJoin:  50,
+							TableName:           "orders",
+							AccessType:          "ref",
+							Key:                 "user_id_idx",
+							RowsExaminedPerScan: 50,
+							RowsProducedPerJoin: 50,
 						},
 					},
 				},
@@ -532,18 +532,18 @@ func TestExtractMySQLMetrics(t *testing.T) {
 				NestedLoop: &mysqlNestedLoop{
 					Table: []*mysqlTableAccess{
 						{
-							TableName:            "t1",
-							AccessType:           "index",
-							Key:                  "idx1",
-							RowsExaminedPerScan:  30,
-							RowsProducedPerJoin:  30,
+							TableName:           "t1",
+							AccessType:          "index",
+							Key:                 "idx1",
+							RowsExaminedPerScan: 30,
+							RowsProducedPerJoin: 30,
 						},
 						{
-							TableName:            "t2",
-							AccessType:           "index",
-							Key:                  "idx2",
-							RowsExaminedPerScan:  40,
-							RowsProducedPerJoin:  40,
+							TableName:           "t2",
+							AccessType:          "index",
+							Key:                 "idx2",
+							RowsExaminedPerScan: 40,
+							RowsProducedPerJoin: 40,
 						},
 					},
 				},

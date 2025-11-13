@@ -749,11 +749,11 @@ func TestAnalyzeWhereIndexes(t *testing.T) {
 	}
 
 	tests := []struct {
-		name                string
-		whereClause         *WhereClause
-		table               string
-		expectedRecommends  int
-		expectedComposite   bool
+		name               string
+		whereClause        *WhereClause
+		table              string
+		expectedRecommends int
+		expectedComposite  bool
 	}{
 		{
 			name: "single equality",

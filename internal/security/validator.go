@@ -46,49 +46,49 @@ func NewValidator(opts ...ValidatorOption) *Validator {
 // These are patterns commonly used in SQL injection attacks (OWASP Top 10).
 var dangerousPatterns = []string{
 	// SQL comment indicators (used to bypass security)
-	`--[\s]`,           // SQL comment (with space after)
-	`/\*.*\*/`,         // C-style comment
-	`#[\s]`,            // MySQL comment (with space after)
+	`--[\s]`,   // SQL comment (with space after)
+	`/\*.*\*/`, // C-style comment
+	`#[\s]`,    // MySQL comment (with space after)
 
 	// Stacked queries (multiple statements)
-	`;\s*DROP\s+`,      // ; DROP TABLE/DATABASE
-	`;\s*DELETE\s+`,    // ; DELETE FROM
-	`;\s*TRUNCATE\s+`,  // ; TRUNCATE TABLE
-	`;\s*ALTER\s+`,     // ; ALTER TABLE
-	`;\s*CREATE\s+`,    // ; CREATE TABLE
+	`;\s*DROP\s+`,     // ; DROP TABLE/DATABASE
+	`;\s*DELETE\s+`,   // ; DELETE FROM
+	`;\s*TRUNCATE\s+`, // ; TRUNCATE TABLE
+	`;\s*ALTER\s+`,    // ; ALTER TABLE
+	`;\s*CREATE\s+`,   // ; CREATE TABLE
 
 	// UNION-based attacks
-	`UNION\s+ALL\s+SELECT`,   // UNION ALL SELECT
-	`UNION\s+SELECT`,         // UNION SELECT
+	`UNION\s+ALL\s+SELECT`, // UNION ALL SELECT
+	`UNION\s+SELECT`,       // UNION SELECT
 
 	// Database-specific dangerous functions
-	`XP_CMDSHELL`,         // SQL Server command execution (case insensitive)
-	`\bEXEC\s*\(`,         // EXEC() function with word boundary
-	`\bEXECUTE\s*\(`,      // EXECUTE() function with word boundary
-	`SP_EXECUTESQL`,       // SQL Server dynamic SQL
-	`\bEXEC\s+XP_`,        // EXEC xp_* procedures
-	`\bEXEC\s+SP_`,        // EXEC sp_* procedures
+	`XP_CMDSHELL`,    // SQL Server command execution (case insensitive)
+	`\bEXEC\s*\(`,    // EXEC() function with word boundary
+	`\bEXECUTE\s*\(`, // EXECUTE() function with word boundary
+	`SP_EXECUTESQL`,  // SQL Server dynamic SQL
+	`\bEXEC\s+XP_`,   // EXEC xp_* procedures
+	`\bEXEC\s+SP_`,   // EXEC sp_* procedures
 
 	// Information schema queries (data exfiltration)
-	`INFORMATION_SCHEMA`,      // Access to metadata
-	`PG_SLEEP\s*\(`,          // PostgreSQL sleep (timing attacks)
-	`BENCHMARK\s*\(`,         // MySQL benchmark (timing attacks)
-	`WAITFOR\s+DELAY`,        // SQL Server delay (timing attacks)
+	`INFORMATION_SCHEMA`, // Access to metadata
+	`PG_SLEEP\s*\(`,      // PostgreSQL sleep (timing attacks)
+	`BENCHMARK\s*\(`,     // MySQL benchmark (timing attacks)
+	`WAITFOR\s+DELAY`,    // SQL Server delay (timing attacks)
 
 	// Boolean-based blind injection
-	`\s+OR\s+1\s*=\s*1\b`,     // OR 1=1 (with word boundary to avoid false positives)
-	`\s+OR\s+'1'\s*=\s*'1'`,   // OR '1'='1'
-	`\s+AND\s+1\s*=\s*0\b`,    // AND 1=0 (with word boundary)
+	`\s+OR\s+1\s*=\s*1\b`,   // OR 1=1 (with word boundary to avoid false positives)
+	`\s+OR\s+'1'\s*=\s*'1'`, // OR '1'='1'
+	`\s+AND\s+1\s*=\s*0\b`,  // AND 1=0 (with word boundary)
 }
 
 // strictPatterns contains additional patterns for strict mode.
 // These may have false positives but provide maximum security.
 var strictPatterns = []string{
-	`\bOR\b`,           // Any OR (may catch legitimate queries)
-	`\bAND\b`,          // Any AND (may catch legitimate queries)
-	`\bUNION\b`,        // Any UNION
-	`\bEXEC\b`,         // Any EXEC
-	`\bEXECUTE\b`,      // Any EXECUTE
+	`\bOR\b`,      // Any OR (may catch legitimate queries)
+	`\bAND\b`,     // Any AND (may catch legitimate queries)
+	`\bUNION\b`,   // Any UNION
+	`\bEXEC\b`,    // Any EXEC
+	`\bEXECUTE\b`, // Any EXECUTE
 }
 
 // ValidateQuery checks if a query contains dangerous SQL injection patterns.

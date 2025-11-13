@@ -27,10 +27,10 @@ type QueryPlan struct {
 	Database  string // Database type: "postgres", "mysql", "sqlite"
 
 	// Performance indicators (database-specific)
-	BuffersHit    int64 // PostgreSQL: buffer cache hits
-	BuffersMiss   int64 // PostgreSQL: buffer cache misses
-	RowsExamined  int64 // MySQL: rows examined during execution
-	RowsProduced  int64 // MySQL: rows produced by the query
+	BuffersHit   int64 // PostgreSQL: buffer cache hits
+	BuffersMiss  int64 // PostgreSQL: buffer cache misses
+	RowsExamined int64 // MySQL: rows examined during execution
+	RowsProduced int64 // MySQL: rows produced by the query
 }
 
 // Analyzer provides query plan analysis for specific database dialects.

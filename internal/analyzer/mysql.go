@@ -57,28 +57,28 @@ type mysqlExplainRoot struct {
 
 // mysqlQueryBlock represents the query_block node in MySQL EXPLAIN output.
 type mysqlQueryBlock struct {
-	SelectID  int                `json:"select_id"`
-	CostInfo  mysqlCostInfo      `json:"cost_info"`
-	Table     *mysqlTableAccess  `json:"table"`      // Single table access
-	NestedLoop *mysqlNestedLoop  `json:"nested_loop"` // JOIN operations
-	Grouping  *mysqlGrouping     `json:"grouping_operation"` // GROUP BY operations
-	Ordering  *mysqlOrdering     `json:"ordering_operation"` // ORDER BY operations
+	SelectID   int               `json:"select_id"`
+	CostInfo   mysqlCostInfo     `json:"cost_info"`
+	Table      *mysqlTableAccess `json:"table"`              // Single table access
+	NestedLoop *mysqlNestedLoop  `json:"nested_loop"`        // JOIN operations
+	Grouping   *mysqlGrouping    `json:"grouping_operation"` // GROUP BY operations
+	Ordering   *mysqlOrdering    `json:"ordering_operation"` // ORDER BY operations
 }
 
 // mysqlTableAccess represents a single table access in MySQL EXPLAIN output.
 type mysqlTableAccess struct {
-	TableName            string           `json:"table_name"`
-	AccessType           string           `json:"access_type"` // "ALL", "index", "range", "ref", "eq_ref", "const", "system"
-	PossibleKeys         []string         `json:"possible_keys"`
-	Key                  string           `json:"key"` // Index name used (empty if none)
-	UsedKeyParts         []string         `json:"used_key_parts"`
-	KeyLength            string           `json:"key_length"`
-	Ref                  []string         `json:"ref"`
-	RowsExaminedPerScan  int64            `json:"rows_examined_per_scan"`
-	RowsProducedPerJoin  int64            `json:"rows_produced_per_join"`
-	Filtered             float64          `json:"filtered"` // Percentage of rows filtered by WHERE
-	CostInfo             mysqlCostInfo    `json:"cost_info"`
-	AttachedCondition    string           `json:"attached_condition"` // WHERE clause
+	TableName           string        `json:"table_name"`
+	AccessType          string        `json:"access_type"` // "ALL", "index", "range", "ref", "eq_ref", "const", "system"
+	PossibleKeys        []string      `json:"possible_keys"`
+	Key                 string        `json:"key"` // Index name used (empty if none)
+	UsedKeyParts        []string      `json:"used_key_parts"`
+	KeyLength           string        `json:"key_length"`
+	Ref                 []string      `json:"ref"`
+	RowsExaminedPerScan int64         `json:"rows_examined_per_scan"`
+	RowsProducedPerJoin int64         `json:"rows_produced_per_join"`
+	Filtered            float64       `json:"filtered"` // Percentage of rows filtered by WHERE
+	CostInfo            mysqlCostInfo `json:"cost_info"`
+	AttachedCondition   string        `json:"attached_condition"` // WHERE clause
 }
 
 // mysqlNestedLoop represents JOIN operations in MySQL EXPLAIN output.
@@ -88,25 +88,25 @@ type mysqlNestedLoop struct {
 
 // mysqlGrouping represents GROUP BY operations in MySQL EXPLAIN output.
 type mysqlGrouping struct {
-	UsingTemporaryTable bool             `json:"using_temporary_table"`
-	UsingFilesort       bool             `json:"using_filesort"`
+	UsingTemporaryTable bool              `json:"using_temporary_table"`
+	UsingFilesort       bool              `json:"using_filesort"`
 	Table               *mysqlTableAccess `json:"table"`
 	NestedLoop          *mysqlNestedLoop  `json:"nested_loop"`
 }
 
 // mysqlOrdering represents ORDER BY operations in MySQL EXPLAIN output.
 type mysqlOrdering struct {
-	UsingFilesort bool             `json:"using_filesort"`
+	UsingFilesort bool              `json:"using_filesort"`
 	Table         *mysqlTableAccess `json:"table"`
 	NestedLoop    *mysqlNestedLoop  `json:"nested_loop"`
 }
 
 // mysqlCostInfo represents cost estimates in MySQL EXPLAIN output.
 type mysqlCostInfo struct {
-	QueryCost      string `json:"query_cost"`       // Total query cost as string
-	ReadCost       string `json:"read_cost"`        // Cost of reading rows
-	EvalCost       string `json:"eval_cost"`        // Cost of evaluating conditions
-	PrefixCost     string `json:"prefix_cost"`      // Cumulative cost up to this point
+	QueryCost       string `json:"query_cost"`         // Total query cost as string
+	ReadCost        string `json:"read_cost"`          // Cost of reading rows
+	EvalCost        string `json:"eval_cost"`          // Cost of evaluating conditions
+	PrefixCost      string `json:"prefix_cost"`        // Cumulative cost up to this point
 	DataReadPerJoin string `json:"data_read_per_join"` // Amount of data read
 }
 

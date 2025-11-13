@@ -51,33 +51,33 @@ func (pa *PostgresAnalyzer) executeExplain(ctx context.Context, explainQuery str
 
 // postgresExplainRoot represents the root structure of PostgreSQL EXPLAIN JSON output.
 type postgresExplainRoot struct {
-	Plan           postgresExplainPlan `json:"Plan"`
-	PlanningTime   float64             `json:"Planning Time"`   // milliseconds
-	ExecutionTime  float64             `json:"Execution Time"`  // milliseconds (EXPLAIN ANALYZE only)
-	Triggers       []json.RawMessage   `json:"Triggers"`        // optional
-	JITTime        float64             `json:"JIT Time"`        // optional
+	Plan          postgresExplainPlan `json:"Plan"`
+	PlanningTime  float64             `json:"Planning Time"`  // milliseconds
+	ExecutionTime float64             `json:"Execution Time"` // milliseconds (EXPLAIN ANALYZE only)
+	Triggers      []json.RawMessage   `json:"Triggers"`       // optional
+	JITTime       float64             `json:"JIT Time"`       // optional
 }
 
 // postgresExplainPlan represents a plan node in PostgreSQL EXPLAIN output.
 type postgresExplainPlan struct {
-	NodeType        string                `json:"Node Type"`        // "Seq Scan", "Index Scan", etc.
-	RelationName    string                `json:"Relation Name"`    // table name
-	Alias           string                `json:"Alias"`            // table alias
-	ParentRelation  string                `json:"Parent Relationship"` // optional
-	JoinType        string                `json:"Join Type"`        // optional
-	IndexName       string                `json:"Index Name"`       // optional
-	IndexCond       string                `json:"Index Cond"`       // optional
-	Filter          string                `json:"Filter"`           // optional
-	TotalCost       float64               `json:"Total Cost"`       // estimated total cost
-	StartupCost     float64               `json:"Startup Cost"`     // estimated startup cost
-	PlanRows        int64                 `json:"Plan Rows"`        // estimated rows
-	PlanWidth       int                   `json:"Plan Width"`       // estimated row width in bytes
-	ActualRows      int64                 `json:"Actual Rows"`      // actual rows (EXPLAIN ANALYZE only)
-	ActualLoops     int                   `json:"Actual Loops"`     // number of times executed
-	ActualTotalTime float64               `json:"Actual Total Time"` // milliseconds (EXPLAIN ANALYZE only)
-	SharedHitBlocks int64                 `json:"Shared Hit Blocks"` // buffer cache hits
-	SharedReadBlocks int64                `json:"Shared Read Blocks"` // buffer cache misses
-	Plans           []postgresExplainPlan `json:"Plans"`            // child plans
+	NodeType         string                `json:"Node Type"`           // "Seq Scan", "Index Scan", etc.
+	RelationName     string                `json:"Relation Name"`       // table name
+	Alias            string                `json:"Alias"`               // table alias
+	ParentRelation   string                `json:"Parent Relationship"` // optional
+	JoinType         string                `json:"Join Type"`           // optional
+	IndexName        string                `json:"Index Name"`          // optional
+	IndexCond        string                `json:"Index Cond"`          // optional
+	Filter           string                `json:"Filter"`              // optional
+	TotalCost        float64               `json:"Total Cost"`          // estimated total cost
+	StartupCost      float64               `json:"Startup Cost"`        // estimated startup cost
+	PlanRows         int64                 `json:"Plan Rows"`           // estimated rows
+	PlanWidth        int                   `json:"Plan Width"`          // estimated row width in bytes
+	ActualRows       int64                 `json:"Actual Rows"`         // actual rows (EXPLAIN ANALYZE only)
+	ActualLoops      int                   `json:"Actual Loops"`        // number of times executed
+	ActualTotalTime  float64               `json:"Actual Total Time"`   // milliseconds (EXPLAIN ANALYZE only)
+	SharedHitBlocks  int64                 `json:"Shared Hit Blocks"`   // buffer cache hits
+	SharedReadBlocks int64                 `json:"Shared Read Blocks"`  // buffer cache misses
+	Plans            []postgresExplainPlan `json:"Plans"`               // child plans
 }
 
 // parsePostgresExplain parses PostgreSQL EXPLAIN JSON output into a QueryPlan.

@@ -127,7 +127,7 @@ func TestParseSQLiteExplain(t *testing.T) {
 			},
 		},
 		{
-			name: "empty_plan",
+			name:      "empty_plan",
 			planLines: []string{},
 			want: &QueryPlan{
 				Cost:          0,

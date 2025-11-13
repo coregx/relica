@@ -138,10 +138,10 @@ func TestParseWhereClause(t *testing.T) {
 
 func TestExtractJoinColumns(t *testing.T) {
 	tests := []struct {
-		name      string
-		join      string
-		leftCol   string
-		rightCol  string
+		name     string
+		join     string
+		leftCol  string
+		rightCol string
 	}{
 		{
 			name:     "simple JOIN",

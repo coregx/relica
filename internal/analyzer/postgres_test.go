@@ -313,9 +313,9 @@ func TestExtractPostgresMetrics(t *testing.T) {
 		{
 			name: "seq_scan_sets_full_scan",
 			node: &postgresExplainPlan{
-				NodeType:    "Seq Scan",
-				TotalCost:   10.0,
-				PlanRows:    50,
+				NodeType:  "Seq Scan",
+				TotalCost: 10.0,
+				PlanRows:  50,
 			},
 			withAnalyze: false,
 			wantPlan: &QueryPlan{
@@ -356,12 +356,12 @@ func TestExtractPostgresMetrics(t *testing.T) {
 		{
 			name: "buffer_statistics_accumulate",
 			node: &postgresExplainPlan{
-				NodeType:          "Index Scan",
-				IndexName:         "test_idx",
-				SharedHitBlocks:   50,
-				SharedReadBlocks:  10,
-				TotalCost:         8.0,
-				PlanRows:          5,
+				NodeType:         "Index Scan",
+				IndexName:        "test_idx",
+				SharedHitBlocks:  50,
+				SharedReadBlocks: 10,
+				TotalCost:        8.0,
+				PlanRows:         5,
 			},
 			withAnalyze: true,
 			wantPlan: &QueryPlan{

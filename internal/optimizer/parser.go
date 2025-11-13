@@ -131,9 +131,9 @@ func parseConditions(whereClause string) []Condition {
 			continue
 		}
 
-		function := match[1]  // Function name (e.g., "upper")
-		column := match[2]    // Column name
-		operator := match[3]  // Operator
+		function := match[1] // Function name (e.g., "upper")
+		column := match[2]   // Column name
+		operator := match[3] // Operator
 
 		// Skip SQL keywords
 		if isSQLKeyword(column) {
@@ -165,8 +165,8 @@ func parseConditions(whereClause string) []Condition {
 			continue
 		}
 
-		column := match[1]    // Column name
-		operator := match[2]  // Operator
+		column := match[1]   // Column name
+		operator := match[2] // Operator
 
 		// Skip SQL keywords
 		if isSQLKeyword(column) {
@@ -218,9 +218,9 @@ func extractJoinColumns(join string) (leftCol, rightCol string) {
 	matches := re.FindStringSubmatch(join)
 	if len(matches) >= 5 {
 		tableName := matches[1] // Real table name
-		alias := matches[2]      // Alias (may be empty)
-		leftCol = matches[3]     // Left column
-		rightCol = matches[4]    // Right column
+		alias := matches[2]     // Alias (may be empty)
+		leftCol = matches[3]    // Left column
+		rightCol = matches[4]   // Right column
 
 		// If rightCol starts with alias, replace alias with table name
 		if alias != "" {
@@ -377,7 +377,6 @@ func extractSelectColumns(sql string) []string {
 
 	return columns
 }
-
 
 // ParseError represents an error during SQL parsing.
 type ParseError struct {
