@@ -2,7 +2,6 @@
 
 > **Migrating from sqlx to Relica** - A Practical Guide
 >
-> **Version**: v0.5.0
 > **Last Updated**: 2025-11-13
 
 ---

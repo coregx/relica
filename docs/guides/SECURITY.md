@@ -2,7 +2,6 @@
 
 > **Relica Security Features** - SQL Injection Prevention & Audit Logging
 >
-> **Version**: v0.5.0
 > **Last Updated**: 2025-11-13
 
 ---

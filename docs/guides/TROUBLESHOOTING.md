@@ -1,7 +1,6 @@
 # Troubleshooting Guide
 
 > **Common Issues and Solutions**
-> **Version**: v0.5.0
 
 ---
 

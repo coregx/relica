@@ -1,9 +1,6 @@
 # Getting Started with Relica
 
 > **Quick Start Guide** - From Zero to Production in 15 Minutes
->
-> **Version**: v0.5.0
-> **Last Updated**: 2025-11-13
 
 ---
 
@@ -176,7 +173,7 @@ type User struct {
 
 ### 3. Query Building
 
-**Fluent API (v0.4.1+):**
+**Fluent API:**
 ```go
 // Convenience methods (shorter)
 db.Select("*").From("users").All(&users)
@@ -261,6 +258,159 @@ result, err := db.Delete("users").
     Where("id = ?", 1).
     Execute()
 ```
+
+---
+
+## 🏗️ Struct-Based Operations
+
+Type-safe struct operations that eliminate manual map construction.
+
+### InsertStruct - Single Struct Insert
+
+Insert a struct directly without building a map:
+
+```go
+type User struct {
+    ID    int    `db:"id"`
+    Name  string `db:"name"`
+    Email string `db:"email"`
+    Age   int    `db:"age"`
+}
+
+user := User{
+    Name:  "Alice",
+    Email: "alice@example.com",
+    Age:   30,
+}
+
+result, err := db.InsertStruct("users", &user).Execute()
+```
+
+**Benefits:**
+- ✅ Type-safe at compile time
+- ✅ No manual map construction
+- ✅ Uses `db` tags automatically
+- ✅ Works with `db:"-"` to exclude fields
+
+### BatchInsertStruct - Batch Insert
+
+Insert multiple structs in a single query:
+
+```go
+users := []User{
+    {Name: "Alice", Email: "alice@example.com", Age: 30},
+    {Name: "Bob", Email: "bob@example.com", Age: 25},
+    {Name: "Carol", Email: "carol@example.com", Age: 28},
+}
+
+result, err := db.BatchInsertStruct("users", users).Execute()
+```
+
+**Performance:** Same as map-based `BatchInsert()` - significantly faster than individual inserts.
+
+### UpdateStruct - Struct-Based Update
+
+Update using a struct with explicit WHERE clause:
+
+```go
+user := User{
+    Name:  "Alice Updated",
+    Email: "alice.new@example.com",
+    Age:   31,
+}
+
+result, err := db.UpdateStruct("users", &user).
+    Where("id = ?", 1).
+    Execute()
+```
+
+### Model() API - Domain Models
+
+For domain models that map directly to tables, use the **Model() API** for even less boilerplate:
+
+#### INSERT with Auto Table Name
+
+```go
+type User struct {
+    ID    int    `db:"id"`
+    Name  string `db:"name"`
+    Email string `db:"email"`
+    Age   int    `db:"age"`
+}
+
+// Implement TableName() interface
+func (User) TableName() string {
+    return "users"
+}
+
+// INSERT - auto-detects table name
+user := User{Name: "Alice", Email: "alice@example.com", Age: 30}
+err := db.Model(&user).Insert()
+// SQL: INSERT INTO users (name, email, age) VALUES (?, ?, ?)
+```
+
+#### UPDATE with Auto WHERE
+
+Auto-generates WHERE clause using primary key:
+
+```go
+user := User{ID: 1, Name: "Alice Updated", Email: "alice.new@example.com"}
+err := db.Model(&user).Update()
+// SQL: UPDATE users SET name=?, email=?, age=? WHERE id=?
+```
+
+**Primary key detection:**
+- Looks for `db:"id"` tag
+- Falls back to field named `ID`
+
+#### DELETE with Auto WHERE
+
+```go
+user := User{ID: 1}
+err := db.Model(&user).Delete()
+// SQL: DELETE FROM users WHERE id=?
+```
+
+#### Field Control
+
+Exclude auto-managed fields:
+
+```go
+// Exclude timestamps from INSERT
+err := db.Model(&user).Exclude("created_at", "updated_at").Insert()
+
+// Insert only specific fields
+err := db.Model(&user).Insert("name", "email")
+```
+
+#### Table Override
+
+Override the table name dynamically:
+
+```go
+// Insert into archive table
+err := db.Model(&user).Table("users_archive").Insert()
+```
+
+### When to Use Each Approach?
+
+| Feature | InsertStruct() | Model().Insert() |
+|---------|---------------|------------------|
+| **Table name** | Manual | Auto-detected |
+| **Primary key** | Manual WHERE | Auto WHERE |
+| **Best for** | Ad-hoc data, DTOs | Domain models |
+| **Boilerplate** | More explicit | Minimal |
+| **Control** | Full control | Convention-based |
+
+**Use InsertStruct() when:**
+- Working with ad-hoc data structures
+- Need explicit WHERE clause control
+- Batch operations without PK logic
+
+**Use Model() when:**
+- Working with domain models (structs map to tables)
+- Need automatic WHERE by primary key
+- Want minimal boilerplate for CRUD
 
 ---
 

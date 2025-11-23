@@ -376,4 +376,3 @@ watch -n1 'psql -c "SELECT count(*) FROM pg_stat_activity"'
 ---
 
 *Last Updated: 2025-11-13*
-*For: Relica v0.5.0*

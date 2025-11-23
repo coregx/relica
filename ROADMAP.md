@@ -1,8 +1,8 @@
 # Relica Roadmap
 
-> **Current Version**: v0.4.1-beta (Released: October 26, 2025)
-> **Previous Release**: v0.4.0-beta (Released: October 26, 2025)
-> **Production Ready**: v1.0.0 (Target: Q2 2026)
+> **Current Version**: v0.6.0 (Released: November 24, 2025)
+> **Previous Release**: v0.5.0 (Released: November 14, 2025)
+> **Production Ready**: v1.0.0 (Target: Q3-Q4 2026)
 
 ---
 
@@ -14,11 +14,12 @@
 
 ---
 
-## 📍 Current State (v0.4.1-beta)
+## 📍 Current State (v0.6.0 - Struct Operations)
 
 ### ✅ Completed Features
 
 - **CRUD Operations**: SELECT, INSERT, UPDATE, DELETE, UPSERT
+- **Struct Operations**: InsertStruct, BatchInsertStruct, UpdateStruct, Model() API
 - **Type-Safe Scanning**: Struct tags, reflection-based
 - **Transactions**: All isolation levels, context support
 - **Batch Operations**: 3.3x faster INSERT, 2.5x faster UPDATE
@@ -33,6 +34,12 @@
 - **Multi-Database**: PostgreSQL, MySQL 8.0+, SQLite 3.25+ support
 - **Performance**: LRU statement cache (<60ns hit), zero allocations in hot paths
 - **Zero Dependencies**: Production code uses only Go standard library
+- **🛡️ Enterprise Security** (v0.5.0): SQL injection prevention, audit logging, compliance (GDPR, HIPAA, PCI-DSS, SOC2)
+- **🎯 Query Optimizer** (v0.5.0): 4-phase optimization with database-specific hints
+- **📊 Query Analyzer** (v0.5.0): EXPLAIN integration for PostgreSQL, MySQL, SQLite
+- **📝 SQL Logging & Tracing** (v0.5.0): Structured logging (slog), OpenTelemetry support
+- **⚡ Performance Monitoring** (v0.5.0): Health checks, cache warming, query pinning
+- **📚 Professional Documentation** (v0.5.0): 10,000+ lines, migration guides, user guides
 
 ### 📊 Metrics
 
@@ -119,23 +126,84 @@
 
 ---
 
-### v0.5.0 (Q1 2025)
+### v0.5.0 ✅ (Released: November 14, 2025)
 
-**Goal**: Production hardening & performance
+**Goal**: Enterprise-ready database query builder
 
-**Planned Features**:
-- ⚡ **Query Optimizer** (auto-index hints)
-- 📊 **Query Analyzer** (EXPLAIN integration)
-- 🔍 **Query Debugging** (SQL logging, tracing)
-- 🚀 **Performance Tuning** (advanced connection pooling)
-- 🛡️ **Security Hardening** (SQL injection prevention, audit logging)
+**Completed Features**:
+- ✅ **🛡️ Enterprise Security**: SQL injection prevention (OWASP Top 10), audit logging, compliance support
+- ✅ **🎯 Query Optimizer**: 4-phase optimization with database-specific hints
+- ✅ **📊 Query Analyzer**: EXPLAIN integration for PostgreSQL, MySQL, SQLite
+- ✅ **📝 SQL Logging & Tracing**: Structured logging (slog), OpenTelemetry support
+- ✅ **⚡ Performance Monitoring**: Health checks, cache warming, query pinning
+- ✅ **📚 Professional Documentation**: 10,000+ lines, migration guides (GORM, sqlx), 6 user guides
+- ✅ **CI/CD Enhancements**: Codecov integration, release/hotfix branch support
 
-**Timeline**: 6-8 weeks
-**Dependencies**: v0.4.0-beta ✅
+**Achievements**:
+- **72 files changed**, 19,809+ lines added
+- **32 commits** across 5 major features (TASK-001 to TASK-005)
+- **326+ tests**, 93.3% coverage
+- **Zero production dependencies**
+- **Professional Git Flow** release process
+
+**Timeline**: Completed in 3 weeks (November 2025)
+**Status**: ✅ Production Ready
 
 ---
 
-### v1.0.0 (Q2 2026)
+### v0.6.0 ✅ (Released: November 24, 2025)
+
+**Goal**: Type-safe struct operations for improved developer experience
+
+**Completed Features**:
+- ✅ **InsertStruct/UpdateStruct** (Phase 1):
+  - `InsertStruct(table, &struct)` - eliminate manual map construction
+  - `BatchInsertStruct(table, []struct)` - batch operations with structs
+  - `UpdateStruct(table, &struct)` - struct-based updates
+  - Uses existing scanner infrastructure (zero duplication)
+
+- ✅ **Model() API** (Phase 2):
+  - `Model(&struct).Insert()` - elegant CRUD operations
+  - `Model(&struct).Update()` - auto WHERE by primary key
+  - `Model(&struct).Delete()` - auto WHERE by primary key
+  - `Exclude(fields...)` - field control
+  - `Table(name)` - table override
+  - `TableName()` interface support
+  - Inspired by ozzo-dbx (our reference implementation)
+
+**Achievements**:
+- **Type safety**: Compile-time struct validation
+- **Less boilerplate**: No manual map construction
+- **DX improvement**: Requested by real production user (PubSub-Go)
+- **Backward compatible**: All new methods, zero breaking changes
+- **48 tests** (27 integration + 21 unit), **86% coverage**
+- **Zero breaking changes**
+
+**Implementation Time**: 8.5 hours (within 8-11 hour estimate)
+**Status**: ✅ Implementation Complete
+**Tasks**: TASK-006 (Phase 1), TASK-007 (Phase 2) - both completed
+
+---
+
+### v0.7.0 - v0.9.0 (Q1-Q3 2026)
+
+**Goal**: API stabilization & community feedback
+
+**Planned Features**:
+- Named queries (like sqlx NamedExec)
+- Auto-increment primary key population
+- Composite primary key support
+- Advanced query helpers (CASE, COALESCE)
+- Error message improvements
+- Read replica support (optional)
+- Performance optimizations based on feedback
+
+**Timeline**: 9 months
+**Focus**: Real-world production validation
+
+---
+
+### v1.0.0 (Q3-Q4 2026)
 
 **Goal**: Production-ready stable release
 
@@ -252,7 +320,9 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 - **v0.3.0-beta** (2025-10-25) - Subqueries, Set Operations, CTEs, WrapDB() (advanced SQL features)
 - **v0.4.0-beta** (2025-10-26) - Wrapper types migration, better documentation, API stability
 - **v0.4.1-beta** (2025-10-26) - Convenience methods (Select, Insert, Update, Delete)
-- **v1.0.0** (Target: Q2 2026) - Production stable release
+- **v0.5.0** (2025-11-14) - Enterprise security, query optimizer, comprehensive documentation
+- **v0.6.0** (2025-11-24) - Struct operations (InsertStruct, Model API)
+- **v1.0.0** (Target: Q3-Q4 2026) - Production stable release
 
 ---
 
@@ -265,5 +335,5 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 
 ---
 
-*Last Updated: 2025-10-26*
+*Last Updated: 2025-11-24*
 *Maintained by: COREGX Team*

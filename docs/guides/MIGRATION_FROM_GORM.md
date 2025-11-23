@@ -2,7 +2,6 @@
 
 > **Migrating from GORM to Relica** - A Practical Guide
 >
-> **Version**: v0.5.0
 > **Last Updated**: 2025-11-13
 
 ---
@@ -114,7 +113,7 @@ db.Find(&users)
 ```go
 var users []User
 db.Select("*").From("users").All(&users)
-// Or shorter (v0.4.1+):
+// Or shorter:
 db.Select("*").From("users").All(&users)
 ```
 

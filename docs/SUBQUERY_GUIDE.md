@@ -28,7 +28,6 @@ Subqueries are SELECT queries nested within another SQL statement. Relica provid
 - Avoid N+1 query problems
 - Improve code maintainability
 
-**Version Support**: Relica v0.3.0-beta and later
 
 ## Types of Subqueries
 
@@ -1075,5 +1074,4 @@ Complete working examples available in Relica repository:
 ---
 
 **Last Updated**: 2025-01-25
-**Relica Version**: v0.3.0-beta
 **Minimum Go Version**: 1.25+
