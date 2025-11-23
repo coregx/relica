@@ -1,7 +1,6 @@
 # Performance Tuning Guide
 
 > **Optimize Relica for Maximum Performance**
-> **Version**: v0.5.0
 
 ---
 

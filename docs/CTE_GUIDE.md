@@ -26,7 +26,6 @@ Common Table Expressions (CTEs) are named temporary result sets defined using th
 - **Maintainability**: Easier to modify and debug
 - **Self-documenting**: Named CTEs explain query logic
 
-**Version Support**: Relica v0.3.0-beta and later
 
 ## Basic CTEs
 
@@ -974,5 +973,4 @@ Complete working examples available in Relica repository:
 ---
 
 **Last Updated**: 2025-01-25
-**Relica Version**: v0.3.0-beta
 **Minimum Go Version**: 1.25+
