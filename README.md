@@ -15,14 +15,14 @@
 - ⚡ **High Performance** - LRU statement cache, batch operations (3.3x faster)
 - 🎯 **Type-Safe** - Reflection-based struct scanning with compile-time checks
 - 🔒 **Transaction Support** - Full ACID with all isolation levels
-- 🛡️ **Enterprise Security** - SQL injection prevention, audit logging, compliance (v0.5.0+)
+- 🛡️ **Enterprise Security** - SQL injection prevention, audit logging, compliance
 - 📦 **Batch Operations** - Efficient multi-row INSERT and UPDATE
-- 🔗 **JOIN Operations** - INNER, LEFT, RIGHT, FULL, CROSS JOIN support (v0.2.0+)
-- 📊 **Sorting & Pagination** - ORDER BY, LIMIT, OFFSET (v0.2.0+)
-- 🔢 **Aggregate Functions** - COUNT, SUM, AVG, MIN, MAX, GROUP BY, HAVING (v0.2.0+)
-- 🔍 **Subqueries** - IN, EXISTS, FROM subqueries, scalar subqueries (v0.3.0+)
-- 🔀 **Set Operations** - UNION, UNION ALL, INTERSECT, EXCEPT (v0.3.0+)
-- 🌳 **Common Table Expressions** - WITH clause, recursive CTEs (v0.3.0+)
+- 🔗 **JOIN Operations** - INNER, LEFT, RIGHT, FULL, CROSS JOIN support
+- 📊 **Sorting & Pagination** - ORDER BY, LIMIT, OFFSET
+- 🔢 **Aggregate Functions** - COUNT, SUM, AVG, MIN, MAX, GROUP BY, HAVING
+- 🔍 **Subqueries** - IN, EXISTS, FROM subqueries, scalar subqueries
+- 🔀 **Set Operations** - UNION, UNION ALL, INTERSECT, EXCEPT
+- 🌳 **Common Table Expressions** - WITH clause, recursive CTEs
 - 🌐 **Multi-Database** - PostgreSQL, MySQL 8.0+, SQLite 3.25+ support
 - 🧪 **Well-Tested** - 326+ tests, 93.3% coverage
 - 📝 **Clean API** - Fluent builder pattern with context support
@@ -69,7 +69,7 @@ func main() {
 
     ctx := context.Background()
 
-    // SELECT - Query single row (v0.4.1+ convenience method)
+    // SELECT - Query single row (convenience method)
     var user User
     err = db.Select("*").
         From("users").
@@ -120,10 +120,10 @@ func main() {
 
 ### CRUD Operations
 
-**New in v0.4.1**: Convenience methods for shorter, more intuitive code!
+**Convenience methods** for shorter, more intuitive code!
 
 ```go
-// SELECT (v0.4.1+ convenience method)
+// SELECT (convenience method)
 var user User
 db.Select("*").From("users").Where("id = ?", 1).One(&user)
 
@@ -165,7 +165,7 @@ db.Builder().
 db.Builder().Select("*").From("users").All(&users)
 ```
 
-### Expression API (v0.1.2+)
+### Expression API
 
 Relica supports fluent expression builders for type-safe, complex WHERE clauses:
 
@@ -323,7 +323,7 @@ db.Builder().Select().From("users").
     All(&users)
 ```
 
-### JOIN Operations (v0.2.0+)
+### JOIN Operations
 
 **Solve N+1 query problems with JOIN support** - reduces 101 queries to 1 query (100x improvement).
 
@@ -374,7 +374,7 @@ db.Builder().
 
 See [JOIN Guide](docs/dev/reports/JOIN_GUIDE.md) for comprehensive examples and best practices.
 
-### Sorting and Pagination (v0.2.0+)
+### Sorting and Pagination
 
 **Database-side sorting and pagination** for efficient data retrieval - 100x memory reduction.
 
@@ -410,7 +410,7 @@ db.Builder().
 
 **Performance**: 100x memory reduction (fetch only what you need vs all rows), 6x faster.
 
-### Aggregate Functions (v0.2.0+)
+### Aggregate Functions
 
 **Database-side aggregations** for COUNT, SUM, AVG, MIN, MAX - 2,500,000x memory reduction.
 
@@ -457,9 +457,9 @@ db.Builder().
 
 See [Aggregates Guide](docs/dev/reports/AGGREGATES_GUIDE.md) for comprehensive examples and patterns.
 
-### Advanced SQL Features (v0.3.0+)
+### Advanced SQL Features
 
-Relica v0.3.0 adds powerful SQL features for complex queries.
+Relica adds powerful SQL features for complex queries.
 
 #### Subqueries
 
@@ -738,7 +738,7 @@ db, err := relica.Open("postgres", dsn)
 defer db.Close()
 ```
 
-#### Wrap Existing Connection (v0.3.0+)
+#### Wrap Existing Connection
 
 Use `WrapDB()` when you need to integrate Relica with an existing `*sql.DB` connection:
 
@@ -791,7 +791,7 @@ defer sqlDB.Close()  // NOT db.Close()
 - The caller is responsible for closing the underlying `*sql.DB` connection
 - Multiple wraps of the same connection are isolated (separate caches)
 
-## 🛡️ Enterprise Security (v0.5.0+)
+## 🛡️ Enterprise Security
 
 Relica provides enterprise-grade security features for protecting your database operations:
 
@@ -865,7 +865,7 @@ _, err = db.ExecContext(ctx, "UPDATE users SET status = ? WHERE id = ?", 2, 123)
 
 ## 📖 Documentation
 
-### Migration Guides (v0.5.0+)
+### Migration Guides
 
 Switching from another library? We've got you covered:
 
@@ -881,7 +881,7 @@ Switching from another library? We've got you covered:
   - Statement caching benefits
   - Using both together
 
-### Comprehensive User Guides (v0.5.0+)
+### Comprehensive User Guides
 
 **Getting Started:**
 - **[Getting Started Guide](docs/guides/GETTING_STARTED.md)** - Installation, first query, CRUD operations, common patterns
@@ -895,7 +895,7 @@ Switching from another library? We've got you covered:
 **Advanced:**
 - **[Advanced Patterns Guide](docs/guides/ADVANCED_PATTERNS.md)** - Complex queries, CTEs, window functions, UPSERT
 
-### SQL Feature Guides (v0.3.0+)
+### SQL Feature Guides
 
 - **[Subquery Guide](docs/SUBQUERY_GUIDE.md)** - IN, EXISTS, FROM, scalar subqueries with performance tips
 - **[Set Operations Guide](docs/SET_OPERATIONS_GUIDE.md)** - UNION, INTERSECT, EXCEPT with database compatibility
@@ -938,7 +938,6 @@ go test -bench=. -benchmem ./benchmark/...
 
 ## 📊 Project Status
 
-- **Version**: v0.4.1-beta
 - **Go Version**: 1.25+
 - **Production Ready**: Yes (beta)
 - **Test Coverage**: 93.3%

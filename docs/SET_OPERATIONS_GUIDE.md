@@ -27,7 +27,6 @@ Set operations combine results from two or more SELECT queries. Think of them as
 - Find differences between datasets (EXCEPT)
 - Simplify complex OR conditions
 
-**Version Support**: Relica v0.3.0-beta and later
 
 ## UNION Operations
 
@@ -1096,5 +1095,4 @@ Complete working examples available in Relica repository:
 ---
 
 **Last Updated**: 2025-01-25
-**Relica Version**: v0.3.0-beta
 **Minimum Go Version**: 1.25+

@@ -58,6 +58,7 @@ INDEX.md
 # Temporary files
 *.tmp
 *.swp
+tmp/
 
 # Project structure file
 project_structure.txt

@@ -5,6 +5,67 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2025-11-24
+
+### Added
+
+**Struct-Based Operations** - Type-safe database operations using Go structs
+
+**Phase 1: InsertStruct/UpdateStruct**
+- `InsertStruct(table, &struct)` - Insert using struct with db tags (eliminates manual map construction)
+- `BatchInsertStruct(table, []struct)` - Batch insert for multiple structs
+- `UpdateStruct(table, &struct)` - Update using struct with db tags
+- Uses existing scanner infrastructure for zero duplication
+- Full transaction and context support
+
+**Phase 2: Model() API**
+- `Model(&struct).Insert()` - Elegant CRUD with automatic table name detection
+- `Model(&struct).Update()` - Auto WHERE by primary key
+- `Model(&struct).Delete()` - Auto WHERE by primary key
+- `TableName()` interface support - Custom table names via `func (T) TableName() string`
+- `Table(name)` method - Override table name when needed
+- `Exclude(fields...)` - Exclude specific fields from operations
+- Primary key auto-detection - Searches for `db:"id"` tag or `ID` field
+- Inspired by ozzo-dbx (our reference implementation)
+
+**Example Usage**:
+```go
+// InsertStruct - explicit table name
+user := User{Name: "Alice", Email: "alice@example.com"}
+result, err := db.InsertStruct("users", &user).Execute()
+
+// Model API - auto table name
+func (User) TableName() string { return "users" }
+err := db.Model(&user).Insert()
+
+// Auto WHERE by primary key
+user.Status = "active"
+err = db.Model(&user).Update()  // WHERE id = ?
+```
+
+**Features**:
+- Type safety with compile-time struct validation
+- Zero manual map construction
+- Automatic table name detection via TableName() interface
+- Automatic primary key detection (db:"id" or ID field)
+- Field control with Exclude()
+- Works with transactions and context
+- 48 tests (27 integration + 21 unit), 86% coverage
+- Zero breaking changes (fully backward compatible)
+
+### Documentation
+
+- Updated [GETTING_STARTED.md](docs/guides/GETTING_STARTED.md) with comprehensive struct operations section
+- Created [PUBSUB_FEATURE_RESPONSE.md](tmp/PUBSUB_FEATURE_RESPONSE.md) - Response to PubSub-Go feature requests
+
+### Internal
+
+- Created `internal/util/reflection.go` - StructToMap() utility for struct-to-map conversion
+- Created `internal/core/model_query.go` - ModelQuery implementation with auto table/PK detection
+- Added comprehensive test coverage (48 new tests)
+
+---
+
 ## [0.5.0] - 2025-11-14
 
 ### Added

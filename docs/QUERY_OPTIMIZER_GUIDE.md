@@ -1,6 +1,6 @@
 # Query Optimizer Guide
 
-> **Relica v0.5.0+** - Automatic query performance optimization and analysis
+>  Automatic query performance optimization and analysis
 
 The Query Optimizer automatically analyzes query performance, detects issues, and provides actionable optimization suggestions.
 
@@ -440,7 +440,7 @@ EXPLAIN SELECT * FROM users WHERE ...;
 
 ---
 
-## Phase 2: Advanced Index Analysis (v0.5.1+)
+## Phase 2: Advanced Index Analysis (Planned)
 
 ### New Features
 
@@ -781,7 +781,7 @@ type Analyzer interface {
 
 ## Changelog
 
-### v0.5.1 (Current)
+### Phase 1-2 (Current)
 - ✅ Phase 2: Advanced Index Analysis
   - Smart WHERE clause parsing (AND/OR logic, operators, functions)
   - Composite index recommendations
@@ -790,14 +790,14 @@ type Analyzer interface {
   - Function-based index warnings
   - 89.9% test coverage
 
-### v0.5.0
+### Phase 1
 - ✅ Phase 1: Foundation
   - Slow query detection
   - Full scan detection
   - Basic index recommendations
   - PostgreSQL, MySQL, SQLite support
 
-### v0.5.2 (Current - Phase 3-4)
+### Phase 3-4 (Current)
 - ✅ Phase 3: Multi-Database Enhancements
   - Database-specific optimization hints
   - PostgreSQL: ANALYZE, parallel queries, buffer cache analysis
@@ -810,7 +810,7 @@ type Analyzer interface {
   - Comprehensive godoc
   - Production-ready code quality
 
-### v0.6.0 (Planned)
+### Future Enhancements
 - 🚧 Query Rewriting & Advanced Analysis
   - Automatic query optimization
   - N+1 query detection
@@ -819,7 +819,7 @@ type Analyzer interface {
 
 ---
 
-## Phase 3: Database-Specific Optimizations (v0.5.2+)
+## Phase 3: Database-Specific Optimizations (Planned)
 
 The Phase 3 optimizer provides **database-aware** optimization hints tailored to PostgreSQL, MySQL, and SQLite.
 
@@ -1182,4 +1182,3 @@ Found a bug or have a suggestion?
 ---
 
 *Last Updated: 2025-01-13*
-*Relica Version: v0.5.0*

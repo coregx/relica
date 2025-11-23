@@ -29,7 +29,6 @@ Window functions perform calculations across a set of rows related to the curren
 - **Comparative analysis**: Compare row to previous/next rows
 - **Top N per group**: Without complex subqueries
 
-**Version Support**: Relica v0.3.0-beta and later (via `SelectExpr()`)
 
 **Note**: Relica doesn't have dedicated window function API yet. Use `SelectExpr()` with raw SQL window function syntax.
 
@@ -775,7 +774,7 @@ db.Builder().
     SelectExpr("WINDOW w AS (PARTITION BY category ORDER BY price)")
 ```
 
-**Note**: Named windows (WINDOW clause) not yet supported in Relica v0.3.0-beta.
+**Note**: Named windows (WINDOW clause) not yet supported.
 
 ### Benchmark Results
 
@@ -1078,5 +1077,4 @@ CREATE INDEX idx_created_at ON orders(created_at DESC);
 ---
 
 **Last Updated**: 2025-01-25
-**Relica Version**: v0.3.0-beta
 **Minimum Go Version**: 1.25+

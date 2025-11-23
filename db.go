@@ -50,10 +50,14 @@ package relica
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"reflect"
+	"sort"
 
 	"github.com/coregx/relica/internal/core"
 	"github.com/coregx/relica/internal/logger"
 	"github.com/coregx/relica/internal/tracer"
+	"github.com/coregx/relica/internal/util"
 )
 
 // DB represents a database connection with query building capabilities.
@@ -148,6 +152,41 @@ type Tx struct {
 	tx *core.Tx
 }
 
+// ModelQuery provides CRUD operations for struct models.
+//
+// ModelQuery simplifies database operations by automatically inferring
+// table names and primary keys from struct definitions, similar to ozzo-dbx.
+//
+// The table name is determined by:
+//  1. TableName() method if model implements interface{ TableName() string }
+//  2. Otherwise: struct name lowercased with 's' suffix (e.g., User → users)
+//
+// The primary key is detected from:
+//  1. Field with db:"id" tag
+//  2. Field with db:"*_id" tag (e.g., db:"user_id")
+//  3. Field named "ID"
+//
+// Example:
+//
+//	type User struct {
+//	    ID    int    `db:"id"`
+//	    Name  string `db:"name"`
+//	    Email string `db:"email"`
+//	}
+//
+//	func (User) TableName() string { return "users" }
+//
+//	user := User{Name: "Alice", Email: "alice@example.com"}
+//	err := db.Model(&user).Insert()
+//
+//	user.Status = "active"
+//	err = db.Model(&user).Update() // Auto WHERE by primary key.
+//
+//	err = db.Model(&user).Delete() // Auto WHERE by primary key.
+type ModelQuery struct {
+	mq *core.ModelQuery
+}
+
 // Query represents a built query ready for execution.
 //
 // Query encapsulates the SQL string, parameters, and execution context.
@@ -159,7 +198,8 @@ type Tx struct {
 //	var user User
 //	err := q.One(&user)
 type Query struct {
-	q *core.Query
+	q   *core.Query
+	err error // Error from query construction (e.g., struct conversion).
 }
 
 // TxOptions represents transaction options including isolation level.
@@ -421,6 +461,48 @@ func (d *DB) Builder() *QueryBuilder {
 	return &QueryBuilder{qb: d.db.Builder()}
 }
 
+// Model creates a ModelQuery for performing CRUD operations on a struct model.
+//
+// The model must be a pointer to a struct. The table name and primary key
+// are automatically inferred from the struct definition.
+//
+// Table name resolution:
+//  1. If model implements TableName() string, use that value
+//  2. Otherwise, use struct name lowercased + 's' (e.g., User → users)
+//
+// Primary key detection:
+//  1. Field with db:"id" tag
+//  2. Field with db:"*_id" tag (e.g., db:"user_id")
+//  3. Field named "ID"
+//
+// Example:
+//
+//	type User struct {
+//	    ID    int    `db:"id"`
+//	    Name  string `db:"name"`
+//	    Email string `db:"email"`
+//	}
+//
+//	func (User) TableName() string { return "users" }
+//
+//	// INSERT - auto table name.
+//	user := User{Name: "Alice", Email: "alice@example.com"}
+//	err := db.Model(&user).Insert()
+//
+//	// UPDATE - auto WHERE by primary key.
+//	user.Status = "active"
+//	err = db.Model(&user).Update()
+//
+//	// DELETE - auto WHERE by primary key.
+//	err = db.Model(&user).Delete()
+//
+//	// Field control.
+//	err = db.Model(&user).Exclude("CreatedAt", "UpdatedAt").Insert()
+//	err = db.Model(&user).Table("users_archive").Insert()
+func (d *DB) Model(model interface{}) *ModelQuery {
+	return &ModelQuery{mq: d.db.Model(model)}
+}
+
 // Select creates a new SELECT query.
 //
 // This is a convenience method equivalent to db.Builder().Select(cols...).
@@ -473,6 +555,84 @@ func (d *DB) Select(cols ...string) *SelectQuery {
 //	    Execute()
 func (d *DB) Insert(table string, data map[string]interface{}) *Query {
 	return d.Builder().Insert(table, data)
+}
+
+// InsertStruct builds an INSERT query from a struct using db tags.
+//
+// The struct fields are mapped to database columns using the `db` struct tag.
+// Fields without a `db` tag use the field name.
+// Fields tagged with `db:"-"` are ignored.
+// Unexported fields are automatically skipped.
+//
+// This method provides type-safe struct-based inserts without manually
+// constructing maps. For batch struct inserts, use BatchInsertStruct.
+//
+// Example:
+//
+//	type User struct {
+//	    ID    int    `db:"id"`
+//	    Name  string `db:"name"`
+//	    Email string `db:"email"`
+//	    Skip  int    `db:"-"`  // ignored
+//	}
+//
+//	user := User{Name: "Alice", Email: "alice@example.com"}
+//	result, err := db.InsertStruct("users", &user).Execute()
+//	if err != nil {
+//	    return err
+//	}
+func (d *DB) InsertStruct(table string, data interface{}) *Query {
+	return d.Builder().InsertStruct(table, data)
+}
+
+// BatchInsertStruct builds a batch INSERT query from a slice of structs.
+//
+// This method performs batch insertion of multiple structs in a single query,
+// which is significantly faster than individual inserts. All structs must
+// have the same type and will be inserted with the same column set.
+//
+// The slice element type must be a struct or pointer to struct.
+// Fields are mapped using the same rules as InsertStruct.
+//
+// Example:
+//
+//	users := []User{
+//	    {Name: "Alice", Email: "alice@example.com"},
+//	    {Name: "Bob", Email: "bob@example.com"},
+//	}
+//	result, err := db.BatchInsertStruct("users", users).Execute()
+//	if err != nil {
+//	    return err
+//	}
+//
+// For single struct inserts, use InsertStruct instead.
+func (d *DB) BatchInsertStruct(table string, data interface{}) *Query {
+	return d.Builder().BatchInsertStruct(table, data)
+}
+
+// UpdateStruct builds an UPDATE query from a struct using db tags.
+//
+// Similar to InsertStruct, but for UPDATE operations. The struct fields
+// are converted to SET clauses. You must chain a Where() call to specify
+// which rows to update.
+//
+// This method provides type-safe struct-based updates without manually
+// constructing maps.
+//
+// Example:
+//
+//	user := User{Name: "Alice Updated", Status: "active"}
+//	result, err := db.UpdateStruct("users", &user).
+//	    Where("id = ?", user.ID).
+//	    Execute()
+//	if err != nil {
+//	    return err
+//	}
+//
+// For automatic WHERE clause based on primary key, consider using
+// the Model() API (available in v0.6.0+).
+func (d *DB) UpdateStruct(table string, data interface{}) *UpdateQuery {
+	return d.Builder().UpdateStruct(table, data)
 }
 
 // Update creates a new UPDATE query.
@@ -732,6 +892,62 @@ func (t *Tx) Insert(table string, data map[string]interface{}) *Query {
 	return t.Builder().Insert(table, data)
 }
 
+// InsertStruct creates an INSERT query from a struct within the transaction.
+//
+// This is a convenience method equivalent to tx.Builder().InsertStruct(table, data).
+// See DB.InsertStruct for full documentation.
+//
+// Example:
+//
+//	user := User{Name: "Alice", Email: "alice@example.com"}
+//	_, err := tx.InsertStruct("users", &user).Execute()
+//	if err != nil {
+//	    tx.Rollback()
+//	    return err
+//	}
+func (t *Tx) InsertStruct(table string, data interface{}) *Query {
+	return t.Builder().InsertStruct(table, data)
+}
+
+// BatchInsertStruct creates a batch INSERT query from structs within the transaction.
+//
+// This is a convenience method equivalent to tx.Builder().BatchInsertStruct(table, data).
+// See DB.BatchInsertStruct for full documentation.
+//
+// Example:
+//
+//	users := []User{
+//	    {Name: "Alice", Email: "alice@example.com"},
+//	    {Name: "Bob", Email: "bob@example.com"},
+//	}
+//	_, err := tx.BatchInsertStruct("users", users).Execute()
+//	if err != nil {
+//	    tx.Rollback()
+//	    return err
+//	}
+func (t *Tx) BatchInsertStruct(table string, data interface{}) *Query {
+	return t.Builder().BatchInsertStruct(table, data)
+}
+
+// UpdateStruct creates an UPDATE query from a struct within the transaction.
+//
+// This is a convenience method equivalent to tx.Builder().UpdateStruct(table, data).
+// See DB.UpdateStruct for full documentation.
+//
+// Example:
+//
+//	user := User{Name: "Alice Updated", Status: "active"}
+//	_, err := tx.UpdateStruct("users", &user).
+//	    Where("id = ?", user.ID).
+//	    Execute()
+//	if err != nil {
+//	    tx.Rollback()
+//	    return err
+//	}
+func (t *Tx) UpdateStruct(table string, data interface{}) *UpdateQuery {
+	return t.Builder().UpdateStruct(table, data)
+}
+
 // Update creates a new UPDATE query within the transaction.
 //
 // This is a convenience method equivalent to tx.Builder().Update(table).
@@ -798,6 +1014,105 @@ func (t *Tx) Unwrap() *core.Tx {
 	return t.tx
 }
 
+// Model creates a ModelQuery within transaction context.
+//
+// All operations performed through this ModelQuery will execute
+// within the transaction.
+//
+// Example:
+//
+//	tx, _ := db.Begin(ctx)
+//	defer tx.Rollback()
+//
+//	user := User{Name: "Alice"}
+//	err := tx.Model(&user).Insert()
+//	if err != nil {
+//	    return err
+//	}
+//
+//	return tx.Commit()
+func (t *Tx) Model(model interface{}) *ModelQuery {
+	return &ModelQuery{mq: t.tx.Model(model)}
+}
+
+// ============================================================================
+// ModelQuery methods
+// ============================================================================
+
+// Insert inserts the model into the table.
+//
+// By default, all public fields are inserted. You can specify which fields
+// to insert by passing their names, or use Exclude() to exclude specific fields.
+//
+// Example:
+//
+//	// Insert all fields.
+//	err := db.Model(&user).Insert()
+//
+//	// Insert only specific fields.
+//	err := db.Model(&user).Insert("name", "email")
+//
+//	// Exclude fields.
+//	err := db.Model(&user).Exclude("created_at").Insert()
+func (mq *ModelQuery) Insert(attrs ...string) error {
+	return mq.mq.Insert(attrs...)
+}
+
+// Update updates the model in the table.
+//
+// The WHERE clause is automatically generated using the primary key.
+// The primary key is detected from:
+//  1. Field with db:"id" tag
+//  2. Field with db:"*_id" tag (e.g., db:"user_id")
+//  3. Field named "ID"
+//
+// Example:
+//
+//	user.Status = "active"
+//	err := db.Model(&user).Update()
+//	// UPDATE users SET name=?, email=?, status=? WHERE id=?
+//
+//	// Update only specific fields.
+//	err := db.Model(&user).Update("status")
+//	// UPDATE users SET status=? WHERE id=?
+func (mq *ModelQuery) Update(attrs ...string) error {
+	return mq.mq.Update(attrs...)
+}
+
+// Delete deletes the model from the table.
+//
+// The WHERE clause is automatically generated using the primary key.
+//
+// Example:
+//
+//	err := db.Model(&user).Delete()
+//	// DELETE FROM users WHERE id=?
+func (mq *ModelQuery) Delete() error {
+	return mq.mq.Delete()
+}
+
+// Exclude excludes the specified fields from the operation.
+//
+// This is useful for auto-managed fields like timestamps.
+//
+// Example:
+//
+//	err := db.Model(&user).Exclude("created_at", "updated_at").Insert()
+func (mq *ModelQuery) Exclude(attrs ...string) *ModelQuery {
+	return &ModelQuery{mq: mq.mq.Exclude(attrs...)}
+}
+
+// Table overrides the table name for this operation.
+//
+// This is useful for partitioned tables or archival operations.
+//
+// Example:
+//
+//	err := db.Model(&user).Table("users_archive").Insert()
+func (mq *ModelQuery) Table(name string) *ModelQuery {
+	return &ModelQuery{mq: mq.mq.Table(name)}
+}
+
 // ============================================================================
 // QueryBuilder Methods
 // ============================================================================
@@ -842,6 +1157,101 @@ func (qb *QueryBuilder) Select(cols ...string) *SelectQuery {
 //	}).Execute()
 func (qb *QueryBuilder) Insert(table string, values map[string]interface{}) *Query {
 	return &Query{q: qb.qb.Insert(table, values)}
+}
+
+// InsertStruct builds an INSERT query from a struct using db tags.
+//
+// This is a convenience wrapper around Insert that converts the struct
+// to a map using reflection. See DB.InsertStruct for full documentation.
+//
+// Example:
+//
+//	user := User{Name: "Alice", Email: "alice@example.com"}
+//	result, err := db.Builder().InsertStruct("users", &user).Execute()
+func (qb *QueryBuilder) InsertStruct(table string, data interface{}) *Query {
+	dataMap, err := util.StructToMap(data)
+	if err != nil {
+		return &Query{q: nil, err: err}
+	}
+	return &Query{q: qb.qb.Insert(table, dataMap)}
+}
+
+// BatchInsertStruct builds a batch INSERT query from a slice of structs.
+//
+// This is a convenience wrapper that converts each struct in the slice
+// to column values. See DB.BatchInsertStruct for full documentation.
+//
+// Example:
+//
+//	users := []User{
+//	    {Name: "Alice", Email: "alice@example.com"},
+//	    {Name: "Bob", Email: "bob@example.com"},
+//	}
+//	result, err := db.Builder().BatchInsertStruct("users", users).Execute()
+func (qb *QueryBuilder) BatchInsertStruct(table string, data interface{}) *Query {
+	// Validate input is a slice.
+	v := reflect.ValueOf(data)
+	if v.Kind() != reflect.Slice {
+		return &Query{q: nil, err: errors.New("BatchInsertStruct: expected slice, got " + v.Kind().String())}
+	}
+
+	if v.Len() == 0 {
+		return &Query{q: nil, err: errors.New("BatchInsertStruct: empty slice")}
+	}
+
+	// Convert first element to get columns.
+	firstMap, err := util.StructToMap(v.Index(0).Interface())
+	if err != nil {
+		return &Query{q: nil, err: err}
+	}
+
+	// Extract columns (sorted for consistency).
+	columns := make([]string, 0, len(firstMap))
+	for col := range firstMap {
+		columns = append(columns, col)
+	}
+	sort.Strings(columns)
+
+	// Build batch insert.
+	biq := qb.qb.BatchInsert(table, columns)
+
+	// Add all rows.
+	for i := 0; i < v.Len(); i++ {
+		rowMap, err := util.StructToMap(v.Index(i).Interface())
+		if err != nil {
+			return &Query{q: nil, err: err}
+		}
+
+		// Extract values in column order.
+		values := make([]interface{}, len(columns))
+		for j, col := range columns {
+			values[j] = rowMap[col]
+		}
+
+		biq = biq.Values(values...)
+	}
+
+	return &Query{q: biq.Build()}
+}
+
+// UpdateStruct builds an UPDATE query from a struct using db tags.
+//
+// This is a convenience wrapper around Update that converts the struct
+// to a map using reflection. See DB.UpdateStruct for full documentation.
+//
+// Example:
+//
+//	user := User{Name: "Alice Updated", Status: "active"}
+//	result, err := db.Builder().UpdateStruct("users", &user).
+//	    Where("id = ?", user.ID).
+//	    Execute()
+func (qb *QueryBuilder) UpdateStruct(table string, data interface{}) *UpdateQuery {
+	dataMap, err := util.StructToMap(data)
+	if err != nil {
+		// Return UpdateQuery with error that will fail on Execute.
+		return &UpdateQuery{uq: qb.qb.Update(table), err: err}
+	}
+	return &UpdateQuery{uq: qb.qb.Update(table).Set(dataMap)}
 }
 
 // Update creates an UPDATE query for the specified table.
@@ -1267,12 +1677,13 @@ func (sq *SelectQuery) Unwrap() *core.SelectQuery {
 
 // UpdateQuery represents an UPDATE query being built.
 type UpdateQuery struct {
-	uq *core.UpdateQuery
+	uq  *core.UpdateQuery
+	err error // Error from query construction (e.g., struct conversion).
 }
 
 // WithContext sets the context for this UPDATE query.
 func (uq *UpdateQuery) WithContext(ctx context.Context) *UpdateQuery {
-	return &UpdateQuery{uq: uq.uq.WithContext(ctx)}
+	return &UpdateQuery{uq: uq.uq.WithContext(ctx), err: uq.err}
 }
 
 // Set specifies the columns and values to update.
@@ -1297,11 +1708,17 @@ func (uq *UpdateQuery) Where(condition interface{}, params ...interface{}) *Upda
 
 // Build constructs the Query object.
 func (uq *UpdateQuery) Build() *Query {
+	if uq.err != nil {
+		return &Query{q: nil, err: uq.err}
+	}
 	return &Query{q: uq.uq.Build()}
 }
 
 // Execute executes the UPDATE query.
 func (uq *UpdateQuery) Execute() (sql.Result, error) {
+	if uq.err != nil {
+		return nil, uq.err
+	}
 	return uq.Build().Execute()
 }
 
@@ -1482,6 +1899,9 @@ func (buq *BatchUpdateQuery) Execute() (sql.Result, error) {
 
 // Execute runs the query and returns results.
 func (q *Query) Execute() (sql.Result, error) {
+	if q.err != nil {
+		return nil, q.err
+	}
 	result, err := q.q.Execute()
 	if err != nil {
 		return nil, err
@@ -1491,11 +1911,17 @@ func (q *Query) Execute() (sql.Result, error) {
 
 // One fetches a single row into dest.
 func (q *Query) One(dest interface{}) error {
+	if q.err != nil {
+		return q.err
+	}
 	return q.q.One(dest)
 }
 
 // All fetches all rows into dest slice.
 func (q *Query) All(dest interface{}) error {
+	if q.err != nil {
+		return q.err
+	}
 	return q.q.All(dest)
 }
 

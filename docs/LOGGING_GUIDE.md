@@ -1,6 +1,6 @@
 # Logging and Tracing Guide for Relica
 
-This guide covers SQL query logging and distributed tracing capabilities in Relica v0.5.0+.
+This guide covers SQL query logging and distributed tracing capabilities in Relica.
 
 ## Table of Contents
 
