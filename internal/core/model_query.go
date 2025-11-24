@@ -10,6 +10,11 @@ import (
 	"github.com/coregx/relica/internal/util"
 )
 
+const (
+	driverPostgres = "postgres"
+	driverPgx      = "pgx"
+)
+
 // ModelQuery handles CRUD operations on struct models.
 type ModelQuery struct {
 	db      *DB
@@ -257,7 +262,8 @@ func isPKNumeric(pkValue reflect.Value) bool {
 // Returns (needsReturning bool, pkColumnName string).
 func (mq *ModelQuery) needsPostgresReturning() (bool, string) {
 	// Check if database is PostgreSQL (check driver name, not dialect).
-	if mq.db.DriverName() != "postgres" && mq.db.DriverName() != "pgx" {
+	driverName := mq.db.DriverName()
+	if driverName != driverPostgres && driverName != driverPgx {
 		return false, ""
 	}
 
