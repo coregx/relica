@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	_ "modernc.org/sqlite" // CGO-free SQLite driver
 )
 
 // ModelUser is a test model for integration tests.
@@ -402,4 +403,210 @@ func TestModel_ErrorNoPrimaryKey(t *testing.T) {
 	err = db.Model(&noPK).Delete()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "primary key not found")
+}
+
+// TestModel_Insert_AutoPopulateID tests auto-population of ID after INSERT.
+func TestModel_Insert_AutoPopulateID(t *testing.T) {
+	db := setupModelTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create table.
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS auto_users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			email TEXT NOT NULL
+		)
+	`)
+	require.NoError(t, err)
+
+	// Test auto-populate ID.
+	type AutoUser struct {
+		ID    int64  `db:"id"`
+		Name  string `db:"name"`
+		Email string `db:"email"`
+	}
+
+	// First insert.
+	user := AutoUser{Name: "Alice", Email: "alice@example.com"}
+	err = db.Model(&user).Table("auto_users").Insert()
+	require.NoError(t, err)
+	assert.NotZero(t, user.ID, "ID should be auto-populated")
+	assert.Equal(t, int64(1), user.ID)
+
+	// Second insert.
+	user2 := AutoUser{Name: "Bob", Email: "bob@example.com"}
+	err = db.Model(&user2).Table("auto_users").Insert()
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), user2.ID, "ID should be auto-incremented")
+}
+
+// TestModel_Insert_PresetID tests that pre-set ID is not overwritten.
+func TestModel_Insert_PresetID(t *testing.T) {
+	db := setupModelTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create table WITHOUT auto-increment.
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS manual_users (
+			id INTEGER PRIMARY KEY,
+			name TEXT NOT NULL
+		)
+	`)
+	require.NoError(t, err)
+
+	// Test pre-set ID (should not overwrite).
+	type ManualUser struct {
+		ID   int64  `db:"id"`
+		Name string `db:"name"`
+	}
+
+	user := ManualUser{ID: 999, Name: "Charlie"}
+	err = db.Model(&user).Table("manual_users").Insert()
+	require.NoError(t, err)
+	assert.Equal(t, int64(999), user.ID, "ID should remain 999")
+}
+
+// TestModel_Insert_NonNumericPK tests that non-numeric PKs are skipped.
+func TestModel_Insert_NonNumericPK(t *testing.T) {
+	db := setupModelTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create table with UUID primary key.
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS documents (
+			id TEXT PRIMARY KEY,
+			title TEXT NOT NULL
+		)
+	`)
+	require.NoError(t, err)
+
+	// Test non-numeric PK (should not auto-populate).
+	type Document struct {
+		ID    string `db:"id"`
+		Title string `db:"title"`
+	}
+
+	doc := Document{ID: "uuid-123", Title: "Test Doc"}
+	err = db.Model(&doc).Table("documents").Insert()
+	require.NoError(t, err)
+	assert.Equal(t, "uuid-123", doc.ID, "UUID should remain unchanged")
+}
+
+// TestModel_Insert_PointerPK tests auto-population for pointer PK fields.
+func TestModel_Insert_PointerPK(t *testing.T) {
+	db := setupModelTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create table.
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS items (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL
+		)
+	`)
+	require.NoError(t, err)
+
+	// Test pointer PK (should allocate and populate).
+	type Item struct {
+		ID   *int64 `db:"id"`
+		Name string `db:"name"`
+	}
+
+	item := Item{Name: "Widget"}
+	err = db.Model(&item).Table("items").Insert()
+	require.NoError(t, err)
+	assert.NotNil(t, item.ID, "ID pointer should be allocated")
+	if item.ID != nil {
+		assert.Equal(t, int64(1), *item.ID)
+	}
+}
+
+// TestModel_Insert_IntTypes tests auto-population for different int types.
+func TestModel_Insert_IntTypes(t *testing.T) {
+	db := setupModelTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	tests := []struct {
+		name      string
+		tableName string
+		model     interface{}
+		checkID   func(t *testing.T, model interface{})
+	}{
+		{
+			name:      "int",
+			tableName: "int_items",
+			model: &struct {
+				ID   int    `db:"id"`
+				Name string `db:"name"`
+			}{Name: "Test"},
+			checkID: func(t *testing.T, model interface{}) {
+				m := model.(*struct {
+					ID   int    `db:"id"`
+					Name string `db:"name"`
+				})
+				assert.Equal(t, 1, m.ID)
+			},
+		},
+		{
+			name:      "int32",
+			tableName: "int32_items",
+			model: &struct {
+				ID   int32  `db:"id"`
+				Name string `db:"name"`
+			}{Name: "Test"},
+			checkID: func(t *testing.T, model interface{}) {
+				m := model.(*struct {
+					ID   int32  `db:"id"`
+					Name string `db:"name"`
+				})
+				assert.Equal(t, int32(1), m.ID)
+			},
+		},
+		{
+			name:      "uint64",
+			tableName: "uint64_items",
+			model: &struct {
+				ID   uint64 `db:"id"`
+				Name string `db:"name"`
+			}{Name: "Test"},
+			checkID: func(t *testing.T, model interface{}) {
+				m := model.(*struct {
+					ID   uint64 `db:"id"`
+					Name string `db:"name"`
+				})
+				assert.Equal(t, uint64(1), m.ID)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create table.
+			_, err := db.ExecContext(ctx, `
+				CREATE TABLE IF NOT EXISTS `+tt.tableName+` (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					name TEXT NOT NULL
+				)
+			`)
+			require.NoError(t, err)
+
+			// Insert model.
+			err = db.Model(tt.model).Table(tt.tableName).Insert()
+			require.NoError(t, err)
+
+			// Check ID.
+			tt.checkID(t, tt.model)
+		})
+	}
 }

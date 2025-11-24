@@ -18,6 +18,12 @@ type Query struct {
 	ctx    context.Context
 }
 
+// appendSQL appends a suffix to the SQL query.
+// This is used internally for PostgreSQL RETURNING clause.
+func (q *Query) appendSQL(suffix string) {
+	q.sql += suffix
+}
+
 // prepareStatement prepares a SQL statement, using transaction or statement cache.
 // For transactions, bypasses cache to avoid conflicts.
 // For regular queries, uses LRU statement cache for better performance.

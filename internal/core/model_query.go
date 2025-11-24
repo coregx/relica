@@ -137,6 +137,7 @@ func (mq *ModelQuery) Exclude(attrs ...string) *ModelQuery {
 }
 
 // Insert inserts the model into the table.
+// If the primary key is zero (auto-increment), it will be auto-populated after insert.
 func (mq *ModelQuery) Insert(attrs ...string) error {
 	if mq.table == "" {
 		return errors.New("model: table name not specified")
@@ -151,15 +152,172 @@ func (mq *ModelQuery) Insert(attrs ...string) error {
 	// Apply filters.
 	filtered := mq.filterFields(dataMap, attrs)
 
+	// TASK-008: Remove zero-value primary key from INSERT (will be auto-populated).
+	// This ensures AUTO_INCREMENT works properly.
+	v := reflect.ValueOf(mq.model)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+	if pkField, pkValue, err := util.FindPrimaryKeyField(v); err == nil {
+		if util.IsPrimaryKeyZero(pkValue) {
+			// Get PK column name from db tag or field name.
+			pkCol := pkField.Tag.Get("db")
+			if pkCol == "" || pkCol == "-" {
+				pkCol = strings.ToLower(pkField.Name)
+			}
+			// Remove zero PK from INSERT.
+			delete(filtered, pkCol)
+		}
+	}
+
 	// Create builder with transaction context if applicable.
 	qb := &QueryBuilder{
 		db: mq.db,
 		tx: mq.tx,
 	}
 
-	// Use existing Insert builder.
-	_, err = qb.Insert(mq.table, filtered).Execute()
-	return err
+	// Build INSERT query.
+	query := qb.Insert(mq.table, filtered)
+
+	// Check if we need PostgreSQL RETURNING clause for auto-ID.
+	needsReturning, pkCol := mq.needsPostgresReturning()
+	if needsReturning {
+		// PostgreSQL: Use RETURNING clause (lib/pq doesn't support LastInsertId).
+		return mq.insertWithReturning(query, pkCol)
+	}
+
+	// MySQL/SQLite: Use standard LastInsertId().
+	result, err := query.Execute()
+	if err != nil {
+		return err
+	}
+
+	// Auto-populate primary key (TASK-008).
+	// Errors are silently ignored (backward compatibility) - insert succeeded,
+	// ID population failure is acceptable.
+	_ = mq.populatePrimaryKey(result)
+
+	return nil
+}
+
+// populatePrimaryKey auto-populates the primary key after INSERT.
+// It uses LastInsertId() for MySQL/SQLite.
+// For PostgreSQL, LastInsertId() is not supported by lib/pq - handled separately.
+func (mq *ModelQuery) populatePrimaryKey(result sql.Result) error {
+	// 1. Find primary key field.
+	v := reflect.ValueOf(mq.model)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+
+	_, pkValue, err := util.FindPrimaryKeyField(v)
+	if err != nil {
+		return nil //nolint:nilerr // Intentionally ignore - no PK or composite PK means skip auto-population.
+	}
+
+	// 2. Check if PK is zero (needs population).
+	if !util.IsPrimaryKeyZero(pkValue) {
+		return nil // PK already set - skip.
+	}
+
+	// 3. Check if PK is numeric (auto-increment).
+	if !isPKNumeric(pkValue) {
+		return nil // Non-numeric PK (string, UUID) - skip.
+	}
+
+	// 4. Get LastInsertId from result.
+	id, err := result.LastInsertId()
+	if err != nil {
+		// PostgreSQL lib/pq doesn't support LastInsertId() - return nil for now
+		// (PostgreSQL support will be added in Phase 3 if needed).
+		// Note: SQLite and MySQL should support this.
+		return nil //nolint:nilerr // Intentionally ignore - DB doesn't support LastInsertId (e.g., PostgreSQL).
+	}
+
+	// 5. Set ID back to struct.
+	return util.SetPrimaryKeyValue(pkValue, id)
+}
+
+// isPKNumeric checks if primary key is numeric type (int/uint).
+func isPKNumeric(pkValue reflect.Value) bool {
+	kind := pkValue.Kind()
+	if kind == reflect.Ptr {
+		if pkValue.IsNil() {
+			kind = pkValue.Type().Elem().Kind()
+		} else {
+			kind = pkValue.Elem().Kind()
+		}
+	}
+
+	return kind >= reflect.Int && kind <= reflect.Int64 ||
+		kind >= reflect.Uint && kind <= reflect.Uint64
+}
+
+// needsPostgresReturning checks if we need PostgreSQL RETURNING clause.
+// Returns (needsReturning bool, pkColumnName string).
+func (mq *ModelQuery) needsPostgresReturning() (bool, string) {
+	// Check if database is PostgreSQL (check driver name, not dialect).
+	if mq.db.DriverName() != "postgres" && mq.db.DriverName() != "pgx" {
+		return false, ""
+	}
+
+	// Find primary key field.
+	v := reflect.ValueOf(mq.model)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+
+	pkField, pkValue, err := util.FindPrimaryKeyField(v)
+	if err != nil {
+		return false, "" // No PK or composite PK.
+	}
+
+	// Check if PK is zero (needs auto-population).
+	if !util.IsPrimaryKeyZero(pkValue) {
+		return false, "" // PK already set.
+	}
+
+	// Check if PK is numeric.
+	if !isPKNumeric(pkValue) {
+		return false, "" // Non-numeric PK.
+	}
+
+	// Get PK column name.
+	pkCol := pkField.Tag.Get("db")
+	if pkCol == "" || pkCol == "-" {
+		pkCol = strings.ToLower(pkField.Name)
+	}
+
+	return true, pkCol
+}
+
+// insertWithReturning executes INSERT with PostgreSQL RETURNING clause.
+// PostgreSQL lib/pq doesn't support LastInsertId(), so we use RETURNING.
+func (mq *ModelQuery) insertWithReturning(query *Query, pkCol string) error {
+	// Append RETURNING clause to the query.
+	returningClause := " RETURNING " + mq.db.dialect.QuoteIdentifier(pkCol)
+	query.appendSQL(returningClause)
+
+	// Find primary key field to populate.
+	v := reflect.ValueOf(mq.model)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+
+	_, pkValue, err := util.FindPrimaryKeyField(v)
+	if err != nil {
+		return err
+	}
+
+	// Execute query and scan returned ID.
+	var id int64
+	err = query.One(&id)
+	if err != nil {
+		return err
+	}
+
+	// Set ID back to struct.
+	return util.SetPrimaryKeyValue(pkValue, id)
 }
 
 // Update updates the model in the table.
