@@ -343,11 +343,27 @@ func (User) TableName() string {
     return "users"
 }
 
-// INSERT - auto-detects table name
+// INSERT - auto-detects table name + auto-populates ID
 user := User{Name: "Alice", Email: "alice@example.com", Age: 30}
 err := db.Model(&user).Insert()
 // SQL: INSERT INTO users (name, email, age) VALUES (?, ?, ?)
+fmt.Println(user.ID) // 1 (auto-populated!)
 ```
+
+**✨ Auto-Populate ID (v0.7.0+)**
+
+Primary key is automatically populated after INSERT across all databases:
+
+```go
+user := User{Name: "Bob"}
+err := db.Model(&user).Insert()
+fmt.Println(user.ID) // Auto-generated ID (works with PostgreSQL, MySQL, SQLite)
+
+// PostgreSQL: Uses RETURNING clause
+// MySQL/SQLite: Uses LastInsertId()
+```
+
+Supports all numeric types (int, int8, int16, int32, int64, uint*) and pointer variants.
 
 #### UPDATE with Auto WHERE
 
@@ -373,15 +389,33 @@ err := db.Model(&user).Delete()
 
 #### Field Control
 
-Exclude auto-managed fields:
+**✨ Selective Fields (v0.7.0+)**
+
+Control exactly which fields are inserted or updated:
 
 ```go
-// Exclude timestamps from INSERT
-err := db.Model(&user).Exclude("created_at", "updated_at").Insert()
+user := User{
+    Name:   "Alice",
+    Email:  "alice@example.com",
+    Status: "pending",
+}
 
-// Insert only specific fields
+// INSERT - Only name and email (status remains default)
 err := db.Model(&user).Insert("name", "email")
+
+// UPDATE - Only update status (name and email unchanged)
+user.Status = "active"
+err := db.Model(&user).Update("status")
+
+// Exclude fields (Exclude takes precedence over selective fields)
+err := db.Model(&user).Exclude("status").Insert("name", "email", "status")
+// Result: Only name and email inserted
+
+// Exclude auto-managed timestamps
+err := db.Model(&user).Exclude("created_at", "updated_at").Insert()
 ```
+
+**Empty args = all fields** (backward compatible)
 
 #### Table Override
 
