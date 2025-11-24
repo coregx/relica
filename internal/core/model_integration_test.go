@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	_ "modernc.org/sqlite" // CGO-free SQLite driver
 )
 
 // ModelUser is a test model for integration tests.
@@ -402,4 +403,385 @@ func TestModel_ErrorNoPrimaryKey(t *testing.T) {
 	err = db.Model(&noPK).Delete()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "primary key not found")
+}
+
+// TestModel_Insert_AutoPopulateID tests auto-population of ID after INSERT.
+func TestModel_Insert_AutoPopulateID(t *testing.T) {
+	db := setupModelTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create table.
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS auto_users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			email TEXT NOT NULL
+		)
+	`)
+	require.NoError(t, err)
+
+	// Test auto-populate ID.
+	type AutoUser struct {
+		ID    int64  `db:"id"`
+		Name  string `db:"name"`
+		Email string `db:"email"`
+	}
+
+	// First insert.
+	user := AutoUser{Name: "Alice", Email: "alice@example.com"}
+	err = db.Model(&user).Table("auto_users").Insert()
+	require.NoError(t, err)
+	assert.NotZero(t, user.ID, "ID should be auto-populated")
+	assert.Equal(t, int64(1), user.ID)
+
+	// Second insert.
+	user2 := AutoUser{Name: "Bob", Email: "bob@example.com"}
+	err = db.Model(&user2).Table("auto_users").Insert()
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), user2.ID, "ID should be auto-incremented")
+}
+
+// TestModel_Insert_PresetID tests that pre-set ID is not overwritten.
+func TestModel_Insert_PresetID(t *testing.T) {
+	db := setupModelTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create table WITHOUT auto-increment.
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS manual_users (
+			id INTEGER PRIMARY KEY,
+			name TEXT NOT NULL
+		)
+	`)
+	require.NoError(t, err)
+
+	// Test pre-set ID (should not overwrite).
+	type ManualUser struct {
+		ID   int64  `db:"id"`
+		Name string `db:"name"`
+	}
+
+	user := ManualUser{ID: 999, Name: "Charlie"}
+	err = db.Model(&user).Table("manual_users").Insert()
+	require.NoError(t, err)
+	assert.Equal(t, int64(999), user.ID, "ID should remain 999")
+}
+
+// TestModel_Insert_NonNumericPK tests that non-numeric PKs are skipped.
+func TestModel_Insert_NonNumericPK(t *testing.T) {
+	db := setupModelTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create table with UUID primary key.
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS documents (
+			id TEXT PRIMARY KEY,
+			title TEXT NOT NULL
+		)
+	`)
+	require.NoError(t, err)
+
+	// Test non-numeric PK (should not auto-populate).
+	type Document struct {
+		ID    string `db:"id"`
+		Title string `db:"title"`
+	}
+
+	doc := Document{ID: "uuid-123", Title: "Test Doc"}
+	err = db.Model(&doc).Table("documents").Insert()
+	require.NoError(t, err)
+	assert.Equal(t, "uuid-123", doc.ID, "UUID should remain unchanged")
+}
+
+// TestModel_Insert_PointerPK tests auto-population for pointer PK fields.
+func TestModel_Insert_PointerPK(t *testing.T) {
+	db := setupModelTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create table.
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS items (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL
+		)
+	`)
+	require.NoError(t, err)
+
+	// Test pointer PK (should allocate and populate).
+	type Item struct {
+		ID   *int64 `db:"id"`
+		Name string `db:"name"`
+	}
+
+	item := Item{Name: "Widget"}
+	err = db.Model(&item).Table("items").Insert()
+	require.NoError(t, err)
+	assert.NotNil(t, item.ID, "ID pointer should be allocated")
+	if item.ID != nil {
+		assert.Equal(t, int64(1), *item.ID)
+	}
+}
+
+// TestModel_Insert_IntTypes tests auto-population for different int types.
+func TestModel_Insert_IntTypes(t *testing.T) {
+	db := setupModelTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	tests := []struct {
+		name      string
+		tableName string
+		model     interface{}
+		checkID   func(t *testing.T, model interface{})
+	}{
+		{
+			name:      "int",
+			tableName: "int_items",
+			model: &struct {
+				ID   int    `db:"id"`
+				Name string `db:"name"`
+			}{Name: "Test"},
+			checkID: func(t *testing.T, model interface{}) {
+				m := model.(*struct {
+					ID   int    `db:"id"`
+					Name string `db:"name"`
+				})
+				assert.Equal(t, 1, m.ID)
+			},
+		},
+		{
+			name:      "int32",
+			tableName: "int32_items",
+			model: &struct {
+				ID   int32  `db:"id"`
+				Name string `db:"name"`
+			}{Name: "Test"},
+			checkID: func(t *testing.T, model interface{}) {
+				m := model.(*struct {
+					ID   int32  `db:"id"`
+					Name string `db:"name"`
+				})
+				assert.Equal(t, int32(1), m.ID)
+			},
+		},
+		{
+			name:      "uint64",
+			tableName: "uint64_items",
+			model: &struct {
+				ID   uint64 `db:"id"`
+				Name string `db:"name"`
+			}{Name: "Test"},
+			checkID: func(t *testing.T, model interface{}) {
+				m := model.(*struct {
+					ID   uint64 `db:"id"`
+					Name string `db:"name"`
+				})
+				assert.Equal(t, uint64(1), m.ID)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create table.
+			_, err := db.ExecContext(ctx, `
+				CREATE TABLE IF NOT EXISTS `+tt.tableName+` (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					name TEXT NOT NULL
+				)
+			`)
+			require.NoError(t, err)
+
+			// Insert model.
+			err = db.Model(tt.model).Table(tt.tableName).Insert()
+			require.NoError(t, err)
+
+			// Check ID.
+			tt.checkID(t, tt.model)
+		})
+	}
+}
+
+// TestModel_Insert_SelectiveWithExclude tests combination of selective fields and Exclude().
+func TestModel_Insert_SelectiveWithExclude(t *testing.T) {
+	db := setupModelTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create table.
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS selective_users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			email TEXT NOT NULL,
+			status TEXT DEFAULT 'pending'
+		)
+	`)
+	require.NoError(t, err)
+
+	// Test: Insert("name", "email", "status").Exclude("status")
+	// Expected: Only name and email inserted, status remains default.
+	user := ModelUser{
+		Name:   "TestUser",
+		Email:  "test@example.com",
+		Status: "active",
+	}
+
+	err = db.Model(&user).Table("selective_users").Exclude("status").Insert("name", "email", "status")
+	require.NoError(t, err)
+
+	// Verify exclusion took precedence.
+	var result ModelUser
+	err = db.Builder().Select().From("selective_users").Where("name = ?", "TestUser").One(&result)
+	require.NoError(t, err)
+	assert.Equal(t, "TestUser", result.Name)
+	assert.Equal(t, "test@example.com", result.Email)
+	assert.Equal(t, "pending", result.Status, "Status should be default 'pending' (excluded from INSERT)")
+}
+
+// TestModel_Update_SelectiveWithExclude tests combination of selective fields and Exclude().
+func TestModel_Update_SelectiveWithExclude(t *testing.T) {
+	db := setupModelTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create table.
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS update_users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			email TEXT NOT NULL,
+			status TEXT DEFAULT 'active'
+		)
+	`)
+	require.NoError(t, err)
+
+	// Insert initial data.
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO update_users (name, email, status) VALUES ('Original', 'original@example.com', 'active')
+	`)
+	require.NoError(t, err)
+
+	// Get ID.
+	var id int
+	err = db.QueryRowContext(ctx, "SELECT id FROM update_users WHERE name = 'Original'").Scan(&id)
+	require.NoError(t, err)
+
+	// Test: Update("name", "status").Exclude("status")
+	// Expected: Only name updated, status and email unchanged.
+	user := ModelUser{
+		ID:     id,
+		Name:   "Updated",
+		Email:  "newemail@example.com",
+		Status: "inactive",
+	}
+
+	err = db.Model(&user).Table("update_users").Exclude("status").Update("name", "status")
+	require.NoError(t, err)
+
+	// Verify exclusion took precedence.
+	var result ModelUser
+	err = db.Builder().Select().From("update_users").Where("id = ?", id).One(&result)
+	require.NoError(t, err)
+	assert.Equal(t, "Updated", result.Name, "Name should be updated")
+	assert.Equal(t, "original@example.com", result.Email, "Email should remain unchanged")
+	assert.Equal(t, "active", result.Status, "Status should remain unchanged (excluded from UPDATE)")
+}
+
+// TestModel_Insert_SelectiveWithAutopopulateID tests that auto-populate ID works with selective fields.
+func TestModel_Insert_SelectiveWithAutopopulateID(t *testing.T) {
+	db := setupModelTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create table.
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS auto_selective (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			email TEXT NOT NULL
+		)
+	`)
+	require.NoError(t, err)
+
+	// Insert only "name" (omit "email" intentionally, should use struct value).
+	user := ModelUser{
+		Name:  "Alice",
+		Email: "alice@example.com",
+	}
+
+	err = db.Model(&user).Table("auto_selective").Insert("name", "email")
+	require.NoError(t, err)
+
+	// Verify ID was auto-populated (TASK-008).
+	assert.NotZero(t, user.ID, "ID should be auto-populated even with selective fields")
+	assert.Equal(t, int64(1), int64(user.ID))
+
+	// Verify data.
+	var result ModelUser
+	err = db.Builder().Select().From("auto_selective").Where("id = ?", user.ID).One(&result)
+	require.NoError(t, err)
+	assert.Equal(t, "Alice", result.Name)
+	assert.Equal(t, "alice@example.com", result.Email)
+}
+
+// TestModel_Update_MultipleFields tests updating multiple selective fields.
+func TestModel_Update_MultipleFields(t *testing.T) {
+	db := setupModelTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create table.
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS multi_users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			email TEXT NOT NULL,
+			status TEXT DEFAULT 'active'
+		)
+	`)
+	require.NoError(t, err)
+
+	// Insert initial data.
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO multi_users (name, email, status) VALUES ('John', 'john@example.com', 'active')
+	`)
+	require.NoError(t, err)
+
+	// Get ID.
+	var id int
+	err = db.QueryRowContext(ctx, "SELECT id FROM multi_users WHERE name = 'John'").Scan(&id)
+	require.NoError(t, err)
+
+	// Update multiple fields selectively.
+	user := ModelUser{
+		ID:     id,
+		Name:   "John Doe",
+		Email:  "johndoe@example.com",
+		Status: "inactive",
+	}
+
+	err = db.Model(&user).Table("multi_users").Update("name", "email")
+	require.NoError(t, err)
+
+	// Verify only name and email updated.
+	var result ModelUser
+	err = db.Builder().Select().From("multi_users").Where("id = ?", id).One(&result)
+	require.NoError(t, err)
+	assert.Equal(t, "John Doe", result.Name, "Name should be updated")
+	assert.Equal(t, "johndoe@example.com", result.Email, "Email should be updated")
+	assert.Equal(t, "active", result.Status, "Status should remain unchanged")
 }
