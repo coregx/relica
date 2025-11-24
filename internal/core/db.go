@@ -236,6 +236,11 @@ func (db *DB) Close() error {
 	return db.sqlDB.Close()
 }
 
+// DriverName returns the name of the DB driver.
+func (db *DB) DriverName() string {
+	return db.driverName
+}
+
 // WithContext returns a new DB with the given context.
 func (db *DB) WithContext(ctx context.Context) *DB {
 	newDB := *db

@@ -14,6 +14,7 @@
 - 🚀 **Zero Production Dependencies** - Uses only Go standard library
 - ⚡ **High Performance** - LRU statement cache, batch operations (3.3x faster)
 - 🎯 **Type-Safe** - Reflection-based struct scanning with compile-time checks
+- 🔄 **Model() API** - ORM-style CRUD with auto-populated IDs, selective fields (ozzo-dbx compatible)
 - 🔒 **Transaction Support** - Full ACID with all isolation levels
 - 🛡️ **Enterprise Security** - SQL injection prevention, audit logging, compliance
 - 📦 **Batch Operations** - Efficient multi-row INSERT and UPDATE
@@ -321,6 +322,120 @@ db.Builder().Select().From("users").
     Where("status = ?", 1).
     Where(relica.GreaterThan("age", 18)).
     All(&users)
+```
+
+### Model() API
+
+**ORM-style operations** with automatic struct mapping, auto-populated IDs, and selective field control.
+
+#### Basic CRUD Operations
+
+```go
+type User struct {
+    ID    int64  `db:"id"`     // Auto-populated after INSERT
+    Name  string `db:"name"`
+    Email string `db:"email"`
+    Status string `db:"status"`
+}
+
+// INSERT - Auto-populates ID after insert
+user := User{Name: "Alice", Email: "alice@example.com"}
+err := db.Model(&user).Insert()
+fmt.Println(user.ID) // 1 (auto-populated!)
+
+// INSERT - Selective fields
+user := User{Name: "Bob", Email: "bob@example.com", Status: "pending"}
+err := db.Model(&user).Insert("name", "email") // Only name and email inserted
+
+// UPDATE - Updates all fields by primary key
+user.Name = "Alice Updated"
+err := db.Model(&user).Update()
+
+// UPDATE - Selective fields
+err := db.Model(&user).Update("status") // Only update status field
+
+// DELETE - By primary key
+err := db.Model(&user).Delete()
+```
+
+#### Auto-Populate ID
+
+Works across all databases (PostgreSQL, MySQL, SQLite):
+
+```go
+user := User{Name: "Charlie"}
+err := db.Model(&user).Insert()
+
+// PostgreSQL: Uses RETURNING clause
+// MySQL/SQLite: Uses LastInsertId()
+// ID automatically populated in all cases
+fmt.Println(user.ID) // Auto-generated ID
+```
+
+#### Selective Fields
+
+Control exactly which fields are inserted/updated:
+
+```go
+user := User{
+    Name:   "Alice",
+    Email:  "alice@example.com",
+    Status: "pending",
+}
+
+// Insert only name and email (status remains default)
+db.Model(&user).Insert("name", "email")
+
+// Update only status (name and email unchanged)
+user.Status = "active"
+db.Model(&user).Update("status")
+
+// Exclude fields (Exclude takes precedence)
+db.Model(&user).Exclude("status").Insert("name", "email", "status")
+// Result: Only name and email inserted
+```
+
+#### Primary Key Detection
+
+Priority: `db:"pk"` tag → "ID" field → "Id" field
+
+```go
+type Product struct {
+    ID    int    `db:"pk"`    // Explicit PK marking
+    Name  string `db:"name"`
+}
+
+type Order struct {
+    ID int // Detected automatically (field named "ID")
+}
+```
+
+#### Transactions
+
+```go
+tx, err := db.Begin(ctx)
+defer tx.Rollback()
+
+user := User{Name: "Alice"}
+err = tx.Model(&user).Insert()
+
+if err == nil {
+    tx.Commit()
+}
+```
+
+#### Advanced Usage
+
+```go
+// Custom table name
+db.Model(&user).Table("custom_users").Insert()
+
+// Exclude fields from operation
+db.Model(&user).Exclude("created_at", "updated_at").Update()
+
+// Pre-set IDs (won't be overwritten)
+user := User{ID: 999, Name: "System"}
+db.Model(&user).Insert() // ID stays 999
 ```
 
 ### JOIN Operations
