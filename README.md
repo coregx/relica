@@ -1,6 +1,7 @@
 # Relica
 
 [![CI](https://github.com/coregx/relica/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/coregx/relica/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/coregx/relica/graph/badge.svg)](https://codecov.io/gh/coregx/relica)
 [![Go Version](https://img.shields.io/badge/Go-1.25%2B-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![Go Report Card](https://goreportcard.com/badge/github.com/coregx/relica)](https://goreportcard.com/report/github.com/coregx/relica)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)

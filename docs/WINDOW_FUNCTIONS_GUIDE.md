@@ -1076,5 +1076,5 @@ CREATE INDEX idx_created_at ON orders(created_at DESC);
 
 ---
 
-**Last Updated**: 2025-01-25
+**Last Updated**: 2025-11-24
 **Minimum Go Version**: 1.25+

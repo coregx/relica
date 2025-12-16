@@ -89,7 +89,7 @@ q.All(&users)
 - 3874 lines of new code
 - 100% backward compatible
 
-## [0.7.0] - 2025-01-25
+## [0.7.0] - 2025-11-24
 
 ### Added
 

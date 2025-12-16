@@ -1,7 +1,7 @@
 # Relica Roadmap
 
 > **Current Version**: v0.8.0 (Released: December 16, 2025)
-> **Previous Release**: v0.7.0 (Released: January 25, 2025)
+> **Previous Release**: v0.7.0 (Released: November 24, 2025)
 > **Production Ready**: v1.0.0 (Target: Q3-Q4 2026)
 
 ---
@@ -116,18 +116,21 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 
 ## 📊 Feature Comparison
 
-| Feature | v0.1.2 | v0.2.0 | v0.3.0 | v1.0.0 | GORM | sqlc |
-|---------|--------|--------|--------|--------|------|------|
-| **CRUD** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Expression API** | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| **JOIN** | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Aggregates** | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Subqueries** | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
-| **Window Functions** | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
-| **Relations** | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| **Zero Dependencies** | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
-| **Type Safety** | ✅ | ✅ | ✅ | ✅ | Partial | ✅✅ |
-| **Dynamic Queries** | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Feature | v0.8.0 | v1.0.0 | GORM | sqlc |
+|---------|--------|--------|------|------|
+| **CRUD** | ✅ | ✅ | ✅ | ✅ |
+| **Expression API** | ✅ | ✅ | ✅ | ❌ |
+| **JOIN** | ✅ | ✅ | ✅ | ✅ |
+| **Aggregates** | ✅ | ✅ | ✅ | ✅ |
+| **Subqueries** | ✅ | ✅ | ✅ | ✅ |
+| **Window Functions** | ✅ | ✅ | ✅ | ✅ |
+| **Model API** | ✅ | ✅ | ✅ | ❌ |
+| **Named Placeholders** | ✅ | ✅ | ❌ | ❌ |
+| **Transactional Helper** | ✅ | ✅ | ✅ | ❌ |
+| **Relations** | ❌ | ❌ | ✅ | ❌ |
+| **Zero Dependencies** | ✅ | ✅ | ❌ | ❌ |
+| **Type Safety** | ✅ | ✅ | Partial | ✅✅ |
+| **Dynamic Queries** | ✅ | ✅ | ✅ | ❌ |
 
 ---
 
@@ -145,17 +148,17 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 
 ## 📈 Performance Goals
 
-| Metric | v0.1.2 | v0.2.0 Actual | v0.3.0 Actual | v1.0.0 Target |
-|--------|--------|---------------|---------------|---------------|
-| **Statement Cache Hit** | <60ns | <60ns ✅ | <60ns ✅ | <50ns |
-| **Batch INSERT (100 rows)** | 327ms | 327ms ✅ | 327ms ✅ | <200ms |
-| **N+1 Query Reduction** | N/A | 3-18x ✅ | 3-18x ✅ | Maintained |
-| **Pagination Memory** | N/A | 100x reduction ✅ | 100x ✅ | Maintained |
-| **Aggregate Memory** | N/A | 2,500,000x reduction ✅ | 2,500,000x ✅ | Maintained |
-| **EXISTS vs IN** | N/A | N/A | 5x faster ✅ | Maintained |
-| **UNION ALL vs UNION** | N/A | N/A | 2-3x faster ✅ | Maintained |
-| **Test Coverage** | 87.4% | 88.9% ✅ | 89.5% ✅ | >90% |
-| **Dependencies** | 0 | 0 ✅ | 0 ✅ | 0 |
+| Metric | v0.8.0 Actual | v1.0.0 Target |
+|--------|---------------|---------------|
+| **Statement Cache Hit** | <60ns ✅ | <50ns |
+| **Batch INSERT (100 rows)** | 327ms ✅ | <200ms |
+| **N+1 Query Reduction** | 3-18x ✅ | Maintained |
+| **Pagination Memory** | 100x reduction ✅ | Maintained |
+| **Aggregate Memory** | 2,500,000x reduction ✅ | Maintained |
+| **EXISTS vs IN** | 5x faster ✅ | Maintained |
+| **UNION ALL vs UNION** | 2-3x faster ✅ | Maintained |
+| **Test Coverage** | 85%+ ✅ | >90% |
+| **Dependencies** | 0 ✅ | 0 |
 
 ---
 
@@ -197,7 +200,7 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 - **v0.4.1-beta** (2025-10-26) - Convenience methods (Select, Insert, Update, Delete)
 - **v0.5.0** (2025-11-14) - Enterprise security, query optimizer, comprehensive documentation
 - **v0.6.0** (2025-11-24) - Struct operations (InsertStruct, Model API)
-- **v0.7.0** (2025-01-25) - Model() API parity (auto-populate ID, selective fields)
+- **v0.7.0** (2025-11-24) - Model() API parity (auto-populate ID, selective fields)
 - **v0.8.0** (2025-12-16) - Named placeholders, quoting, Row/Column, Transactional, Distinct, AndWhere/OrWhere
 - **v1.0.0** (Target: Q3-Q4 2026) - Production stable release
 
