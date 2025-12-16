@@ -56,7 +56,6 @@ import (
 
 	"github.com/coregx/relica/internal/core"
 	"github.com/coregx/relica/internal/logger"
-	"github.com/coregx/relica/internal/tracer"
 	"github.com/coregx/relica/internal/util"
 )
 
@@ -2182,16 +2181,17 @@ var WithStmtCacheCapacity = core.WithStmtCacheCapacity
 //	    relica.WithLogger(logger.NewSlogAdapter(logger)))
 var WithLogger = core.WithLogger
 
-// WithTracer sets the distributed tracer for query observability.
-// If not set, a NoopTracer is used (zero overhead when tracing is disabled).
+// WithQueryHook sets a callback function that is invoked after each query execution.
+// Use this for logging, metrics, distributed tracing, or debugging.
+// If not set, no hook is called (zero overhead).
 //
 // Example:
 //
-//	import "go.opentelemetry.io/otel"
-//	tracer := otel.Tracer("relica")
-//	db, err := relica.Open("postgres", dsn,
-//	    relica.WithTracer(tracer.NewOtelTracer(tracer)))
-var WithTracer = core.WithTracer
+//	db, _ := relica.Open("postgres", dsn,
+//	    relica.WithQueryHook(func(ctx context.Context, e relica.QueryEvent) {
+//	        slog.Info("query", "sql", e.SQL, "duration", e.Duration, "err", e.Error)
+//	    }))
+var WithQueryHook = core.WithQueryHook
 
 // WithSensitiveFields sets the list of sensitive field names for parameter masking.
 // If not set, default sensitive field patterns are used.
@@ -2215,17 +2215,16 @@ type SlogAdapter = logger.SlogAdapter
 // NewSlogAdapter creates a new logger adapter wrapping an slog.Logger.
 var NewSlogAdapter = logger.NewSlogAdapter
 
-// Tracer defines the tracing interface for Relica.
-type Tracer = tracer.Tracer
+// QueryEvent contains information about an executed query.
+// This is passed to QueryHook callbacks for logging, metrics, or tracing.
+type QueryEvent = core.QueryEvent
 
-// NoopTracer is a tracer that does nothing (zero overhead when tracing is disabled).
-type NoopTracer = tracer.NoopTracer
+// QueryHook is a callback function invoked after each query execution.
+// Use this for logging, metrics, distributed tracing, or debugging.
+type QueryHook = core.QueryHook
 
-// OtelTracer wraps an OpenTelemetry tracer to implement the Tracer interface.
-type OtelTracer = tracer.OtelTracer
-
-// NewOtelTracer creates a new OpenTelemetry tracer adapter.
-var NewOtelTracer = tracer.NewOtelTracer
+// DetectOperation detects the SQL operation type (SELECT, INSERT, UPDATE, DELETE, UNKNOWN).
+var DetectOperation = core.DetectOperation
 
 // ============================================================================
 // Re-export expression builders

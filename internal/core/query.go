@@ -6,11 +6,9 @@ import (
 	"fmt"
 	"reflect"
 	"time"
-
-	"github.com/coregx/relica/internal/tracer"
 )
 
-// Query represents a database query with tracing.
+// Query represents a database query.
 // When tx is not nil, the query executes within that transaction.
 type Query struct {
 	sql    string
@@ -92,22 +90,10 @@ func (q *Query) Execute() (sql.Result, error) {
 		ctx = context.Background()
 	}
 
-	// Start tracing span
-	ctx, span := q.db.oldTracer.Start(ctx, "Query.Execute")
-	defer span.End()
-
-	// Start new tracer span
-	var newSpan tracer.Span
-	if q.db.tracer != nil {
-		ctx, newSpan = q.db.tracer.StartSpan(ctx, "relica.query.execute")
-		defer newSpan.End()
-	}
-
 	start := time.Now()
 
 	stmt, needsClose, err := q.prepareStatement(ctx)
 	if err != nil {
-		// Log error
 		if q.db.logger != nil {
 			q.db.logger.Error("query preparation failed",
 				"sql", q.sql,
@@ -127,46 +113,31 @@ func (q *Query) Execute() (sql.Result, error) {
 	// Log query execution
 	q.logExecutionResult(result, err, elapsed)
 
-	// Add tracing attributes
-	if newSpan != nil {
-		var rowsAffected int64
-		if result != nil {
-			rowsAffected, _ = result.RowsAffected()
-		}
-		tracer.AddQueryAttributes(newSpan, &tracer.QueryMetadata{
-			SQL:          q.sql,
-			Args:         q.params,
-			Duration:     elapsed,
-			RowsAffected: rowsAffected,
-			Error:        err,
-			Database:     q.db.driverName,
-			Operation:    tracer.DetectOperation(q.sql),
-		})
+	// Invoke query hook
+	var rowsAffected int64
+	if result != nil {
+		rowsAffected, _ = result.RowsAffected()
 	}
+	q.db.invokeHook(ctx, QueryEvent{
+		SQL:          q.sql,
+		Args:         q.params,
+		Duration:     elapsed,
+		RowsAffected: rowsAffected,
+		Error:        err,
+		Operation:    DetectOperation(q.sql),
+	})
 
-	q.db.oldTracer.Record(ctx, elapsed, err)
 	return result, err
 }
 
 // One fetches a single row into a struct.
 // If query is part of a transaction, uses transaction connection.
 //
-//nolint:cyclop,gocyclo,gocognit,funlen // Query execution requires comprehensive error handling, logging, and tracing
+//nolint:cyclop,funlen // Query execution requires comprehensive error handling and logging
 func (q *Query) One(dest interface{}) error {
 	ctx := q.ctx
 	if ctx == nil {
 		ctx = context.Background()
-	}
-
-	// Old tracer (backward compatibility)
-	ctx, span := q.db.oldTracer.Start(ctx, "Query.One")
-	defer span.End()
-
-	// Start new tracer span
-	var newSpan tracer.Span
-	if q.db.tracer != nil {
-		ctx, newSpan = q.db.tracer.StartSpan(ctx, "relica.query.one")
-		defer newSpan.End()
 	}
 
 	start := time.Now()
@@ -198,17 +169,13 @@ func (q *Query) One(dest interface{}) error {
 				"error", err,
 			)
 		}
-		if newSpan != nil {
-			tracer.AddQueryAttributes(newSpan, &tracer.QueryMetadata{
-				SQL:       q.sql,
-				Args:      q.params,
-				Duration:  elapsed,
-				Error:     err,
-				Database:  q.db.driverName,
-				Operation: tracer.DetectOperation(q.sql),
-			})
-		}
-		q.db.oldTracer.Record(ctx, elapsed, err)
+		q.db.invokeHook(ctx, QueryEvent{
+			SQL:       q.sql,
+			Args:      q.params,
+			Duration:  elapsed,
+			Error:     err,
+			Operation: DetectOperation(q.sql),
+		})
 		return err
 	}
 	defer func() { _ = rows.Close() }()
@@ -224,17 +191,13 @@ func (q *Query) One(dest interface{}) error {
 				"duration_ms", elapsed.Milliseconds(),
 			)
 		}
-		if newSpan != nil {
-			tracer.AddQueryAttributes(newSpan, &tracer.QueryMetadata{
-				SQL:       q.sql,
-				Args:      q.params,
-				Duration:  elapsed,
-				Error:     err,
-				Database:  q.db.driverName,
-				Operation: tracer.DetectOperation(q.sql),
-			})
-		}
-		q.db.oldTracer.Record(ctx, elapsed, err)
+		q.db.invokeHook(ctx, QueryEvent{
+			SQL:       q.sql,
+			Args:      q.params,
+			Duration:  elapsed,
+			Error:     err,
+			Operation: DetectOperation(q.sql),
+		})
 		return err
 	}
 
@@ -249,17 +212,13 @@ func (q *Query) One(dest interface{}) error {
 				"error", err,
 			)
 		}
-		if newSpan != nil {
-			tracer.AddQueryAttributes(newSpan, &tracer.QueryMetadata{
-				SQL:       q.sql,
-				Args:      q.params,
-				Duration:  elapsed,
-				Error:     err,
-				Database:  q.db.driverName,
-				Operation: tracer.DetectOperation(q.sql),
-			})
-		}
-		q.db.oldTracer.Record(ctx, elapsed, err)
+		q.db.invokeHook(ctx, QueryEvent{
+			SQL:       q.sql,
+			Args:      q.params,
+			Duration:  elapsed,
+			Error:     err,
+			Operation: DetectOperation(q.sql),
+		})
 		return err
 	}
 
@@ -276,18 +235,13 @@ func (q *Query) One(dest interface{}) error {
 		)
 	}
 
-	// Add tracing attributes
-	if newSpan != nil {
-		tracer.AddQueryAttributes(newSpan, &tracer.QueryMetadata{
-			SQL:       q.sql,
-			Args:      q.params,
-			Duration:  elapsed,
-			Database:  q.db.driverName,
-			Operation: tracer.DetectOperation(q.sql),
-		})
-	}
-
-	q.db.oldTracer.Record(ctx, elapsed, nil)
+	// Invoke query hook
+	q.db.invokeHook(ctx, QueryEvent{
+		SQL:       q.sql,
+		Args:      q.params,
+		Duration:  elapsed,
+		Operation: DetectOperation(q.sql),
+	})
 
 	// Analyze query performance if optimizer is enabled (async to not block)
 	if q.db.optimizer != nil {
@@ -310,22 +264,11 @@ func (q *Query) One(dest interface{}) error {
 //	var count int
 //	err := db.NewQuery("SELECT COUNT(*) FROM users").Row(&count)
 //
-//nolint:cyclop,gocyclo,gocognit,funlen // Query execution requires comprehensive error handling, logging, and tracing
+//nolint:cyclop,funlen // Query execution requires comprehensive error handling and logging
 func (q *Query) Row(dest ...interface{}) error {
 	ctx := q.ctx
 	if ctx == nil {
 		ctx = context.Background()
-	}
-
-	// Old tracer (backward compatibility)
-	ctx, span := q.db.oldTracer.Start(ctx, "Query.Row")
-	defer span.End()
-
-	// Start new tracer span
-	var newSpan tracer.Span
-	if q.db.tracer != nil {
-		ctx, newSpan = q.db.tracer.StartSpan(ctx, "relica.query.row")
-		defer newSpan.End()
 	}
 
 	start := time.Now()
@@ -357,17 +300,13 @@ func (q *Query) Row(dest ...interface{}) error {
 				"error", err,
 			)
 		}
-		if newSpan != nil {
-			tracer.AddQueryAttributes(newSpan, &tracer.QueryMetadata{
-				SQL:       q.sql,
-				Args:      q.params,
-				Duration:  elapsed,
-				Error:     err,
-				Database:  q.db.driverName,
-				Operation: tracer.DetectOperation(q.sql),
-			})
-		}
-		q.db.oldTracer.Record(ctx, elapsed, err)
+		q.db.invokeHook(ctx, QueryEvent{
+			SQL:       q.sql,
+			Args:      q.params,
+			Duration:  elapsed,
+			Error:     err,
+			Operation: DetectOperation(q.sql),
+		})
 		return err
 	}
 	defer func() { _ = rows.Close() }()
@@ -386,17 +325,13 @@ func (q *Query) Row(dest ...interface{}) error {
 				"duration_ms", elapsed.Milliseconds(),
 			)
 		}
-		if newSpan != nil {
-			tracer.AddQueryAttributes(newSpan, &tracer.QueryMetadata{
-				SQL:       q.sql,
-				Args:      q.params,
-				Duration:  elapsed,
-				Error:     err,
-				Database:  q.db.driverName,
-				Operation: tracer.DetectOperation(q.sql),
-			})
-		}
-		q.db.oldTracer.Record(ctx, elapsed, err)
+		q.db.invokeHook(ctx, QueryEvent{
+			SQL:       q.sql,
+			Args:      q.params,
+			Duration:  elapsed,
+			Error:     err,
+			Operation: DetectOperation(q.sql),
+		})
 		return err
 	}
 
@@ -411,17 +346,13 @@ func (q *Query) Row(dest ...interface{}) error {
 				"error", err,
 			)
 		}
-		if newSpan != nil {
-			tracer.AddQueryAttributes(newSpan, &tracer.QueryMetadata{
-				SQL:       q.sql,
-				Args:      q.params,
-				Duration:  elapsed,
-				Error:     err,
-				Database:  q.db.driverName,
-				Operation: tracer.DetectOperation(q.sql),
-			})
-		}
-		q.db.oldTracer.Record(ctx, elapsed, err)
+		q.db.invokeHook(ctx, QueryEvent{
+			SQL:       q.sql,
+			Args:      q.params,
+			Duration:  elapsed,
+			Error:     err,
+			Operation: DetectOperation(q.sql),
+		})
 		return err
 	}
 
@@ -438,18 +369,13 @@ func (q *Query) Row(dest ...interface{}) error {
 		)
 	}
 
-	// Add tracing attributes
-	if newSpan != nil {
-		tracer.AddQueryAttributes(newSpan, &tracer.QueryMetadata{
-			SQL:       q.sql,
-			Args:      q.params,
-			Duration:  elapsed,
-			Database:  q.db.driverName,
-			Operation: tracer.DetectOperation(q.sql),
-		})
-	}
-
-	q.db.oldTracer.Record(ctx, elapsed, nil)
+	// Invoke query hook
+	q.db.invokeHook(ctx, QueryEvent{
+		SQL:       q.sql,
+		Args:      q.params,
+		Duration:  elapsed,
+		Operation: DetectOperation(q.sql),
+	})
 
 	return nil
 }
@@ -465,22 +391,11 @@ func (q *Query) Row(dest ...interface{}) error {
 //	var emails []string
 //	err := db.Select("email").From("users").Column(&emails)
 //
-//nolint:cyclop,funlen,gocognit,gocyclo // Query execution requires comprehensive error handling, logging, and tracing
+//nolint:gocognit,gocyclo,cyclop,funlen // Query execution requires comprehensive error handling and logging
 func (q *Query) Column(slice interface{}) error {
 	ctx := q.ctx
 	if ctx == nil {
 		ctx = context.Background()
-	}
-
-	// Old tracer (backward compatibility)
-	ctx, span := q.db.oldTracer.Start(ctx, "Query.Column")
-	defer span.End()
-
-	// Start new tracer span
-	var newSpan tracer.Span
-	if q.db.tracer != nil {
-		ctx, newSpan = q.db.tracer.StartSpan(ctx, "relica.query.column")
-		defer newSpan.End()
 	}
 
 	start := time.Now()
@@ -525,17 +440,13 @@ func (q *Query) Column(slice interface{}) error {
 				"error", err,
 			)
 		}
-		if newSpan != nil {
-			tracer.AddQueryAttributes(newSpan, &tracer.QueryMetadata{
-				SQL:       q.sql,
-				Args:      q.params,
-				Duration:  elapsed,
-				Error:     err,
-				Database:  q.db.driverName,
-				Operation: tracer.DetectOperation(q.sql),
-			})
-		}
-		q.db.oldTracer.Record(ctx, elapsed, err)
+		q.db.invokeHook(ctx, QueryEvent{
+			SQL:       q.sql,
+			Args:      q.params,
+			Duration:  elapsed,
+			Error:     err,
+			Operation: DetectOperation(q.sql),
+		})
 		return err
 	}
 	defer func() { _ = rows.Close() }()
@@ -558,17 +469,13 @@ func (q *Query) Column(slice interface{}) error {
 					"error", err,
 				)
 			}
-			if newSpan != nil {
-				tracer.AddQueryAttributes(newSpan, &tracer.QueryMetadata{
-					SQL:       q.sql,
-					Args:      q.params,
-					Duration:  elapsed,
-					Error:     err,
-					Database:  q.db.driverName,
-					Operation: tracer.DetectOperation(q.sql),
-				})
-			}
-			q.db.oldTracer.Record(ctx, elapsed, err)
+			q.db.invokeHook(ctx, QueryEvent{
+				SQL:       q.sql,
+				Args:      q.params,
+				Duration:  elapsed,
+				Error:     err,
+				Operation: DetectOperation(q.sql),
+			})
 			return err
 		}
 
@@ -588,17 +495,13 @@ func (q *Query) Column(slice interface{}) error {
 				"error", err,
 			)
 		}
-		if newSpan != nil {
-			tracer.AddQueryAttributes(newSpan, &tracer.QueryMetadata{
-				SQL:       q.sql,
-				Args:      q.params,
-				Duration:  elapsed,
-				Error:     err,
-				Database:  q.db.driverName,
-				Operation: tracer.DetectOperation(q.sql),
-			})
-		}
-		q.db.oldTracer.Record(ctx, elapsed, err)
+		q.db.invokeHook(ctx, QueryEvent{
+			SQL:       q.sql,
+			Args:      q.params,
+			Duration:  elapsed,
+			Error:     err,
+			Operation: DetectOperation(q.sql),
+		})
 		return err
 	}
 
@@ -615,18 +518,13 @@ func (q *Query) Column(slice interface{}) error {
 		)
 	}
 
-	// Add tracing attributes
-	if newSpan != nil {
-		tracer.AddQueryAttributes(newSpan, &tracer.QueryMetadata{
-			SQL:       q.sql,
-			Args:      q.params,
-			Duration:  elapsed,
-			Database:  q.db.driverName,
-			Operation: tracer.DetectOperation(q.sql),
-		})
-	}
-
-	q.db.oldTracer.Record(ctx, elapsed, nil)
+	// Invoke query hook
+	q.db.invokeHook(ctx, QueryEvent{
+		SQL:       q.sql,
+		Args:      q.params,
+		Duration:  elapsed,
+		Operation: DetectOperation(q.sql),
+	})
 
 	return nil
 }
@@ -634,22 +532,11 @@ func (q *Query) Column(slice interface{}) error {
 // All fetches all rows into a slice of structs.
 // If query is part of a transaction, uses transaction connection.
 //
-//nolint:cyclop,funlen // Query execution requires comprehensive error handling, logging, and tracing
+//nolint:cyclop // Query execution requires comprehensive error handling and logging
 func (q *Query) All(dest interface{}) error {
 	ctx := q.ctx
 	if ctx == nil {
 		ctx = context.Background()
-	}
-
-	// Old tracer (backward compatibility)
-	ctx, span := q.db.oldTracer.Start(ctx, "Query.All")
-	defer span.End()
-
-	// Start new tracer span
-	var newSpan tracer.Span
-	if q.db.tracer != nil {
-		ctx, newSpan = q.db.tracer.StartSpan(ctx, "relica.query.all")
-		defer newSpan.End()
 	}
 
 	start := time.Now()
@@ -681,17 +568,13 @@ func (q *Query) All(dest interface{}) error {
 				"error", err,
 			)
 		}
-		if newSpan != nil {
-			tracer.AddQueryAttributes(newSpan, &tracer.QueryMetadata{
-				SQL:       q.sql,
-				Args:      q.params,
-				Duration:  elapsed,
-				Error:     err,
-				Database:  q.db.driverName,
-				Operation: tracer.DetectOperation(q.sql),
-			})
-		}
-		q.db.oldTracer.Record(ctx, elapsed, err)
+		q.db.invokeHook(ctx, QueryEvent{
+			SQL:       q.sql,
+			Args:      q.params,
+			Duration:  elapsed,
+			Error:     err,
+			Operation: DetectOperation(q.sql),
+		})
 		return err
 	}
 	defer func() { _ = rows.Close() }()
@@ -707,17 +590,13 @@ func (q *Query) All(dest interface{}) error {
 				"error", err,
 			)
 		}
-		if newSpan != nil {
-			tracer.AddQueryAttributes(newSpan, &tracer.QueryMetadata{
-				SQL:       q.sql,
-				Args:      q.params,
-				Duration:  elapsed,
-				Error:     err,
-				Database:  q.db.driverName,
-				Operation: tracer.DetectOperation(q.sql),
-			})
-		}
-		q.db.oldTracer.Record(ctx, elapsed, err)
+		q.db.invokeHook(ctx, QueryEvent{
+			SQL:       q.sql,
+			Args:      q.params,
+			Duration:  elapsed,
+			Error:     err,
+			Operation: DetectOperation(q.sql),
+		})
 		return err
 	}
 
@@ -733,18 +612,13 @@ func (q *Query) All(dest interface{}) error {
 		)
 	}
 
-	// Add tracing attributes
-	if newSpan != nil {
-		tracer.AddQueryAttributes(newSpan, &tracer.QueryMetadata{
-			SQL:       q.sql,
-			Args:      q.params,
-			Duration:  elapsed,
-			Database:  q.db.driverName,
-			Operation: tracer.DetectOperation(q.sql),
-		})
-	}
-
-	q.db.oldTracer.Record(ctx, elapsed, nil)
+	// Invoke query hook
+	q.db.invokeHook(ctx, QueryEvent{
+		SQL:       q.sql,
+		Args:      q.params,
+		Duration:  elapsed,
+		Operation: DetectOperation(q.sql),
+	})
 
 	// Analyze query performance if optimizer is enabled (async to not block)
 	if q.db.optimizer != nil {

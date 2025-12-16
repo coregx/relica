@@ -9,7 +9,6 @@ import (
 	"github.com/coregx/relica/internal/cache"
 	"github.com/coregx/relica/internal/dialects"
 	"github.com/coregx/relica/internal/logger"
-	"github.com/coregx/relica/internal/tracer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
@@ -32,9 +31,7 @@ func setupBatchTestDB(t *testing.T) *DB {
 		driverName: "sqlite",
 		stmtCache:  cache.NewStmtCache(),
 		dialect:    dialects.GetDialect("sqlite"),
-		oldTracer:  NewNoOpTracer(),
 		logger:     &logger.NoopLogger{},
-		tracer:     &tracer.NoopTracer{},
 		sanitizer:  logger.NewSanitizer(nil),
 		ctx:        context.Background(),
 	}
