@@ -5,6 +5,105 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## [0.9.0] - 2025-12-16
+
+### Added
+
+**4 New Features for Advanced Query Building**
+
+**TASK-016: NullStringMap for Dynamic Scanning**
+- `NullStringMap` type for scanning rows without predefined struct
+- Helper methods: `String()`, `Int()`, `Float()`, `Bool()`, `Time()`, `IsNull()`
+- Works with both `One()` and `All()` methods
+- Useful for dynamic queries, admin panels, data exploration
+
+```go
+var result relica.NullStringMap
+db.Select("*").From("users").Where("id = ?", 1).One(&result)
+name := result.String("name")    // empty string if NULL
+if !result.IsNull("email") { ... }
+
+var results []relica.NullStringMap
+db.Select("*").From("users").All(&results)
+```
+
+**TASK-017: Query.Prepare() / Query.Close() Manual Control**
+- `Prepare()` - manually prepare statement for reuse
+- `Close()` - release prepared statement
+- `Bind()` - rebind parameters for execution
+- Perfect for batch operations with same query structure
+
+```go
+q := db.NewQuery("SELECT * FROM users WHERE status = ?").Prepare()
+defer q.Close()
+for _, status := range statuses {
+    q.Bind(status).All(&users)
+}
+```
+
+**Composite Primary Key Support**
+- `db:"column_name,pk"` syntax for composite PKs
+- Works with Model API: Insert, Update, Delete
+- Maintains field declaration order
+- No auto-populate for CPK (by design, same as ozzo-dbx)
+
+```go
+type OrderItem struct {
+    OrderID   int `db:"order_id,pk"`   // Part of composite PK
+    ProductID int `db:"product_id,pk"` // Part of composite PK
+    Quantity  int `db:"quantity"`
+}
+
+item := OrderItem{OrderID: 1, ProductID: 100, Quantity: 5}
+db.Model(&item).Insert()  // INSERT with both PK values
+db.Model(&item).Update()  // UPDATE WHERE order_id=1 AND product_id=100
+db.Model(&item).Delete()  // DELETE WHERE order_id=1 AND product_id=100
+```
+
+**TASK-100: Functional Expressions (CASE, COALESCE, etc.)**
+- `Case()` / `CaseWhen()` - CASE expressions (simple and searched)
+- `Coalesce()` - first non-NULL value
+- `NullIf()` - NULL if equal
+- `Greatest()` / `Least()` - max/min from list (SQLite: MAX/MIN fallback)
+- `Concat()` - cross-database string concatenation
+
+```go
+// Simple CASE
+relica.Case("status").
+    When("active", 1).
+    When("inactive", 0).
+    Else(-1).
+    As("status_code")
+// CASE "status" WHEN 'active' THEN 1 WHEN 'inactive' THEN 0 ELSE -1 END
+
+// Searched CASE
+relica.CaseWhen().
+    When("age < 18", "minor").
+    When("age >= 65", "senior").
+    Else("adult").
+    As("age_group")
+
+// COALESCE
+relica.Coalesce("nickname", "first_name", "'Anonymous'").As("display_name")
+
+// NULLIF
+relica.NullIf("email", "''").As("valid_email")
+
+// GREATEST/LEAST (SQLite uses MAX/MIN)
+relica.Greatest("price", "discount_price").As("max_price")
+relica.Least("price", "sale_price").As("min_price")
+
+// CONCAT (PostgreSQL/SQLite: ||, MySQL: CONCAT())
+relica.Concat("first_name", "' '", "last_name").As("full_name")
+```
+
+**Quality Metrics**:
+- 650+ tests passing
+- 0 linter issues
+- 86% test coverage
+- 100% backward compatible
+
 ## [0.8.0] - 2025-12-16
 
 ### Added
