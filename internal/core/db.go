@@ -309,6 +309,57 @@ func (tx *Tx) Rollback() error {
 	return tx.tx.Rollback()
 }
 
+// Transactional executes f within a transaction with automatic commit/rollback.
+// If f returns an error, the transaction is rolled back and the error is returned.
+// If f panics, the transaction is rolled back and the panic is re-raised.
+// If f completes successfully, the transaction is committed.
+func (db *DB) Transactional(ctx context.Context, f func(*Tx) error) (err error) {
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback() //nolint:errcheck,gosec
+			panic(p)      // Re-panic after rollback
+		} else if err != nil {
+			tx.Rollback() //nolint:errcheck,gosec
+		} else {
+			err = tx.Commit()
+		}
+	}()
+
+	err = f(tx)
+	return err
+}
+
+// TransactionalTx executes f within a transaction with custom options.
+// Options can specify isolation level and read-only mode.
+// If f returns an error, the transaction is rolled back and the error is returned.
+// If f panics, the transaction is rolled back and the panic is re-raised.
+// If f completes successfully, the transaction is committed.
+func (db *DB) TransactionalTx(ctx context.Context, opts *TxOptions, f func(*Tx) error) (err error) {
+	tx, err := db.BeginTx(ctx, opts)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback() //nolint:errcheck,gosec
+			panic(p)      // Re-panic after rollback
+		} else if err != nil {
+			tx.Rollback() //nolint:errcheck,gosec
+		} else {
+			err = tx.Commit()
+		}
+	}()
+
+	err = f(tx)
+	return err
+}
+
 // PoolStats represents database connection pool statistics.
 type PoolStats struct {
 	// MaxOpenConnections is the maximum number of open connections to the database.

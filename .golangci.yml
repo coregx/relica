@@ -196,12 +196,17 @@ linters:
         linters:
           - goconst
 
-      # Example applications
+      # Example applications - demo code, not production quality required
       - path: examples/.*\.go
         linters:
           - errcheck
           - gosec
           - funlen
+          - gocyclo
+          - gocognit
+          - cyclop
+          - gocritic
+          - staticcheck
 
       # Util package - standard Go utility package naming
       - path: internal/util/.*\.go

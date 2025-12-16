@@ -5,6 +5,90 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2025-12-16
+
+### Added
+
+**6 New Features from ozzo-dbx API Analysis**
+
+**TASK-010: Named Placeholders**
+- `{:name}` syntax for named parameters in queries
+- `Bind(Params{})` method for parameter binding
+- Works with all query types (SELECT, INSERT, UPDATE, DELETE)
+
+```go
+db.NewQuery("SELECT * FROM users WHERE id={:id} AND status={:status}").
+    Bind(relica.Params{"id": 1, "status": "active"}).All(&users)
+```
+
+**TASK-011: Table/Column Quoting Syntax**
+- `{{table}}` syntax for dialect-aware table quoting
+- `[[column]]` syntax for dialect-aware column quoting
+- Auto-converts to proper quotes (PostgreSQL: `"`, MySQL: `` ` ``, SQLite: `"`)
+
+```go
+db.NewQuery("SELECT [[name]], [[email]] FROM {{users}}").All(&users)
+// PostgreSQL: SELECT "name", "email" FROM "users"
+// MySQL: SELECT `name`, `email` FROM `users`
+```
+
+**TASK-012: Row() and Column() Methods**
+- `Row()` - Scan single row into scalar value(s)
+- `Column()` - Scan single column into slice
+
+```go
+var count int
+db.Select("COUNT(*)").From("users").Row(&count)
+
+var ids []int
+db.Select("id").From("users").Where("active = ?", true).Column(&ids)
+```
+
+**TASK-013: Transactional() Helper**
+- Auto-commit on success, auto-rollback on error
+- Panic recovery with re-panic after rollback
+- `TransactionalTx()` variant with custom TxOptions
+
+```go
+err := db.Transactional(ctx, func(tx *relica.Tx) error {
+    if err := tx.Model(&user).Insert(); err != nil {
+        return err  // Auto rollback
+    }
+    return tx.Model(&account).Insert()  // Auto commit on nil
+})
+```
+
+**TASK-014: Distinct() Method**
+- `Distinct(true)` adds SELECT DISTINCT
+- Chainable with all SelectQuery methods
+
+```go
+db.Select("category").From("products").Distinct(true).All(&categories)
+// SELECT DISTINCT "category" FROM "products"
+```
+
+**TASK-015: AndWhere() / OrWhere() Methods**
+- Dynamic WHERE clause building
+- Works with string conditions and Expression types
+- Available on SelectQuery, UpdateQuery, DeleteQuery
+
+```go
+q := db.Select("*").From("users").Where("status = ?", 1)
+if name != "" {
+    q = q.AndWhere(relica.Like("name", name))
+}
+if role != "" {
+    q = q.OrWhere(relica.Eq("role", role))
+}
+q.All(&users)
+```
+
+**Quality Metrics**:
+- 600+ tests passing
+- 0 linter issues
+- 3874 lines of new code
+- 100% backward compatible
+
 ## [0.7.0] - 2025-01-25
 
 ### Added

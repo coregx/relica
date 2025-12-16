@@ -11,22 +11,26 @@
 
 ## ✨ Features
 
-- 🚀 **Zero Production Dependencies** - Uses only Go standard library
-- ⚡ **High Performance** - LRU statement cache, batch operations (3.3x faster)
-- 🎯 **Type-Safe** - Reflection-based struct scanning with compile-time checks
-- 🔄 **Model() API** - ORM-style CRUD with auto-populated IDs, selective fields (ozzo-dbx compatible)
-- 🔒 **Transaction Support** - Full ACID with all isolation levels
-- 🛡️ **Enterprise Security** - SQL injection prevention, audit logging, compliance
-- 📦 **Batch Operations** - Efficient multi-row INSERT and UPDATE
-- 🔗 **JOIN Operations** - INNER, LEFT, RIGHT, FULL, CROSS JOIN support
-- 📊 **Sorting & Pagination** - ORDER BY, LIMIT, OFFSET
-- 🔢 **Aggregate Functions** - COUNT, SUM, AVG, MIN, MAX, GROUP BY, HAVING
-- 🔍 **Subqueries** - IN, EXISTS, FROM subqueries, scalar subqueries
-- 🔀 **Set Operations** - UNION, UNION ALL, INTERSECT, EXCEPT
-- 🌳 **Common Table Expressions** - WITH clause, recursive CTEs
-- 🌐 **Multi-Database** - PostgreSQL, MySQL 8.0+, SQLite 3.25+ support
-- 🧪 **Well-Tested** - 326+ tests, 93.3% coverage
-- 📝 **Clean API** - Fluent builder pattern with context support
+- **Zero Production Dependencies** - Uses only Go standard library
+- **High Performance** - LRU statement cache, batch operations (3.3x faster)
+- **Type-Safe** - Reflection-based struct scanning with compile-time checks
+- **Model() API** - ORM-style CRUD with auto-populated IDs, selective fields (ozzo-dbx compatible)
+- **Named Placeholders** - `{:name}` syntax with `Bind(Params{})` for readable queries
+- **Transactional()** - Auto commit/rollback helper with panic recovery
+- **Dynamic WHERE** - `AndWhere()` / `OrWhere()` for conditional query building
+- **Row() / Column()** - Convenient scalar and single-column queries
+- **Transaction Support** - Full ACID with all isolation levels
+- **Enterprise Security** - SQL injection prevention, audit logging, compliance
+- **Batch Operations** - Efficient multi-row INSERT and UPDATE
+- **JOIN Operations** - INNER, LEFT, RIGHT, FULL, CROSS JOIN support
+- **Sorting & Pagination** - ORDER BY, LIMIT, OFFSET, DISTINCT
+- **Aggregate Functions** - COUNT, SUM, AVG, MIN, MAX, GROUP BY, HAVING
+- **Subqueries** - IN, EXISTS, FROM subqueries, scalar subqueries
+- **Set Operations** - UNION, UNION ALL, INTERSECT, EXCEPT
+- **Common Table Expressions** - WITH clause, recursive CTEs
+- **Multi-Database** - PostgreSQL, MySQL 8.0+, SQLite 3.25+ support
+- **Well-Tested** - 600+ tests, 85%+ coverage
+- **Clean API** - Fluent builder pattern with context support
 
 > **Latest Release:** See [CHANGELOG.md](CHANGELOG.md) for version history and [GitHub Releases](https://github.com/coregx/relica/releases) for release notes.
 
