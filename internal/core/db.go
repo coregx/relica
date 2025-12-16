@@ -12,7 +12,6 @@ import (
 	"github.com/coregx/relica/internal/dialects"
 	"github.com/coregx/relica/internal/logger"
 	"github.com/coregx/relica/internal/security"
-	"github.com/coregx/relica/internal/tracer"
 )
 
 // Optimizer interface for query optimization analysis.
@@ -22,15 +21,14 @@ type Optimizer interface {
 	Suggest(analysis interface{}) []interface{}
 }
 
-// DB represents the main database connection with caching and tracing.
+// DB represents the main database connection with caching and query hooks.
 type DB struct {
 	sqlDB         *sql.DB
 	driverName    string
 	stmtCache     *cache.StmtCache
 	dialect       dialects.Dialect
-	oldTracer     Tracer              // Deprecated: kept for backward compatibility
 	logger        logger.Logger       // Structured logger for query logging
-	tracer        tracer.Tracer       // Distributed tracer for observability
+	queryHook     QueryHook           // Query hook for logging/metrics/tracing
 	sanitizer     *logger.Sanitizer   // Sanitizes sensitive data in logs
 	optimizer     Optimizer           // Query optimizer (nil = disabled)
 	healthChecker *healthChecker      // Health checker for connection monitoring (nil = disabled)
@@ -144,11 +142,19 @@ func WithLogger(l logger.Logger) Option {
 	}
 }
 
-// WithTracer sets the distributed tracer for the database.
-// If not set, a NoopTracer is used (zero overhead when tracing is disabled).
-func WithTracer(t tracer.Tracer) Option {
+// WithQueryHook sets a callback function that is invoked after each query execution.
+// Use this for logging, metrics, distributed tracing, or debugging.
+// If not set, no hook is called (zero overhead).
+//
+// Example:
+//
+//	db, _ := relica.Open("postgres", dsn,
+//	    relica.WithQueryHook(func(ctx context.Context, e relica.QueryEvent) {
+//	        slog.Info("query", "sql", e.SQL, "duration", e.Duration)
+//	    }))
+func WithQueryHook(hook QueryHook) Option {
 	return func(db *DB) {
-		db.tracer = t
+		db.queryHook = hook
 	}
 }
 
@@ -173,9 +179,7 @@ func NewDB(driverName, dsn string) (*DB, error) {
 		driverName: driverName,
 		stmtCache:  cache.NewStmtCache(),
 		dialect:    dialect,
-		oldTracer:  NewNoOpTracer(),
 		logger:     &logger.NoopLogger{},
-		tracer:     &tracer.NoopTracer{},
 		sanitizer:  logger.NewSanitizer(nil),
 	}, nil
 }
@@ -218,9 +222,7 @@ func WrapDB(sqlDB *sql.DB, driverName string) *DB {
 		driverName: driverName,
 		stmtCache:  cache.NewStmtCache(),
 		dialect:    dialect,
-		oldTracer:  NewNoOpTracer(),
 		logger:     &logger.NoopLogger{},
-		tracer:     &tracer.NoopTracer{},
 		sanitizer:  logger.NewSanitizer(nil),
 	}
 }
@@ -251,6 +253,24 @@ func (db *DB) WithContext(ctx context.Context) *DB {
 // Builder returns a query builder for this database.
 func (db *DB) Builder() *QueryBuilder {
 	return &QueryBuilder{db: db}
+}
+
+// NewQuery creates a raw SQL query for execution.
+// Use this for queries that don't fit the query builder pattern.
+//
+// Example:
+//
+//	var count int
+//	err := db.NewQuery("SELECT COUNT(*) FROM users").Row(&count)
+//
+//	// With parameters
+//	var user User
+//	err := db.NewQuery("SELECT * FROM users WHERE id = ?").Bind(1).One(&user)
+func (db *DB) NewQuery(query string) *Query {
+	return &Query{
+		sql: query,
+		db:  db,
+	}
 }
 
 // NewQueryBuilder creates a new query builder with optional transaction support.

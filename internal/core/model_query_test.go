@@ -27,10 +27,21 @@ type TestProduct struct {
 	Price int    `db:"price"`
 }
 
-// TestPost with custom primary key tag.
+// TestPost with explicit primary key tag.
 type TestPost struct {
-	PostID  int    `db:"post_id"`
+	PostID  int    `db:"post_id,pk"`
 	Content string `db:"content"`
+}
+
+// TestOrderItem with composite primary key.
+type TestOrderItem struct {
+	OrderID   int `db:"order_id,pk"`
+	ProductID int `db:"product_id,pk"`
+	Quantity  int `db:"quantity"`
+}
+
+func (TestOrderItem) TableName() string {
+	return "order_items"
 }
 
 // TestComment with "ID" field name (no tag).
@@ -153,41 +164,62 @@ func TestModelQuery_FilterFields_OnlyWithExclude(t *testing.T) {
 	assert.Nil(t, result["email"], "Should exclude even if in only list")
 }
 
-func TestModelQuery_GetPrimaryKey_WithDbTag(t *testing.T) {
+func TestModelQuery_GetPrimaryKeys_SinglePK_IDField(t *testing.T) {
+	// ModelTestUser has ID field (int) with db:"id" tag - found by field name fallback
 	user := ModelTestUser{ID: 123}
 	mq := &ModelQuery{
 		model: &user,
 	}
 
-	pk, pkValue := mq.getPrimaryKey()
-	assert.Equal(t, "id", pk, "Should find primary key by db:\"id\" tag")
-	assert.Equal(t, 123, pkValue, "Should return primary key value")
+	cols, vals, err := mq.getPrimaryKeys()
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"id"}, cols, "Should find primary key by ID field name")
+	// ID is int in ModelTestUser
+	assert.Len(t, vals, 1)
+	assert.Equal(t, 123, vals[0], "Should return primary key value")
 }
 
-func TestModelQuery_GetPrimaryKey_WithSuffixId(t *testing.T) {
+func TestModelQuery_GetPrimaryKeys_SinglePK_ExplicitTag(t *testing.T) {
+	// TestPost has explicit db:"post_id,pk" tag
 	post := TestPost{PostID: 456}
 	mq := &ModelQuery{
 		model: &post,
 	}
 
-	pk, pkValue := mq.getPrimaryKey()
-	assert.Equal(t, "post_id", pk, "Should find primary key by db:\"*_id\" tag")
-	assert.Equal(t, 456, pkValue, "Should return primary key value")
+	cols, vals, err := mq.getPrimaryKeys()
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"post_id"}, cols, "Should find primary key by db:\"column,pk\" tag")
+	assert.Equal(t, []interface{}{456}, vals, "Should return primary key value")
 }
 
-func TestModelQuery_GetPrimaryKey_WithIDField(t *testing.T) {
+func TestModelQuery_GetPrimaryKeys_CompositePK(t *testing.T) {
+	// TestOrderItem has composite PK: order_id + product_id
+	item := TestOrderItem{OrderID: 100, ProductID: 200, Quantity: 5}
+	mq := &ModelQuery{
+		model: &item,
+	}
+
+	cols, vals, err := mq.getPrimaryKeys()
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"order_id", "product_id"}, cols, "Should find both PK columns")
+	assert.Equal(t, []interface{}{100, 200}, vals, "Should return both PK values")
+}
+
+func TestModelQuery_GetPrimaryKeys_IDFieldWithDbTag(t *testing.T) {
+	// TestComment has ID field with db:"comment_id" tag
 	comment := TestComment{ID: 789}
 	mq := &ModelQuery{
 		model: &comment,
 	}
 
-	pk, pkValue := mq.getPrimaryKey()
-	// Should find by "ID" field name, but use db tag value "comment_id".
-	assert.Equal(t, "comment_id", pk, "Should use db tag value")
-	assert.Equal(t, 789, pkValue, "Should return primary key value")
+	cols, vals, err := mq.getPrimaryKeys()
+	assert.NoError(t, err)
+	// Should find by "ID" field name, but use db tag value "comment_id"
+	assert.Equal(t, []string{"comment_id"}, cols, "Should use db tag value for column name")
+	assert.Equal(t, []interface{}{789}, vals, "Should return primary key value")
 }
 
-func TestModelQuery_GetPrimaryKey_NotFound(t *testing.T) {
+func TestModelQuery_GetPrimaryKeys_NotFound(t *testing.T) {
 	type NoID struct {
 		Name string `db:"name"`
 	}
@@ -196,24 +228,26 @@ func TestModelQuery_GetPrimaryKey_NotFound(t *testing.T) {
 		model: &noID,
 	}
 
-	pk, pkValue := mq.getPrimaryKey()
-	assert.Equal(t, "", pk, "Should return empty string for missing PK")
-	assert.Nil(t, pkValue, "Should return nil for missing PK")
+	cols, vals, err := mq.getPrimaryKeys()
+	assert.Error(t, err, "Should return error for missing PK")
+	assert.Nil(t, cols, "Should return nil columns")
+	assert.Nil(t, vals, "Should return nil values")
 }
 
-func TestModelQuery_GetPrimaryKey_MultipleIDFields(t *testing.T) {
-	// First db:"id" or db:"*_id" should win.
-	type Multi struct {
-		UserID int `db:"user_id"`
-		ID     int `db:"id"`
+func TestModelQuery_GetPrimaryKeys_ExplicitPK_TakesPrecedence(t *testing.T) {
+	// Explicit pk tag should take precedence over ID field
+	type WithExplicitPK struct {
+		ID       int `db:"id"`
+		TenantID int `db:"tenant_id,pk"`
 	}
-	multi := Multi{UserID: 111, ID: 222}
+	model := WithExplicitPK{ID: 111, TenantID: 222}
 	mq := &ModelQuery{
-		model: &multi,
+		model: &model,
 	}
 
-	pk, pkValue := mq.getPrimaryKey()
-	// Should find first *_id tag.
-	assert.Equal(t, "user_id", pk, "Should find first *_id tag")
-	assert.Equal(t, 111, pkValue)
+	cols, vals, err := mq.getPrimaryKeys()
+	assert.NoError(t, err)
+	// Explicit pk tag takes precedence
+	assert.Equal(t, []string{"tenant_id"}, cols, "Explicit pk tag should take precedence")
+	assert.Equal(t, []interface{}{222}, vals)
 }

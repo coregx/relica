@@ -14,6 +14,13 @@ type scanner struct {
 	cache map[reflect.Type]*structInfo
 }
 
+// parseDBTagForScanner extracts column name from db tag.
+// Handles: "column", "column,pk", "-".
+func parseDBTagForScanner(tag string) string {
+	parts := strings.Split(tag, ",")
+	return strings.TrimSpace(parts[0])
+}
+
 // structInfo contains cached metadata about a struct type.
 type structInfo struct {
 	fields []*fieldInfo
@@ -100,13 +107,15 @@ func (s *scanner) buildStructInfo(typ reflect.Type, index []int) (*structInfo, e
 		}
 
 		// Get column name from db:"" tag or use field name
+		// Handles: "column", "column,pk", "-"
 		dbName := field.Name
 		if tag, ok := field.Tag.Lookup("db"); ok {
-			if tag == "-" {
+			column := parseDBTagForScanner(tag)
+			if column == "-" {
 				// Skip this field
 				continue
 			}
-			dbName = tag
+			dbName = column
 		}
 
 		info.fields = append(info.fields, &fieldInfo{
@@ -258,6 +267,74 @@ func (s *scanner) scanRows(rows *sql.Rows, dest interface{}) error {
 		} else {
 			sliceValue.Set(reflect.Append(sliceValue, elemValue))
 		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("scanner: rows iteration failed: %w", err)
+	}
+
+	return nil
+}
+
+// scanMapRow scans a single SQL row into a NullStringMap.
+// All values are scanned as sql.NullString regardless of actual column type.
+func (s *scanner) scanMapRow(rows *sql.Rows, dest *NullStringMap) error {
+	// Get column names from SQL result
+	columns, err := rows.Columns()
+	if err != nil {
+		return fmt.Errorf("scanner: failed to get columns: %w", err)
+	}
+
+	// Prepare scan destinations - all as NullString
+	values := make([]sql.NullString, len(columns))
+	scanDests := make([]interface{}, len(columns))
+	for i := range values {
+		scanDests[i] = &values[i]
+	}
+
+	// Scan the row
+	if err := rows.Scan(scanDests...); err != nil {
+		return fmt.Errorf("scanner: scan failed: %w", err)
+	}
+
+	// Build the map
+	*dest = make(NullStringMap, len(columns))
+	for i, col := range columns {
+		(*dest)[col] = values[i]
+	}
+
+	return nil
+}
+
+// scanMapRows scans multiple SQL rows into a slice of NullStringMap.
+func (s *scanner) scanMapRows(rows *sql.Rows, dest *[]NullStringMap) error {
+	// Get column names from SQL result
+	columns, err := rows.Columns()
+	if err != nil {
+		return fmt.Errorf("scanner: failed to get columns: %w", err)
+	}
+
+	// Scan all rows
+	for rows.Next() {
+		// Prepare scan destinations - all as NullString
+		values := make([]sql.NullString, len(columns))
+		scanDests := make([]interface{}, len(columns))
+		for i := range values {
+			scanDests[i] = &values[i]
+		}
+
+		// Scan the row
+		if err := rows.Scan(scanDests...); err != nil {
+			return fmt.Errorf("scanner: scan failed: %w", err)
+		}
+
+		// Build the map for this row
+		rowMap := make(NullStringMap, len(columns))
+		for i, col := range columns {
+			rowMap[col] = values[i]
+		}
+
+		*dest = append(*dest, rowMap)
 	}
 
 	if err := rows.Err(); err != nil {

@@ -56,7 +56,6 @@ import (
 
 	"github.com/coregx/relica/internal/core"
 	"github.com/coregx/relica/internal/logger"
-	"github.com/coregx/relica/internal/tracer"
 	"github.com/coregx/relica/internal/util"
 )
 
@@ -459,6 +458,29 @@ func (d *DB) UnpinQuery(query string) bool {
 //	    One(&user)
 func (d *DB) Builder() *QueryBuilder {
 	return &QueryBuilder{qb: d.db.Builder()}
+}
+
+// NewQuery creates a raw SQL query for execution.
+// Use this for queries that don't fit the query builder pattern,
+// or when you need manual control over prepared statement lifecycle.
+//
+// Example:
+//
+//	var count int
+//	err := db.NewQuery("SELECT COUNT(*) FROM users").Row(&count)
+//
+//	// With parameters
+//	var user User
+//	err := db.NewQuery("SELECT * FROM users WHERE id = ?").Bind(1).One(&user)
+//
+//	// With Prepare for repeated execution
+//	q := db.NewQuery("SELECT * FROM users WHERE status = ?").Prepare()
+//	defer q.Close()
+//	for _, status := range statuses {
+//	    q.Bind(status).All(&users)
+//	}
+func (d *DB) NewQuery(query string) *Query {
+	return &Query{q: d.db.NewQuery(query)}
 }
 
 // Model creates a ModelQuery for performing CRUD operations on a struct model.
@@ -2128,6 +2150,95 @@ func (q *Query) Column(slice interface{}) error {
 	return q.q.Column(slice)
 }
 
+// Prepare prepares the query for repeated execution.
+// Call Close() when done to release the prepared statement.
+// The prepared statement bypasses the automatic statement cache,
+// giving you full control over the statement lifecycle.
+//
+// Example:
+//
+//	q := db.NewQuery("SELECT * FROM users WHERE status = ?").Prepare()
+//	defer q.Close()
+//
+//	for _, status := range statuses {
+//	    var users []User
+//	    q.Bind(status).All(&users)
+//	    // process users...
+//	}
+func (q *Query) Prepare() *Query {
+	if q.err != nil {
+		return q
+	}
+	q.q.Prepare()
+	return q
+}
+
+// Close releases the prepared statement.
+// Safe to call multiple times or on non-prepared queries.
+// Returns nil if query was not prepared or already closed.
+func (q *Query) Close() error {
+	if q.q != nil {
+		return q.q.Close()
+	}
+	return nil
+}
+
+// IsPrepared returns true if Prepare() was called successfully.
+func (q *Query) IsPrepared() bool {
+	if q.q == nil {
+		return false
+	}
+	return q.q.IsPrepared()
+}
+
+// Bind sets positional parameters for the query.
+// Parameters replace ? placeholders in order.
+//
+// Example:
+//
+//	db.NewQuery("SELECT * FROM users WHERE id = ? AND status = ?").
+//	    Bind(1, "active").
+//	    One(&user)
+func (q *Query) Bind(params ...interface{}) *Query {
+	if q.err != nil {
+		return q
+	}
+	q.q.Bind(params...)
+	return q
+}
+
+// BindParams binds named parameters using Params map.
+// Named parameters are specified using {:name} syntax.
+//
+// Example:
+//
+//	db.NewQuery("SELECT * FROM users WHERE id = {:id}").
+//	    BindParams(relica.Params{"id": 1}).
+//	    One(&user)
+func (q *Query) BindParams(params Params) *Query {
+	if q.err != nil {
+		return q
+	}
+	q.q.BindParams(params)
+	return q
+}
+
+// SQL returns the SQL query string.
+func (q *Query) SQL() string {
+	if q.q == nil {
+		return ""
+	}
+	return q.q.SQL()
+}
+
+// QueryParams returns the query parameters.
+func (q *Query) QueryParams() []interface{} {
+	if q.q == nil {
+		return nil
+	}
+	return q.q.Params()
+}
+
 // ============================================================================
 // Re-export configuration options
 // ============================================================================
@@ -2182,16 +2293,17 @@ var WithStmtCacheCapacity = core.WithStmtCacheCapacity
 //	    relica.WithLogger(logger.NewSlogAdapter(logger)))
 var WithLogger = core.WithLogger
 
-// WithTracer sets the distributed tracer for query observability.
-// If not set, a NoopTracer is used (zero overhead when tracing is disabled).
+// WithQueryHook sets a callback function that is invoked after each query execution.
+// Use this for logging, metrics, distributed tracing, or debugging.
+// If not set, no hook is called (zero overhead).
 //
 // Example:
 //
-//	import "go.opentelemetry.io/otel"
-//	tracer := otel.Tracer("relica")
-//	db, err := relica.Open("postgres", dsn,
-//	    relica.WithTracer(tracer.NewOtelTracer(tracer)))
-var WithTracer = core.WithTracer
+//	db, _ := relica.Open("postgres", dsn,
+//	    relica.WithQueryHook(func(ctx context.Context, e relica.QueryEvent) {
+//	        slog.Info("query", "sql", e.SQL, "duration", e.Duration, "err", e.Error)
+//	    }))
+var WithQueryHook = core.WithQueryHook
 
 // WithSensitiveFields sets the list of sensitive field names for parameter masking.
 // If not set, default sensitive field patterns are used.
@@ -2215,17 +2327,44 @@ type SlogAdapter = logger.SlogAdapter
 // NewSlogAdapter creates a new logger adapter wrapping an slog.Logger.
 var NewSlogAdapter = logger.NewSlogAdapter
 
-// Tracer defines the tracing interface for Relica.
-type Tracer = tracer.Tracer
+// QueryEvent contains information about an executed query.
+// This is passed to QueryHook callbacks for logging, metrics, or tracing.
+type QueryEvent = core.QueryEvent
 
-// NoopTracer is a tracer that does nothing (zero overhead when tracing is disabled).
-type NoopTracer = tracer.NoopTracer
+// QueryHook is a callback function invoked after each query execution.
+// Use this for logging, metrics, distributed tracing, or debugging.
+type QueryHook = core.QueryHook
 
-// OtelTracer wraps an OpenTelemetry tracer to implement the Tracer interface.
-type OtelTracer = tracer.OtelTracer
+// Params represents named parameter values for query binding.
+// Named parameters are specified in SQL using {:name} syntax.
+//
+// Example:
+//
+//	db.NewQuery("SELECT * FROM users WHERE id={:id} AND status={:status}").
+//	    BindParams(relica.Params{"id": 1, "status": "active"}).
+//	    All(&users)
+type Params = core.Params
 
-// NewOtelTracer creates a new OpenTelemetry tracer adapter.
-var NewOtelTracer = tracer.NewOtelTracer
+// DetectOperation detects the SQL operation type (SELECT, INSERT, UPDATE, DELETE, UNKNOWN).
+var DetectOperation = core.DetectOperation
+
+// NullStringMap represents a map of nullable string values scanned from database rows.
+// Each value is a sql.NullString that can be checked for NULL.
+// This type is useful for dynamic queries where the schema is not known at compile time.
+//
+// Example:
+//
+//	var result relica.NullStringMap
+//	db.Select("*").From("users").Where("id = ?", 1).One(&result)
+//	name := result.String("name")   // returns empty string if NULL
+//	if !result.IsNull("email") {
+//	    email := result.String("email")
+//	}
+//
+//	// Multiple rows
+//	var results []relica.NullStringMap
+//	db.Select("*").From("users").All(&results)
+type NullStringMap = core.NullStringMap
 
 // ============================================================================
 // Re-export expression builders
@@ -2290,3 +2429,43 @@ var Exists = core.Exists
 
 // NotExists creates a NOT EXISTS subquery expression.
 var NotExists = core.NotExists
+
+// ============================================================================
+// Re-export functional expressions (CASE, COALESCE, NULLIF, etc.)
+// ============================================================================
+
+// Case creates a simple CASE expression.
+var Case = core.Case
+
+// CaseWhen creates a searched CASE expression (without column).
+var CaseWhen = core.CaseWhen
+
+// Coalesce creates a COALESCE expression.
+var Coalesce = core.Coalesce
+
+// NullIf creates a NULLIF expression.
+var NullIf = core.NullIf
+
+// Greatest creates a GREATEST expression.
+var Greatest = core.Greatest
+
+// Least creates a LEAST expression.
+var Least = core.Least
+
+// Concat creates a string concatenation expression.
+var Concat = core.Concat
+
+// CaseExp represents a SQL CASE expression.
+type CaseExp = core.CaseExp
+
+// CoalesceExp represents a SQL COALESCE expression.
+type CoalesceExp = core.CoalesceExp
+
+// NullIfExp represents a SQL NULLIF expression.
+type NullIfExp = core.NullIfExp
+
+// GreatestLeastExp represents a SQL GREATEST or LEAST expression.
+type GreatestLeastExp = core.GreatestLeastExp
+
+// ConcatExp represents a SQL string concatenation expression.
+type ConcatExp = core.ConcatExp

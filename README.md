@@ -15,11 +15,14 @@
 - **Zero Production Dependencies** - Uses only Go standard library
 - **High Performance** - LRU statement cache, batch operations (3.3x faster)
 - **Type-Safe** - Reflection-based struct scanning with compile-time checks
-- **Model() API** - ORM-style CRUD with auto-populated IDs, selective fields (ozzo-dbx compatible)
+- **Model() API** - ORM-style CRUD with auto-populated IDs, composite PKs (ozzo-dbx compatible)
+- **NullStringMap** - Dynamic scanning without predefined structs
 - **Named Placeholders** - `{:name}` syntax with `Bind(Params{})` for readable queries
+- **Functional Expressions** - CASE, COALESCE, NULLIF, GREATEST, LEAST, CONCAT
 - **Transactional()** - Auto commit/rollback helper with panic recovery
 - **Dynamic WHERE** - `AndWhere()` / `OrWhere()` for conditional query building
 - **Row() / Column()** - Convenient scalar and single-column queries
+- **Prepare() / Close()** - Manual statement control for batch operations
 - **Transaction Support** - Full ACID with all isolation levels
 - **Enterprise Security** - SQL injection prevention, audit logging, compliance
 - **Batch Operations** - Efficient multi-row INSERT and UPDATE
@@ -30,7 +33,7 @@
 - **Set Operations** - UNION, UNION ALL, INTERSECT, EXCEPT
 - **Common Table Expressions** - WITH clause, recursive CTEs
 - **Multi-Database** - PostgreSQL, MySQL 8.0+, SQLite 3.25+ support
-- **Well-Tested** - 600+ tests, 85%+ coverage
+- **Well-Tested** - 650+ tests, 86%+ coverage
 - **Clean API** - Fluent builder pattern with context support
 
 > **Latest Release:** See [CHANGELOG.md](CHANGELOG.md) for version history and [GitHub Releases](https://github.com/coregx/relica/releases) for release notes.

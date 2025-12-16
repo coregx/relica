@@ -70,37 +70,30 @@ func inferTableName(model interface{}) string {
 	return strings.ToLower(name)
 }
 
-// getPrimaryKey returns primary key name and value.
-func (mq *ModelQuery) getPrimaryKey() (string, interface{}) {
+// getPrimaryKeys returns primary key column names and values.
+// Supports both single PK and composite PK.
+//
+// Returns:
+//   - columns: slice of column names in struct declaration order
+//   - values: slice of values in struct declaration order
+//   - error: if no primary key found
+func (mq *ModelQuery) getPrimaryKeys() ([]string, []interface{}, error) {
 	v := reflect.ValueOf(mq.model)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
 	}
 
-	t := v.Type()
-
-	// Search for primary key field.
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-
-		// Check db tag.
-		if tag, ok := field.Tag.Lookup("db"); ok {
-			if tag == "id" || strings.HasSuffix(tag, "_id") {
-				return tag, v.Field(i).Interface()
-			}
-		}
-
-		// Fallback: field named "ID".
-		if field.Name == "ID" {
-			dbName := "id"
-			if tag, ok := field.Tag.Lookup("db"); ok {
-				dbName = tag
-			}
-			return dbName, v.Field(i).Interface()
-		}
+	pkInfo, err := util.FindPrimaryKeyFields(v)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	return "", nil
+	values := make([]interface{}, len(pkInfo.Values))
+	for i, val := range pkInfo.Values {
+		values[i] = val.Interface()
+	}
+
+	return pkInfo.Columns, values, nil
 }
 
 // filterFields applies only/exclude filters.
@@ -143,6 +136,9 @@ func (mq *ModelQuery) Exclude(attrs ...string) *ModelQuery {
 
 // Insert inserts the model into the table.
 // If the primary key is zero (auto-increment), it will be auto-populated after insert.
+//
+// For composite primary keys (CPK), auto-populate is NOT supported.
+// All CPK values must be provided by the caller.
 func (mq *ModelQuery) Insert(attrs ...string) error {
 	if mq.table == "" {
 		return errors.New("model: table name not specified")
@@ -157,21 +153,21 @@ func (mq *ModelQuery) Insert(attrs ...string) error {
 	// Apply filters.
 	filtered := mq.filterFields(dataMap, attrs)
 
-	// TASK-008: Remove zero-value primary key from INSERT (will be auto-populated).
-	// This ensures AUTO_INCREMENT works properly.
+	// Get primary key info.
 	v := reflect.ValueOf(mq.model)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
 	}
-	if pkField, pkValue, err := util.FindPrimaryKeyField(v); err == nil {
-		if util.IsPrimaryKeyZero(pkValue) {
-			// Get PK column name from db tag or field name.
-			pkCol := pkField.Tag.Get("db")
-			if pkCol == "" || pkCol == "-" {
-				pkCol = strings.ToLower(pkField.Name)
-			}
-			// Remove zero PK from INSERT.
-			delete(filtered, pkCol)
+
+	pkInfo, _ := util.FindPrimaryKeyFields(v)
+
+	// Handle PK removal for auto-increment.
+	// For single PK with zero value: remove from INSERT (auto-increment).
+	// For composite PK: keep all values (no auto-increment support).
+	if pkInfo != nil && pkInfo.IsSingle() {
+		if util.IsPrimaryKeyZero(pkInfo.Values[0]) {
+			// Remove zero single PK from INSERT.
+			delete(filtered, pkInfo.Columns[0])
 		}
 	}
 
@@ -185,6 +181,7 @@ func (mq *ModelQuery) Insert(attrs ...string) error {
 	query := qb.Insert(mq.table, filtered)
 
 	// Check if we need PostgreSQL RETURNING clause for auto-ID.
+	// Only for single PK - composite PKs don't support auto-populate.
 	needsReturning, pkCol := mq.needsPostgresReturning()
 	if needsReturning {
 		// PostgreSQL: Use RETURNING clause (lib/pq doesn't support LastInsertId).
@@ -198,6 +195,7 @@ func (mq *ModelQuery) Insert(attrs ...string) error {
 	}
 
 	// Auto-populate primary key (TASK-008).
+	// Only for single PK - composite PKs don't support auto-populate.
 	// Errors are silently ignored (backward compatibility) - insert succeeded,
 	// ID population failure is acceptable.
 	_ = mq.populatePrimaryKey(result)
@@ -208,17 +206,26 @@ func (mq *ModelQuery) Insert(attrs ...string) error {
 // populatePrimaryKey auto-populates the primary key after INSERT.
 // It uses LastInsertId() for MySQL/SQLite.
 // For PostgreSQL, LastInsertId() is not supported by lib/pq - handled separately.
+//
+// Only works for single PK. Composite PKs do not support auto-populate.
 func (mq *ModelQuery) populatePrimaryKey(result sql.Result) error {
-	// 1. Find primary key field.
+	// 1. Find primary key fields.
 	v := reflect.ValueOf(mq.model)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
 	}
 
-	_, pkValue, err := util.FindPrimaryKeyField(v)
+	pkInfo, err := util.FindPrimaryKeyFields(v)
 	if err != nil {
-		return nil //nolint:nilerr // Intentionally ignore - no PK or composite PK means skip auto-population.
+		return nil //nolint:nilerr // Intentionally ignore - no PK means skip auto-population.
 	}
+
+	// Skip composite PKs - auto-populate not supported.
+	if pkInfo.IsComposite() {
+		return nil
+	}
+
+	pkValue := pkInfo.Values[0]
 
 	// 2. Check if PK is zero (needs population).
 	if !util.IsPrimaryKeyZero(pkValue) {
@@ -260,6 +267,8 @@ func isPKNumeric(pkValue reflect.Value) bool {
 
 // needsPostgresReturning checks if we need PostgreSQL RETURNING clause.
 // Returns (needsReturning bool, pkColumnName string).
+//
+// Only returns true for single PK. Composite PKs do not support auto-populate.
 func (mq *ModelQuery) needsPostgresReturning() (bool, string) {
 	// Check if database is PostgreSQL (check driver name, not dialect).
 	driverName := mq.db.DriverName()
@@ -267,16 +276,23 @@ func (mq *ModelQuery) needsPostgresReturning() (bool, string) {
 		return false, ""
 	}
 
-	// Find primary key field.
+	// Find primary key fields.
 	v := reflect.ValueOf(mq.model)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
 	}
 
-	pkField, pkValue, err := util.FindPrimaryKeyField(v)
+	pkInfo, err := util.FindPrimaryKeyFields(v)
 	if err != nil {
-		return false, "" // No PK or composite PK.
+		return false, "" // No PK.
 	}
+
+	// Skip composite PKs - auto-populate not supported.
+	if pkInfo.IsComposite() {
+		return false, ""
+	}
+
+	pkValue := pkInfo.Values[0]
 
 	// Check if PK is zero (needs auto-population).
 	if !util.IsPrimaryKeyZero(pkValue) {
@@ -288,17 +304,13 @@ func (mq *ModelQuery) needsPostgresReturning() (bool, string) {
 		return false, "" // Non-numeric PK.
 	}
 
-	// Get PK column name.
-	pkCol := pkField.Tag.Get("db")
-	if pkCol == "" || pkCol == "-" {
-		pkCol = strings.ToLower(pkField.Name)
-	}
-
-	return true, pkCol
+	return true, pkInfo.Columns[0]
 }
 
 // insertWithReturning executes INSERT with PostgreSQL RETURNING clause.
 // PostgreSQL lib/pq doesn't support LastInsertId(), so we use RETURNING.
+//
+// Only called for single PK (composite PKs don't reach here).
 func (mq *ModelQuery) insertWithReturning(query *Query, pkCol string) error {
 	// Append RETURNING clause to the query.
 	returningClause := " RETURNING " + mq.db.dialect.QuoteIdentifier(pkCol)
@@ -310,9 +322,14 @@ func (mq *ModelQuery) insertWithReturning(query *Query, pkCol string) error {
 		v = v.Elem()
 	}
 
-	_, pkValue, err := util.FindPrimaryKeyField(v)
+	pkInfo, err := util.FindPrimaryKeyFields(v)
 	if err != nil {
 		return err
+	}
+
+	// This function is only called for single PK, but check anyway.
+	if pkInfo.IsComposite() {
+		return errors.New("model: insertWithReturning does not support composite primary keys")
 	}
 
 	// Execute query and scan returned ID.
@@ -323,10 +340,11 @@ func (mq *ModelQuery) insertWithReturning(query *Query, pkCol string) error {
 	}
 
 	// Set ID back to struct.
-	return util.SetPrimaryKeyValue(pkValue, id)
+	return util.SetPrimaryKeyValue(pkInfo.Values[0], id)
 }
 
 // Update updates the model in the table.
+// Supports both single PK and composite PK for WHERE clause.
 func (mq *ModelQuery) Update(attrs ...string) error {
 	if mq.table == "" {
 		return errors.New("model: table name not specified")
@@ -341,14 +359,16 @@ func (mq *ModelQuery) Update(attrs ...string) error {
 	// Apply filters.
 	filtered := mq.filterFields(dataMap, attrs)
 
-	// Get primary key for WHERE.
-	pk, pkValue := mq.getPrimaryKey()
-	if pk == "" {
+	// Get primary keys for WHERE.
+	pkCols, pkValues, err := mq.getPrimaryKeys()
+	if err != nil {
 		return errors.New("model: primary key not found")
 	}
 
-	// Remove PK from SET clause.
-	delete(filtered, pk)
+	// Remove all PK columns from SET clause.
+	for _, col := range pkCols {
+		delete(filtered, col)
+	}
 
 	// Create builder with transaction context if applicable.
 	qb := &QueryBuilder{
@@ -356,24 +376,33 @@ func (mq *ModelQuery) Update(attrs ...string) error {
 		tx: mq.tx,
 	}
 
-	// Use existing Update builder.
-	_, err = qb.Update(mq.table).
-		Set(filtered).
-		Where(pk+" = ?", pkValue).
-		Execute()
+	// Build UPDATE query with WHERE clause for all PK columns.
+	updateQuery := qb.Update(mq.table).Set(filtered)
 
+	// Add WHERE conditions for each PK column.
+	// First condition uses Where(), subsequent use AndWhere().
+	for i, col := range pkCols {
+		if i == 0 {
+			updateQuery = updateQuery.Where(col+" = ?", pkValues[i])
+		} else {
+			updateQuery = updateQuery.AndWhere(col+" = ?", pkValues[i])
+		}
+	}
+
+	_, err = updateQuery.Execute()
 	return err
 }
 
 // Delete deletes the model from the table.
+// Supports both single PK and composite PK for WHERE clause.
 func (mq *ModelQuery) Delete() error {
 	if mq.table == "" {
 		return errors.New("model: table name not specified")
 	}
 
-	// Get primary key for WHERE.
-	pk, pkValue := mq.getPrimaryKey()
-	if pk == "" {
+	// Get primary keys for WHERE.
+	pkCols, pkValues, err := mq.getPrimaryKeys()
+	if err != nil {
 		return errors.New("model: primary key not found")
 	}
 
@@ -383,10 +412,19 @@ func (mq *ModelQuery) Delete() error {
 		tx: mq.tx,
 	}
 
-	// Use existing Delete builder.
-	_, err := qb.Delete(mq.table).
-		Where(pk+" = ?", pkValue).
-		Execute()
+	// Build DELETE query with WHERE clause for all PK columns.
+	deleteQuery := qb.Delete(mq.table)
 
+	// Add WHERE conditions for each PK column.
+	// First condition uses Where(), subsequent use AndWhere().
+	for i, col := range pkCols {
+		if i == 0 {
+			deleteQuery = deleteQuery.Where(col+" = ?", pkValues[i])
+		} else {
+			deleteQuery = deleteQuery.AndWhere(col+" = ?", pkValues[i])
+		}
+	}
+
+	_, err = deleteQuery.Execute()
 	return err
 }

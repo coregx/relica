@@ -51,10 +51,6 @@ func TestWrapDB_BasicWrapping(t *testing.T) {
 			if db.dialect == nil {
 				t.Error("Expected dialect to be initialized, got nil")
 			}
-
-			if db.tracer == nil {
-				t.Error("Expected tracer to be initialized, got nil")
-			}
 		})
 	}
 }

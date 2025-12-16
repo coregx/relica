@@ -785,3 +785,190 @@ func TestModel_Update_MultipleFields(t *testing.T) {
 	assert.Equal(t, "johndoe@example.com", result.Email, "Email should be updated")
 	assert.Equal(t, "active", result.Status, "Status should remain unchanged")
 }
+
+// =============================================================================
+// Composite Primary Key Tests
+// =============================================================================
+
+// OrderItem represents a many-to-many join table with composite PK.
+type OrderItem struct {
+	OrderID   int `db:"order_id,pk"`
+	ProductID int `db:"product_id,pk"`
+	Quantity  int `db:"quantity"`
+}
+
+func (OrderItem) TableName() string {
+	return "order_items"
+}
+
+func TestModel_CompositePK_Insert(t *testing.T) {
+	db := setupModelTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create table with composite PK.
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS order_items (
+			order_id INTEGER NOT NULL,
+			product_id INTEGER NOT NULL,
+			quantity INTEGER NOT NULL DEFAULT 1,
+			PRIMARY KEY (order_id, product_id)
+		)
+	`)
+	require.NoError(t, err)
+
+	// Insert with composite PK - all values must be provided.
+	item := OrderItem{
+		OrderID:   100,
+		ProductID: 200,
+		Quantity:  5,
+	}
+
+	err = db.Model(&item).Insert()
+	require.NoError(t, err)
+
+	// Verify insertion.
+	var count int
+	err = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM order_items").Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+
+	// Verify data.
+	var result OrderItem
+	err = db.Builder().Select().From("order_items").
+		Where("order_id = ? AND product_id = ?", 100, 200).One(&result)
+	require.NoError(t, err)
+	assert.Equal(t, 100, result.OrderID)
+	assert.Equal(t, 200, result.ProductID)
+	assert.Equal(t, 5, result.Quantity)
+}
+
+func TestModel_CompositePK_Update(t *testing.T) {
+	db := setupModelTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create table.
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS order_items (
+			order_id INTEGER NOT NULL,
+			product_id INTEGER NOT NULL,
+			quantity INTEGER NOT NULL DEFAULT 1,
+			PRIMARY KEY (order_id, product_id)
+		)
+	`)
+	require.NoError(t, err)
+
+	// Insert initial data.
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO order_items (order_id, product_id, quantity)
+		VALUES (100, 200, 5)
+	`)
+	require.NoError(t, err)
+
+	// Update using composite PK in WHERE.
+	item := OrderItem{
+		OrderID:   100,
+		ProductID: 200,
+		Quantity:  10, // Update quantity
+	}
+
+	err = db.Model(&item).Update()
+	require.NoError(t, err)
+
+	// Verify update.
+	var result OrderItem
+	err = db.Builder().Select().From("order_items").
+		Where("order_id = ? AND product_id = ?", 100, 200).One(&result)
+	require.NoError(t, err)
+	assert.Equal(t, 10, result.Quantity, "Quantity should be updated")
+}
+
+func TestModel_CompositePK_Delete(t *testing.T) {
+	db := setupModelTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create table.
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS order_items (
+			order_id INTEGER NOT NULL,
+			product_id INTEGER NOT NULL,
+			quantity INTEGER NOT NULL DEFAULT 1,
+			PRIMARY KEY (order_id, product_id)
+		)
+	`)
+	require.NoError(t, err)
+
+	// Insert multiple items.
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO order_items (order_id, product_id, quantity) VALUES
+		(100, 200, 5),
+		(100, 201, 3),
+		(101, 200, 2)
+	`)
+	require.NoError(t, err)
+
+	// Delete specific item using composite PK.
+	item := OrderItem{
+		OrderID:   100,
+		ProductID: 200,
+	}
+
+	err = db.Model(&item).Delete()
+	require.NoError(t, err)
+
+	// Verify deletion - only 2 items should remain.
+	var count int
+	err = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM order_items").Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 2, count, "Only one item should be deleted")
+
+	// Verify the correct item was deleted.
+	err = db.Builder().Select().From("order_items").
+		Where("order_id = ? AND product_id = ?", 100, 200).One(&OrderItem{})
+	assert.Error(t, err, "Deleted item should not be found")
+}
+
+func TestModel_CompositePK_NoAutoPopulate(t *testing.T) {
+	db := setupModelTestDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Create table - note: composite PK can't have auto-increment.
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS order_items (
+			order_id INTEGER NOT NULL,
+			product_id INTEGER NOT NULL,
+			quantity INTEGER NOT NULL DEFAULT 1,
+			PRIMARY KEY (order_id, product_id)
+		)
+	`)
+	require.NoError(t, err)
+
+	// Insert with zero values for PKs - they should be inserted as zeros.
+	item := OrderItem{
+		OrderID:   0, // Zero value - should NOT be auto-populated
+		ProductID: 0, // Zero value - should NOT be auto-populated
+		Quantity:  1,
+	}
+
+	err = db.Model(&item).Insert()
+	require.NoError(t, err)
+
+	// Verify both PKs remained zero (not auto-populated).
+	assert.Equal(t, 0, item.OrderID, "OrderID should not be auto-populated for CPK")
+	assert.Equal(t, 0, item.ProductID, "ProductID should not be auto-populated for CPK")
+
+	// Verify data in DB.
+	var result OrderItem
+	err = db.Builder().Select().From("order_items").
+		Where("order_id = ? AND product_id = ?", 0, 0).One(&result)
+	require.NoError(t, err)
+	assert.Equal(t, 0, result.OrderID)
+	assert.Equal(t, 0, result.ProductID)
+}
