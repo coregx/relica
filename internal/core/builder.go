@@ -99,6 +99,7 @@ type SelectQuery struct {
 	offsetValue *int64          // OFFSET value (nil = not set)
 	unions      []unionInfo     // Set operations: UNION, INTERSECT, EXCEPT
 	ctes        []cteInfo       // Common Table Expressions (CTEs)
+	distinct    bool            // SELECT DISTINCT flag
 	ctx         context.Context // context for this specific query
 }
 
@@ -205,6 +206,73 @@ func (sq *SelectQuery) Where(condition interface{}, params ...interface{}) *Sele
 	default:
 		panic("Where() expects string or Expression")
 	}
+
+	return sq
+}
+
+// AndWhere adds a WHERE condition with AND logic.
+// If no existing WHERE clause exists, behaves like Where().
+// Multiple conditions are combined with AND.
+//
+// String example:
+//
+//	AndWhere("age > ?", 18)
+//
+// Expression example:
+//
+//	AndWhere(relica.GreaterThan("age", 18))
+func (sq *SelectQuery) AndWhere(condition interface{}, params ...interface{}) *SelectQuery {
+	// Simply delegate to Where() which already uses AND logic for multiple calls.
+	return sq.Where(condition, params...)
+}
+
+// OrWhere adds a WHERE condition with OR logic.
+// If no existing WHERE clause exists, behaves like Where().
+// The new condition is combined with existing conditions using OR.
+//
+// String example:
+//
+//	OrWhere("status = ?", "admin")
+//
+// Expression example:
+//
+//	OrWhere(relica.Eq("status", "admin"))
+func (sq *SelectQuery) OrWhere(condition interface{}, params ...interface{}) *SelectQuery {
+	if len(sq.where) == 0 {
+		// No existing WHERE clause - just add it.
+		return sq.Where(condition, params...)
+	}
+
+	// Build the new condition.
+	var newSQL string
+	var newArgs []interface{}
+
+	switch cond := condition.(type) {
+	case string:
+		newSQL = cond
+		newArgs = params
+
+	case Expression:
+		newSQL, newArgs = cond.Build(sq.builder.db.dialect)
+		if newSQL == "" {
+			// Empty expression - nothing to add.
+			return sq
+		}
+
+	default:
+		panic("OrWhere() expects string or Expression")
+	}
+
+	// Combine existing WHERE with new condition using OR.
+	// Wrap both sides in parentheses for correct precedence.
+	// Existing: "status = $1 AND age > $2" → "(status = $1 AND age > $2)"
+	// Combined: "(status = $1 AND age > $2) OR (role = $3)"
+	existingWhere := strings.Join(sq.where, " AND ")
+	combined := "(" + existingWhere + ") OR (" + newSQL + ")"
+
+	// Replace WHERE clauses with combined condition.
+	sq.where = []string{combined}
+	sq.params = append(sq.params, newArgs...)
 
 	return sq
 }
@@ -495,6 +563,22 @@ func (sq *SelectQuery) WithRecursive(name string, query *SelectQuery) *SelectQue
 	return sq
 }
 
+// Distinct sets whether to select distinct rows.
+// When enabled, adds DISTINCT keyword to the SELECT clause to eliminate duplicate rows.
+// Multiple calls to Distinct() override previous settings.
+//
+// Example:
+//
+//	db.Builder().Select("category").From("products").Distinct(true).All(&categories)
+//	// SELECT DISTINCT "category" FROM "products"
+//
+//	db.Builder().Select("*").From("users").Distinct(false).All(&users)
+//	// SELECT * FROM "users"
+func (sq *SelectQuery) Distinct(v bool) *SelectQuery {
+	sq.distinct = v
+	return sq
+}
+
 // buildTableWithAlias builds a table reference with optional alias.
 // Input: "users u" → Output: "users" AS "u" (quoted)
 // Input: "users" → Output: "users" (quoted)
@@ -643,6 +727,7 @@ func (sq *SelectQuery) buildLimitOffset() string {
 // buildSelect constructs the SELECT clause, handling aggregate functions and raw expressions.
 // Detects aggregate functions (contains "(") and column aliases (contains "AS").
 // Returns "*" if no columns and no selectExprs specified.
+// Includes DISTINCT keyword if sq.distinct is true.
 func (sq *SelectQuery) buildSelect(dialect dialects.Dialect) string {
 	parts := make([]string, 0, len(sq.columns)+len(sq.selectExprs))
 
@@ -670,11 +755,17 @@ func (sq *SelectQuery) buildSelect(dialect dialects.Dialect) string {
 		parts = append(parts, expr.SQL)
 	}
 
-	if len(parts) == 0 {
-		return "*"
+	columns := "*"
+	if len(parts) > 0 {
+		columns = strings.Join(parts, ", ")
 	}
 
-	return strings.Join(parts, ", ")
+	// Add DISTINCT keyword if enabled
+	if sq.distinct {
+		return "DISTINCT " + columns
+	}
+
+	return columns
 }
 
 // GroupBy adds GROUP BY clause.
@@ -1004,6 +1095,29 @@ func (sq *SelectQuery) All(dest interface{}) error {
 	return sq.Build().All(dest)
 }
 
+// Row scans a single row into individual variables.
+// Returns sql.ErrNoRows if no rows are found.
+//
+// Example:
+//
+//	var name string
+//	var age int
+//	err := db.Select("name", "age").From("users").Where("id = ?", 1).Row(&name, &age)
+func (sq *SelectQuery) Row(dest ...interface{}) error {
+	return sq.Build().Row(dest...)
+}
+
+// Column scans the first column of all rows into a slice.
+// The slice parameter must be a pointer to a slice of the appropriate type.
+//
+// Example:
+//
+//	var ids []int
+//	err := db.Select("id").From("users").Where("status = ?", "active").Column(&ids)
+func (sq *SelectQuery) Column(slice interface{}) error {
+	return sq.Build().Column(slice)
+}
+
 // Explain analyzes the query execution plan without executing the query.
 // Returns QueryPlan with estimated metrics (cost, rows, index usage).
 // Currently only supported for PostgreSQL databases.
@@ -1327,6 +1441,71 @@ func (uq *UpdateQuery) Where(condition interface{}, params ...interface{}) *Upda
 	return uq
 }
 
+// AndWhere adds a WHERE condition with AND logic.
+// If no existing WHERE clause exists, behaves like Where().
+// Multiple conditions are combined with AND.
+//
+// String example:
+//
+//	AndWhere("age > ?", 18)
+//
+// Expression example:
+//
+//	AndWhere(relica.GreaterThan("age", 18))
+func (uq *UpdateQuery) AndWhere(condition interface{}, params ...interface{}) *UpdateQuery {
+	// Simply delegate to Where() which already uses AND logic for multiple calls.
+	return uq.Where(condition, params...)
+}
+
+// OrWhere adds a WHERE condition with OR logic.
+// If no existing WHERE clause exists, behaves like Where().
+// The new condition is combined with existing conditions using OR.
+//
+// String example:
+//
+//	OrWhere("status = ?", "admin")
+//
+// Expression example:
+//
+//	OrWhere(relica.Eq("status", "admin"))
+func (uq *UpdateQuery) OrWhere(condition interface{}, params ...interface{}) *UpdateQuery {
+	if len(uq.where) == 0 {
+		// No existing WHERE clause - just add it.
+		return uq.Where(condition, params...)
+	}
+
+	// Build the new condition.
+	var newSQL string
+	var newArgs []interface{}
+
+	switch cond := condition.(type) {
+	case string:
+		newSQL = cond
+		newArgs = params
+
+	case Expression:
+		newSQL, newArgs = cond.Build(uq.builder.db.dialect)
+		if newSQL == "" {
+			// Empty expression - nothing to add.
+			return uq
+		}
+
+	default:
+		panic("OrWhere() expects string or Expression")
+	}
+
+	// Combine existing WHERE with new condition using OR.
+	// Wrap both sides in parentheses for correct precedence.
+	existingWhere := strings.Join(uq.where, " AND ")
+	combined := "(" + existingWhere + ") OR (" + newSQL + ")"
+
+	// Replace WHERE clauses with combined condition.
+	uq.where = []string{combined}
+	uq.params = append(uq.params, newArgs...)
+
+	return uq
+}
+
 // Build constructs the Query object from UpdateQuery.
 func (uq *UpdateQuery) Build() *Query {
 	// Get sorted keys for deterministic SQL generation
@@ -1437,6 +1616,71 @@ func (dq *DeleteQuery) Where(condition interface{}, params ...interface{}) *Dele
 	default:
 		panic("Where() expects string or Expression")
 	}
+
+	return dq
+}
+
+// AndWhere adds a WHERE condition with AND logic.
+// If no existing WHERE clause exists, behaves like Where().
+// Multiple conditions are combined with AND.
+//
+// String example:
+//
+//	AndWhere("age > ?", 18)
+//
+// Expression example:
+//
+//	AndWhere(relica.GreaterThan("age", 18))
+func (dq *DeleteQuery) AndWhere(condition interface{}, params ...interface{}) *DeleteQuery {
+	// Simply delegate to Where() which already uses AND logic for multiple calls.
+	return dq.Where(condition, params...)
+}
+
+// OrWhere adds a WHERE condition with OR logic.
+// If no existing WHERE clause exists, behaves like Where().
+// The new condition is combined with existing conditions using OR.
+//
+// String example:
+//
+//	OrWhere("status = ?", "admin")
+//
+// Expression example:
+//
+//	OrWhere(relica.Eq("status", "admin"))
+func (dq *DeleteQuery) OrWhere(condition interface{}, params ...interface{}) *DeleteQuery {
+	if len(dq.where) == 0 {
+		// No existing WHERE clause - just add it.
+		return dq.Where(condition, params...)
+	}
+
+	// Build the new condition.
+	var newSQL string
+	var newArgs []interface{}
+
+	switch cond := condition.(type) {
+	case string:
+		newSQL = cond
+		newArgs = params
+
+	case Expression:
+		newSQL, newArgs = cond.Build(dq.builder.db.dialect)
+		if newSQL == "" {
+			// Empty expression - nothing to add.
+			return dq
+		}
+
+	default:
+		panic("OrWhere() expects string or Expression")
+	}
+
+	// Combine existing WHERE with new condition using OR.
+	// Wrap both sides in parentheses for correct precedence.
+	existingWhere := strings.Join(dq.where, " AND ")
+	combined := "(" + existingWhere + ") OR (" + newSQL + ")"
+
+	// Replace WHERE clauses with combined condition.
+	dq.where = []string{combined}
+	dq.params = append(dq.params, newArgs...)
 
 	return dq
 }

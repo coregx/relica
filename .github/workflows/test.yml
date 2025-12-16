@@ -17,13 +17,18 @@ on:
   push:
     branches:
       - main
-      - develop
-      - 'release/**'
-      - 'hotfix/**'
+    tags:
+      - 'v*'
   pull_request:
     branches:
       - main
       - develop
+
+# CI Strategy (2025 best practice):
+# - push: only main branch and tags (post-merge validation)
+# - pull_request: all PRs to main/develop (pre-merge validation)
+# - feature/hotfix/release branches tested via PR, no duplicate runs
+# Reference: https://adamj.eu/tech/2025/05/14/github-actions-avoid-simple-on/
 
 jobs:
   # Static analysis - Run once on Linux (OS-independent)

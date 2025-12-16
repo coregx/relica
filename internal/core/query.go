@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/coregx/relica/internal/tracer"
@@ -291,6 +293,340 @@ func (q *Query) One(dest interface{}) error {
 	if q.db.optimizer != nil {
 		go q.analyzeQuery(ctx, elapsed)
 	}
+
+	return nil
+}
+
+// Row scans a single row into individual variables.
+// Returns sql.ErrNoRows if no rows are found.
+//
+// Example:
+//
+//	var name string
+//	var age int
+//	err := db.Select("name", "age").From("users").Where("id = ?", 1).Row(&name, &age)
+//
+//	// For scalar queries
+//	var count int
+//	err := db.NewQuery("SELECT COUNT(*) FROM users").Row(&count)
+//
+//nolint:cyclop,gocyclo,gocognit,funlen // Query execution requires comprehensive error handling, logging, and tracing
+func (q *Query) Row(dest ...interface{}) error {
+	ctx := q.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	// Old tracer (backward compatibility)
+	ctx, span := q.db.oldTracer.Start(ctx, "Query.Row")
+	defer span.End()
+
+	// Start new tracer span
+	var newSpan tracer.Span
+	if q.db.tracer != nil {
+		ctx, newSpan = q.db.tracer.StartSpan(ctx, "relica.query.row")
+		defer newSpan.End()
+	}
+
+	start := time.Now()
+
+	stmt, needsClose, err := q.prepareStatement(ctx)
+	if err != nil {
+		if q.db.logger != nil {
+			q.db.logger.Error("query preparation failed",
+				"sql", q.sql,
+				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
+				"error", err,
+			)
+		}
+		return err
+	}
+	if needsClose {
+		defer func() { _ = stmt.Close() }()
+	}
+
+	// Execute query
+	rows, err := stmt.QueryContext(ctx, q.params...)
+	if err != nil {
+		elapsed := time.Since(start)
+		if q.db.logger != nil {
+			q.db.logger.Error("query execution failed",
+				"sql", q.sql,
+				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
+				"duration_ms", elapsed.Milliseconds(),
+				"error", err,
+			)
+		}
+		if newSpan != nil {
+			tracer.AddQueryAttributes(newSpan, &tracer.QueryMetadata{
+				SQL:       q.sql,
+				Args:      q.params,
+				Duration:  elapsed,
+				Error:     err,
+				Database:  q.db.driverName,
+				Operation: tracer.DetectOperation(q.sql),
+			})
+		}
+		q.db.oldTracer.Record(ctx, elapsed, err)
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+
+	// Check if row exists
+	if !rows.Next() {
+		err := rows.Err()
+		if err == nil {
+			err = sql.ErrNoRows
+		}
+		elapsed := time.Since(start)
+		if q.db.logger != nil {
+			q.db.logger.Warn("query returned no rows",
+				"sql", q.sql,
+				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
+				"duration_ms", elapsed.Milliseconds(),
+			)
+		}
+		if newSpan != nil {
+			tracer.AddQueryAttributes(newSpan, &tracer.QueryMetadata{
+				SQL:       q.sql,
+				Args:      q.params,
+				Duration:  elapsed,
+				Error:     err,
+				Database:  q.db.driverName,
+				Operation: tracer.DetectOperation(q.sql),
+			})
+		}
+		q.db.oldTracer.Record(ctx, elapsed, err)
+		return err
+	}
+
+	// Scan into dest variables
+	if err := rows.Scan(dest...); err != nil {
+		elapsed := time.Since(start)
+		if q.db.logger != nil {
+			q.db.logger.Error("row scanning failed",
+				"sql", q.sql,
+				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
+				"duration_ms", elapsed.Milliseconds(),
+				"error", err,
+			)
+		}
+		if newSpan != nil {
+			tracer.AddQueryAttributes(newSpan, &tracer.QueryMetadata{
+				SQL:       q.sql,
+				Args:      q.params,
+				Duration:  elapsed,
+				Error:     err,
+				Database:  q.db.driverName,
+				Operation: tracer.DetectOperation(q.sql),
+			})
+		}
+		q.db.oldTracer.Record(ctx, elapsed, err)
+		return err
+	}
+
+	elapsed := time.Since(start)
+
+	// Log success
+	if q.db.logger != nil {
+		q.db.logger.Info("query executed",
+			"sql", q.sql,
+			"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
+			"duration_ms", elapsed.Milliseconds(),
+			"rows", 1,
+			"database", q.db.driverName,
+		)
+	}
+
+	// Add tracing attributes
+	if newSpan != nil {
+		tracer.AddQueryAttributes(newSpan, &tracer.QueryMetadata{
+			SQL:       q.sql,
+			Args:      q.params,
+			Duration:  elapsed,
+			Database:  q.db.driverName,
+			Operation: tracer.DetectOperation(q.sql),
+		})
+	}
+
+	q.db.oldTracer.Record(ctx, elapsed, nil)
+
+	return nil
+}
+
+// Column scans the first column of all rows into a slice.
+// The slice parameter must be a pointer to a slice of the appropriate type.
+//
+// Example:
+//
+//	var ids []int
+//	err := db.Select("id").From("users").Where("status = ?", "active").Column(&ids)
+//
+//	var emails []string
+//	err := db.Select("email").From("users").Column(&emails)
+//
+//nolint:cyclop,funlen,gocognit,gocyclo // Query execution requires comprehensive error handling, logging, and tracing
+func (q *Query) Column(slice interface{}) error {
+	ctx := q.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	// Old tracer (backward compatibility)
+	ctx, span := q.db.oldTracer.Start(ctx, "Query.Column")
+	defer span.End()
+
+	// Start new tracer span
+	var newSpan tracer.Span
+	if q.db.tracer != nil {
+		ctx, newSpan = q.db.tracer.StartSpan(ctx, "relica.query.column")
+		defer newSpan.End()
+	}
+
+	start := time.Now()
+
+	// Validate slice parameter
+	sliceVal := reflect.ValueOf(slice)
+	if sliceVal.Kind() != reflect.Ptr || sliceVal.IsNil() {
+		return fmt.Errorf("relica: Column() requires a non-nil pointer to a slice, got %T", slice)
+	}
+
+	sliceVal = sliceVal.Elem()
+	if sliceVal.Kind() != reflect.Slice {
+		return fmt.Errorf("relica: Column() requires a pointer to a slice, got pointer to %s", sliceVal.Kind())
+	}
+
+	elemType := sliceVal.Type().Elem()
+
+	stmt, needsClose, err := q.prepareStatement(ctx)
+	if err != nil {
+		if q.db.logger != nil {
+			q.db.logger.Error("query preparation failed",
+				"sql", q.sql,
+				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
+				"error", err,
+			)
+		}
+		return err
+	}
+	if needsClose {
+		defer func() { _ = stmt.Close() }()
+	}
+
+	// Execute query
+	rows, err := stmt.QueryContext(ctx, q.params...)
+	if err != nil {
+		elapsed := time.Since(start)
+		if q.db.logger != nil {
+			q.db.logger.Error("query execution failed",
+				"sql", q.sql,
+				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
+				"duration_ms", elapsed.Milliseconds(),
+				"error", err,
+			)
+		}
+		if newSpan != nil {
+			tracer.AddQueryAttributes(newSpan, &tracer.QueryMetadata{
+				SQL:       q.sql,
+				Args:      q.params,
+				Duration:  elapsed,
+				Error:     err,
+				Database:  q.db.driverName,
+				Operation: tracer.DetectOperation(q.sql),
+			})
+		}
+		q.db.oldTracer.Record(ctx, elapsed, err)
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+
+	// Scan all rows into slice
+	rowCount := 0
+	for rows.Next() {
+		// Create a new element for this row
+		elem := reflect.New(elemType)
+
+		// Scan first column into element
+		if err := rows.Scan(elem.Interface()); err != nil {
+			elapsed := time.Since(start)
+			if q.db.logger != nil {
+				q.db.logger.Error("column scanning failed",
+					"sql", q.sql,
+					"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
+					"duration_ms", elapsed.Milliseconds(),
+					"row", rowCount,
+					"error", err,
+				)
+			}
+			if newSpan != nil {
+				tracer.AddQueryAttributes(newSpan, &tracer.QueryMetadata{
+					SQL:       q.sql,
+					Args:      q.params,
+					Duration:  elapsed,
+					Error:     err,
+					Database:  q.db.driverName,
+					Operation: tracer.DetectOperation(q.sql),
+				})
+			}
+			q.db.oldTracer.Record(ctx, elapsed, err)
+			return err
+		}
+
+		// Append dereferenced value to slice
+		sliceVal.Set(reflect.Append(sliceVal, elem.Elem()))
+		rowCount++
+	}
+
+	// Check for iteration errors
+	if err := rows.Err(); err != nil {
+		elapsed := time.Since(start)
+		if q.db.logger != nil {
+			q.db.logger.Error("row iteration failed",
+				"sql", q.sql,
+				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
+				"duration_ms", elapsed.Milliseconds(),
+				"error", err,
+			)
+		}
+		if newSpan != nil {
+			tracer.AddQueryAttributes(newSpan, &tracer.QueryMetadata{
+				SQL:       q.sql,
+				Args:      q.params,
+				Duration:  elapsed,
+				Error:     err,
+				Database:  q.db.driverName,
+				Operation: tracer.DetectOperation(q.sql),
+			})
+		}
+		q.db.oldTracer.Record(ctx, elapsed, err)
+		return err
+	}
+
+	elapsed := time.Since(start)
+
+	// Log success
+	if q.db.logger != nil {
+		q.db.logger.Info("query executed",
+			"sql", q.sql,
+			"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
+			"duration_ms", elapsed.Milliseconds(),
+			"rows", rowCount,
+			"database", q.db.driverName,
+		)
+	}
+
+	// Add tracing attributes
+	if newSpan != nil {
+		tracer.AddQueryAttributes(newSpan, &tracer.QueryMetadata{
+			SQL:       q.sql,
+			Args:      q.params,
+			Duration:  elapsed,
+			Database:  q.db.driverName,
+			Operation: tracer.DetectOperation(q.sql),
+		})
+	}
+
+	q.db.oldTracer.Record(ctx, elapsed, nil)
 
 	return nil
 }

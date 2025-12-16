@@ -731,6 +731,59 @@ func (d *DB) BeginTx(ctx context.Context, opts *TxOptions) (*Tx, error) {
 	return &Tx{tx: coreTx}, nil
 }
 
+// Transactional executes f within a transaction with automatic commit/rollback.
+//
+// If f returns an error, the transaction is rolled back and the error is returned.
+// If f panics, the transaction is rolled back and the panic is re-raised.
+// If f completes successfully, the transaction is committed.
+//
+// This helper simplifies transaction management and ensures proper cleanup
+// in all code paths, including panics.
+//
+// Example:
+//
+//	err := db.Transactional(ctx, func(tx *relica.Tx) error {
+//	    user := User{Name: "Alice", Email: "alice@example.com"}
+//	    if err := tx.Model(&user).Insert(); err != nil {
+//	        return err  // Auto rollback
+//	    }
+//
+//	    account := Account{UserID: user.ID, Balance: 100}
+//	    if err := tx.Model(&account).Insert(); err != nil {
+//	        return err  // Auto rollback
+//	    }
+//
+//	    return nil  // Auto commit
+//	})
+func (d *DB) Transactional(ctx context.Context, f func(*Tx) error) error {
+	return d.db.Transactional(ctx, func(coreTx *core.Tx) error {
+		return f(&Tx{tx: coreTx})
+	})
+}
+
+// TransactionalTx executes f within a transaction with custom options.
+//
+// Options can specify isolation level and read-only mode.
+// If f returns an error, the transaction is rolled back and the error is returned.
+// If f panics, the transaction is rolled back and the panic is re-raised.
+// If f completes successfully, the transaction is committed.
+//
+// Example:
+//
+//	opts := &relica.TxOptions{
+//	    Isolation: sql.LevelSerializable,
+//	    ReadOnly:  false,
+//	}
+//	err := db.TransactionalTx(ctx, opts, func(tx *relica.Tx) error {
+//	    // Perform operations within serializable transaction.
+//	    return tx.Model(&user).Update()
+//	})
+func (d *DB) TransactionalTx(ctx context.Context, opts *TxOptions, f func(*Tx) error) error {
+	return d.db.TransactionalTx(ctx, opts, func(coreTx *core.Tx) error {
+		return f(&Tx{tx: coreTx})
+	})
+}
+
 // ExecContext executes a raw SQL query (INSERT/UPDATE/DELETE).
 //
 // This bypasses the query builder and executes SQL directly.
@@ -1412,6 +1465,32 @@ func (sq *SelectQuery) Where(condition interface{}, params ...interface{}) *Sele
 	return sq
 }
 
+// AndWhere adds a WHERE condition with AND logic.
+// If no existing WHERE clause exists, behaves like Where().
+//
+// Example:
+//
+//	db.Builder().Select("*").From("users").
+//	    Where("status = ?", 1).
+//	    AndWhere("age > ?", 18)
+func (sq *SelectQuery) AndWhere(condition interface{}, params ...interface{}) *SelectQuery {
+	sq.sq.AndWhere(condition, params...)
+	return sq
+}
+
+// OrWhere adds a WHERE condition with OR logic.
+// If no existing WHERE clause exists, behaves like Where().
+//
+// Example:
+//
+//	db.Builder().Select("*").From("users").
+//	    Where("status = ?", 1).
+//	    OrWhere("role = ?", "admin")
+func (sq *SelectQuery) OrWhere(condition interface{}, params ...interface{}) *SelectQuery {
+	sq.sq.OrWhere(condition, params...)
+	return sq
+}
+
 // InnerJoin adds an INNER JOIN clause.
 //
 // Example:
@@ -1535,6 +1614,22 @@ func (sq *SelectQuery) Having(condition interface{}, args ...interface{}) *Selec
 	return sq
 }
 
+// Distinct sets whether to select distinct rows.
+// When enabled, adds DISTINCT keyword to the SELECT clause to eliminate duplicate rows.
+// Multiple calls to Distinct() override previous settings.
+//
+// Example:
+//
+//	db.Builder().Select("category").From("products").Distinct(true).All(&categories)
+//	// SELECT DISTINCT "category" FROM "products"
+//
+//	db.Builder().Select("*").From("users").Distinct(false).All(&users)
+//	// SELECT * FROM "users"
+func (sq *SelectQuery) Distinct(v bool) *SelectQuery {
+	sq.sq.Distinct(v)
+	return sq
+}
+
 // Union combines this query with another using UNION (removes duplicates).
 //
 // Example:
@@ -1652,6 +1747,31 @@ func (sq *SelectQuery) All(dest interface{}) error {
 	return sq.sq.All(dest)
 }
 
+// Row scans a single row into individual variables.
+// Returns sql.ErrNoRows if no rows are found.
+//
+// Example:
+//
+//	var name string
+//	var age int
+//	err := db.Builder().Select("name", "age").From("users").
+//	    Where("id = ?", 1).Row(&name, &age)
+func (sq *SelectQuery) Row(dest ...interface{}) error {
+	return sq.sq.Row(dest...)
+}
+
+// Column scans the first column of all rows into a slice.
+// The slice parameter must be a pointer to a slice of the appropriate type.
+//
+// Example:
+//
+//	var ids []int
+//	err := db.Builder().Select("id").From("users").
+//	    Where("status = ?", "active").Column(&ids)
+func (sq *SelectQuery) Column(slice interface{}) error {
+	return sq.sq.Column(slice)
+}
+
 // AsExpression converts a SelectQuery to an Expression for subquery use.
 //
 // Example:
@@ -1706,6 +1826,34 @@ func (uq *UpdateQuery) Where(condition interface{}, params ...interface{}) *Upda
 	return uq
 }
 
+// AndWhere adds a WHERE condition with AND logic.
+// If no existing WHERE clause exists, behaves like Where().
+//
+// Example:
+//
+//	db.Builder().Update("users").
+//	    Set(map[string]interface{}{"status": 2}).
+//	    Where("id > ?", 100).
+//	    AndWhere("active = ?", true)
+func (uq *UpdateQuery) AndWhere(condition interface{}, params ...interface{}) *UpdateQuery {
+	uq.uq.AndWhere(condition, params...)
+	return uq
+}
+
+// OrWhere adds a WHERE condition with OR logic.
+// If no existing WHERE clause exists, behaves like Where().
+//
+// Example:
+//
+//	db.Builder().Update("users").
+//	    Set(map[string]interface{}{"status": 0}).
+//	    Where("banned = ?", true).
+//	    OrWhere("deleted = ?", true)
+func (uq *UpdateQuery) OrWhere(condition interface{}, params ...interface{}) *UpdateQuery {
+	uq.uq.OrWhere(condition, params...)
+	return uq
+}
+
 // Build constructs the Query object.
 func (uq *UpdateQuery) Build() *Query {
 	if uq.err != nil {
@@ -1743,6 +1891,32 @@ func (dq *DeleteQuery) WithContext(ctx context.Context) *DeleteQuery {
 //	Delete("users").Where("id = ?", 123)
 func (dq *DeleteQuery) Where(condition interface{}, params ...interface{}) *DeleteQuery {
 	dq.dq.Where(condition, params...)
+	return dq
+}
+
+// AndWhere adds a WHERE condition with AND logic.
+// If no existing WHERE clause exists, behaves like Where().
+//
+// Example:
+//
+//	db.Builder().Delete("users").
+//	    Where("status = ?", 0).
+//	    AndWhere("created_at < ?", "2020-01-01")
+func (dq *DeleteQuery) AndWhere(condition interface{}, params ...interface{}) *DeleteQuery {
+	dq.dq.AndWhere(condition, params...)
+	return dq
+}
+
+// OrWhere adds a WHERE condition with OR logic.
+// If no existing WHERE clause exists, behaves like Where().
+//
+// Example:
+//
+//	db.Builder().Delete("users").
+//	    Where("banned = ?", true).
+//	    OrWhere("deleted = ?", true)
+func (dq *DeleteQuery) OrWhere(condition interface{}, params ...interface{}) *DeleteQuery {
+	dq.dq.OrWhere(condition, params...)
 	return dq
 }
 
@@ -1923,6 +2097,35 @@ func (q *Query) All(dest interface{}) error {
 		return q.err
 	}
 	return q.q.All(dest)
+}
+
+// Row scans a single row into individual variables.
+// Returns sql.ErrNoRows if no rows are found.
+//
+// Example:
+//
+//	var name string
+//	var age int
+//	err := db.Select("name", "age").From("users").Where("id = ?", 1).Row(&name, &age)
+func (q *Query) Row(dest ...interface{}) error {
+	if q.err != nil {
+		return q.err
+	}
+	return q.q.Row(dest...)
+}
+
+// Column scans the first column of all rows into a slice.
+// The slice parameter must be a pointer to a slice of the appropriate type.
+//
+// Example:
+//
+//	var ids []int
+//	err := db.Select("id").From("users").Where("status = ?", "active").Column(&ids)
+func (q *Query) Column(slice interface{}) error {
+	if q.err != nil {
+		return q.err
+	}
+	return q.q.Column(slice)
 }
 
 // ============================================================================
