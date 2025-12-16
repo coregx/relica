@@ -14,6 +14,13 @@ type scanner struct {
 	cache map[reflect.Type]*structInfo
 }
 
+// parseDBTagForScanner extracts column name from db tag.
+// Handles: "column", "column,pk", "-".
+func parseDBTagForScanner(tag string) string {
+	parts := strings.Split(tag, ",")
+	return strings.TrimSpace(parts[0])
+}
+
 // structInfo contains cached metadata about a struct type.
 type structInfo struct {
 	fields []*fieldInfo
@@ -100,13 +107,15 @@ func (s *scanner) buildStructInfo(typ reflect.Type, index []int) (*structInfo, e
 		}
 
 		// Get column name from db:"" tag or use field name
+		// Handles: "column", "column,pk", "-"
 		dbName := field.Name
 		if tag, ok := field.Tag.Lookup("db"); ok {
-			if tag == "-" {
+			column := parseDBTagForScanner(tag)
+			if column == "-" {
 				// Skip this field
 				continue
 			}
-			dbName = tag
+			dbName = column
 		}
 
 		info.fields = append(info.fields, &fieldInfo{
