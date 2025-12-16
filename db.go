@@ -2429,3 +2429,43 @@ var Exists = core.Exists
 
 // NotExists creates a NOT EXISTS subquery expression.
 var NotExists = core.NotExists
+
+// ============================================================================
+// Re-export functional expressions (CASE, COALESCE, NULLIF, etc.)
+// ============================================================================
+
+// Case creates a simple CASE expression.
+var Case = core.Case
+
+// CaseWhen creates a searched CASE expression (without column).
+var CaseWhen = core.CaseWhen
+
+// Coalesce creates a COALESCE expression.
+var Coalesce = core.Coalesce
+
+// NullIf creates a NULLIF expression.
+var NullIf = core.NullIf
+
+// Greatest creates a GREATEST expression.
+var Greatest = core.Greatest
+
+// Least creates a LEAST expression.
+var Least = core.Least
+
+// Concat creates a string concatenation expression.
+var Concat = core.Concat
+
+// CaseExp represents a SQL CASE expression.
+type CaseExp = core.CaseExp
+
+// CoalesceExp represents a SQL COALESCE expression.
+type CoalesceExp = core.CoalesceExp
+
+// NullIfExp represents a SQL NULLIF expression.
+type NullIfExp = core.NullIfExp
+
+// GreatestLeastExp represents a SQL GREATEST or LEAST expression.
+type GreatestLeastExp = core.GreatestLeastExp
+
+// ConcatExp represents a SQL string concatenation expression.
+type ConcatExp = core.ConcatExp
