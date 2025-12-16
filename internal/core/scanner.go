@@ -266,3 +266,71 @@ func (s *scanner) scanRows(rows *sql.Rows, dest interface{}) error {
 
 	return nil
 }
+
+// scanMapRow scans a single SQL row into a NullStringMap.
+// All values are scanned as sql.NullString regardless of actual column type.
+func (s *scanner) scanMapRow(rows *sql.Rows, dest *NullStringMap) error {
+	// Get column names from SQL result
+	columns, err := rows.Columns()
+	if err != nil {
+		return fmt.Errorf("scanner: failed to get columns: %w", err)
+	}
+
+	// Prepare scan destinations - all as NullString
+	values := make([]sql.NullString, len(columns))
+	scanDests := make([]interface{}, len(columns))
+	for i := range values {
+		scanDests[i] = &values[i]
+	}
+
+	// Scan the row
+	if err := rows.Scan(scanDests...); err != nil {
+		return fmt.Errorf("scanner: scan failed: %w", err)
+	}
+
+	// Build the map
+	*dest = make(NullStringMap, len(columns))
+	for i, col := range columns {
+		(*dest)[col] = values[i]
+	}
+
+	return nil
+}
+
+// scanMapRows scans multiple SQL rows into a slice of NullStringMap.
+func (s *scanner) scanMapRows(rows *sql.Rows, dest *[]NullStringMap) error {
+	// Get column names from SQL result
+	columns, err := rows.Columns()
+	if err != nil {
+		return fmt.Errorf("scanner: failed to get columns: %w", err)
+	}
+
+	// Scan all rows
+	for rows.Next() {
+		// Prepare scan destinations - all as NullString
+		values := make([]sql.NullString, len(columns))
+		scanDests := make([]interface{}, len(columns))
+		for i := range values {
+			scanDests[i] = &values[i]
+		}
+
+		// Scan the row
+		if err := rows.Scan(scanDests...); err != nil {
+			return fmt.Errorf("scanner: scan failed: %w", err)
+		}
+
+		// Build the map for this row
+		rowMap := make(NullStringMap, len(columns))
+		for i, col := range columns {
+			rowMap[col] = values[i]
+		}
+
+		*dest = append(*dest, rowMap)
+	}
+
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("scanner: rows iteration failed: %w", err)
+	}
+
+	return nil
+}

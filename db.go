@@ -460,6 +460,29 @@ func (d *DB) Builder() *QueryBuilder {
 	return &QueryBuilder{qb: d.db.Builder()}
 }
 
+// NewQuery creates a raw SQL query for execution.
+// Use this for queries that don't fit the query builder pattern,
+// or when you need manual control over prepared statement lifecycle.
+//
+// Example:
+//
+//	var count int
+//	err := db.NewQuery("SELECT COUNT(*) FROM users").Row(&count)
+//
+//	// With parameters
+//	var user User
+//	err := db.NewQuery("SELECT * FROM users WHERE id = ?").Bind(1).One(&user)
+//
+//	// With Prepare for repeated execution
+//	q := db.NewQuery("SELECT * FROM users WHERE status = ?").Prepare()
+//	defer q.Close()
+//	for _, status := range statuses {
+//	    q.Bind(status).All(&users)
+//	}
+func (d *DB) NewQuery(query string) *Query {
+	return &Query{q: d.db.NewQuery(query)}
+}
+
 // Model creates a ModelQuery for performing CRUD operations on a struct model.
 //
 // The model must be a pointer to a struct. The table name and primary key
@@ -2127,6 +2150,95 @@ func (q *Query) Column(slice interface{}) error {
 	return q.q.Column(slice)
 }
 
+// Prepare prepares the query for repeated execution.
+// Call Close() when done to release the prepared statement.
+// The prepared statement bypasses the automatic statement cache,
+// giving you full control over the statement lifecycle.
+//
+// Example:
+//
+//	q := db.NewQuery("SELECT * FROM users WHERE status = ?").Prepare()
+//	defer q.Close()
+//
+//	for _, status := range statuses {
+//	    var users []User
+//	    q.Bind(status).All(&users)
+//	    // process users...
+//	}
+func (q *Query) Prepare() *Query {
+	if q.err != nil {
+		return q
+	}
+	q.q.Prepare()
+	return q
+}
+
+// Close releases the prepared statement.
+// Safe to call multiple times or on non-prepared queries.
+// Returns nil if query was not prepared or already closed.
+func (q *Query) Close() error {
+	if q.q != nil {
+		return q.q.Close()
+	}
+	return nil
+}
+
+// IsPrepared returns true if Prepare() was called successfully.
+func (q *Query) IsPrepared() bool {
+	if q.q == nil {
+		return false
+	}
+	return q.q.IsPrepared()
+}
+
+// Bind sets positional parameters for the query.
+// Parameters replace ? placeholders in order.
+//
+// Example:
+//
+//	db.NewQuery("SELECT * FROM users WHERE id = ? AND status = ?").
+//	    Bind(1, "active").
+//	    One(&user)
+func (q *Query) Bind(params ...interface{}) *Query {
+	if q.err != nil {
+		return q
+	}
+	q.q.Bind(params...)
+	return q
+}
+
+// BindParams binds named parameters using Params map.
+// Named parameters are specified using {:name} syntax.
+//
+// Example:
+//
+//	db.NewQuery("SELECT * FROM users WHERE id = {:id}").
+//	    BindParams(relica.Params{"id": 1}).
+//	    One(&user)
+func (q *Query) BindParams(params Params) *Query {
+	if q.err != nil {
+		return q
+	}
+	q.q.BindParams(params)
+	return q
+}
+
+// SQL returns the SQL query string.
+func (q *Query) SQL() string {
+	if q.q == nil {
+		return ""
+	}
+	return q.q.SQL()
+}
+
+// QueryParams returns the query parameters.
+func (q *Query) QueryParams() []interface{} {
+	if q.q == nil {
+		return nil
+	}
+	return q.q.Params()
+}
+
 // ============================================================================
 // Re-export configuration options
 // ============================================================================
@@ -2223,8 +2335,36 @@ type QueryEvent = core.QueryEvent
 // Use this for logging, metrics, distributed tracing, or debugging.
 type QueryHook = core.QueryHook
 
+// Params represents named parameter values for query binding.
+// Named parameters are specified in SQL using {:name} syntax.
+//
+// Example:
+//
+//	db.NewQuery("SELECT * FROM users WHERE id={:id} AND status={:status}").
+//	    BindParams(relica.Params{"id": 1, "status": "active"}).
+//	    All(&users)
+type Params = core.Params
+
 // DetectOperation detects the SQL operation type (SELECT, INSERT, UPDATE, DELETE, UNKNOWN).
 var DetectOperation = core.DetectOperation
+
+// NullStringMap represents a map of nullable string values scanned from database rows.
+// Each value is a sql.NullString that can be checked for NULL.
+// This type is useful for dynamic queries where the schema is not known at compile time.
+//
+// Example:
+//
+//	var result relica.NullStringMap
+//	db.Select("*").From("users").Where("id = ?", 1).One(&result)
+//	name := result.String("name")   // returns empty string if NULL
+//	if !result.IsNull("email") {
+//	    email := result.String("email")
+//	}
+//
+//	// Multiple rows
+//	var results []relica.NullStringMap
+//	db.Select("*").From("users").All(&results)
+type NullStringMap = core.NullStringMap
 
 // ============================================================================
 // Re-export expression builders

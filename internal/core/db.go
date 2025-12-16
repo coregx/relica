@@ -255,6 +255,24 @@ func (db *DB) Builder() *QueryBuilder {
 	return &QueryBuilder{db: db}
 }
 
+// NewQuery creates a raw SQL query for execution.
+// Use this for queries that don't fit the query builder pattern.
+//
+// Example:
+//
+//	var count int
+//	err := db.NewQuery("SELECT COUNT(*) FROM users").Row(&count)
+//
+//	// With parameters
+//	var user User
+//	err := db.NewQuery("SELECT * FROM users WHERE id = ?").Bind(1).One(&user)
+func (db *DB) NewQuery(query string) *Query {
+	return &Query{
+		sql: query,
+		db:  db,
+	}
+}
+
 // NewQueryBuilder creates a new query builder with optional transaction support.
 // When tx is not nil, all queries built by this builder execute within that transaction.
 func NewQueryBuilder(db *DB, tx *sql.Tx) *QueryBuilder {
