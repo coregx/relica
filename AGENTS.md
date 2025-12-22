@@ -117,11 +117,32 @@ db.Model(&user).Insert()
 | Function | SQL | Example |
 |----------|-----|---------|
 | `Eq(col, val)` | `col = ?` | `Eq("status", 1)` |
+| `Eq(col, nil)` | `col IS NULL` | `Eq("deleted_at", nil)` |
 | `NotEq(col, val)` | `col != ?` | `NotEq("status", 0)` |
+| `NotEq(col, nil)` | `col IS NOT NULL` | `NotEq("deleted_at", nil)` |
 | `GreaterThan(col, val)` | `col > ?` | `GreaterThan("age", 18)` |
 | `LessThan(col, val)` | `col < ?` | `LessThan("price", 100)` |
 | `GreaterOrEqual(col, val)` | `col >= ?` | `GreaterOrEqual("score", 70)` |
 | `LessOrEqual(col, val)` | `col <= ?` | `LessOrEqual("qty", 10)` |
+
+### NULL Checks (IMPORTANT!)
+
+```go
+// IS NULL - use Eq with nil
+db.Select("*").From("users").
+    Where(relica.Eq("deleted_at", nil)).  // → deleted_at IS NULL
+    All(&users)
+
+// IS NOT NULL - use NotEq with nil
+db.Select("*").From("users").
+    Where(relica.NotEq("deleted_at", nil)).  // → deleted_at IS NOT NULL
+    All(&users)
+
+// Alternative: HashExp
+db.Select("*").From("users").
+    Where(relica.HashExp{"deleted_at": nil}).  // → deleted_at IS NULL
+    All(&users)
+```
 
 ### Set Operators
 
@@ -130,6 +151,16 @@ db.Model(&user).Insert()
 | `In(col, vals...)` | `col IN (?, ?, ?)` | `In("status", 1, 2, 3)` |
 | `NotIn(col, vals...)` | `col NOT IN (?, ?)` | `NotIn("role", "guest")` |
 | `Between(col, a, b)` | `col BETWEEN ? AND ?` | `Between("age", 18, 65)` |
+
+**Empty slice behavior:**
+```go
+// In() with empty slice → 0=1 (always false, returns no rows)
+ids := []int64{}
+db.Select("*").From("users").Where(relica.In("id", ids)).All(&users)  // → WHERE 0=1
+
+// NotIn() with empty slice → ignored (returns all rows)
+db.Select("*").From("users").Where(relica.NotIn("id", ids)).All(&users)  // → no WHERE
+```
 
 ### String Operators
 
@@ -160,6 +191,57 @@ HashExp{"deleted_at": nil}
 // IN clause (slice)
 HashExp{"status": []interface{}{1, 2, 3}}
 // → status IN (1, 2, 3)
+```
+
+---
+
+## Scalar Values: Use Row(), NOT One()
+
+**CRITICAL: One() expects struct, Row() is for primitives!**
+
+```go
+// WRONG - One() requires struct pointer
+var count int
+err := db.Select("COUNT(*)").From("users").One(&count)  // ERROR!
+
+// CORRECT - Use Row() for scalar values
+var count int
+err := db.Select("COUNT(*)").From("users").Row(&count)  // ✅ Works!
+
+// CORRECT - Multiple scalars
+var name string
+var age int
+err := db.Select("name", "age").From("users").
+    Where(relica.Eq("id", 1)).
+    Row(&name, &age)  // ✅ Works!
+
+// CORRECT - Check existence
+var exists int
+err := db.Select("1").From("users").
+    Where(relica.Eq("id", userID)).
+    Row(&exists)  // exists = 1 if found, sql.ErrNoRows if not
+```
+
+---
+
+## Testing with sqlmock
+
+**Relica uses prepared statements internally!** When testing with sqlmock:
+
+```go
+// WRONG - Missing ExpectPrepare
+mock.ExpectQuery("SELECT .+ FROM users").
+    WillReturnRows(rows)
+
+// CORRECT - Include ExpectPrepare
+mock.ExpectPrepare("SELECT .+ FROM users").
+    ExpectQuery().
+    WillReturnRows(rows)
+
+// For INSERT/UPDATE/DELETE:
+mock.ExpectPrepare("INSERT INTO users").
+    ExpectExec().
+    WillReturnResult(sqlmock.NewResult(1, 1))
 ```
 
 ---
