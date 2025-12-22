@@ -2,6 +2,8 @@
 
 > **Quick Start Guide** - From Zero to Production in 15 Minutes
 
+> **🤖 AI Agents**: See [AGENTS.md](../../AGENTS.md) for correct API patterns before generating code.
+
 ---
 
 ## 📋 What is Relica?
@@ -216,32 +218,31 @@ err := db.Select("*").
     One(&user)
 ```
 
-### INSERT
+### INSERT (PREFERRED: Model API)
 
 ```go
+// PREFERRED: Model() API - auto-populates ID
+user := User{Name: "Alice", Email: "alice@example.com", Age: 30}
+err := db.Model(&user).Insert()
+fmt.Println(user.ID) // Auto-populated!
+
+// Alternative: Map-based (use only for dynamic data)
 result, err := db.Insert("users", map[string]interface{}{
     "name":  "Alice",
     "email": "alice@example.com",
     "age":   30,
 }).Execute()
-
-// Get rows affected
-rows, _ := result.RowsAffected()
-fmt.Printf("Inserted %d rows\n", rows)
 ```
 
-**PostgreSQL - Get ID with RETURNING:**
-```go
-var id int
-err := db.QueryRowContext(ctx,
-    `INSERT INTO users (name, email) VALUES ($1, $2) RETURNING id`,
-    "Alice", "alice@example.com",
-).Scan(&id)
-```
-
-### UPDATE
+### UPDATE (PREFERRED: Model API)
 
 ```go
+// PREFERRED: Model() API - auto WHERE by primary key
+user.Name = "Alice Updated"
+user.Email = "alice.new@example.com"
+err := db.Model(&user).Update()
+
+// Alternative: Map-based with explicit WHERE
 result, err := db.Update("users").
     Set(map[string]interface{}{
         "name":  "Alice Updated",
@@ -251,9 +252,13 @@ result, err := db.Update("users").
     Execute()
 ```
 
-### DELETE
+### DELETE (PREFERRED: Model API)
 
 ```go
+// PREFERRED: Model() API - auto WHERE by primary key
+err := db.Model(&user).Delete()
+
+// Alternative: Explicit WHERE
 result, err := db.Delete("users").
     Where("id = ?", 1).
     Execute()
