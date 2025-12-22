@@ -2,7 +2,9 @@
 
 > **Production-Ready Patterns for Relica**
 >
-> **Last Updated**: 2025-11-13
+> **Last Updated**: 2025-12-23
+
+> **🤖 AI Agents**: See [AGENTS.md](../../AGENTS.md) for correct API patterns. Prefer `Model()` API over `map[string]interface{}`.
 
 ---
 
