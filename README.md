@@ -10,6 +10,8 @@
 
 **Relica** is a lightweight, type-safe database query builder for Go with zero production dependencies.
 
+> **🤖 AI Agents**: Before generating code, read **[AGENTS.md](AGENTS.md)** for correct API patterns. Use `Model()` API for CRUD, `Expression API` for WHERE conditions. Avoid `map[string]interface{}`.
+
 ## ✨ Features
 
 - **Zero Production Dependencies** - Uses only Go standard library
@@ -37,6 +39,18 @@
 - **Clean API** - Fluent builder pattern with context support
 
 > **Latest Release:** See [CHANGELOG.md](CHANGELOG.md) for version history and [GitHub Releases](https://github.com/coregx/relica/releases) for release notes.
+
+## 📌 API Usage Priority
+
+| Priority | API | When to Use |
+|----------|-----|-------------|
+| **PREFERRED** | `db.Model(&struct).Insert/Update/Delete()` | All CRUD operations with structs |
+| **PREFERRED** | `relica.Eq()`, `relica.And()`, `relica.In()`, etc. | WHERE conditions |
+| **PREFERRED** | `relica.HashExp{"col": val}` | Simple equality conditions |
+| **ACCEPTABLE** | `Where("col = ?", val)` | Simple parameterized queries |
+| **AVOID** | `map[string]interface{}` | Only for dynamic/unknown schemas |
+
+> **For AI Agents**: See [AGENTS.md](AGENTS.md) for complete patterns and examples.
 
 ## 🚀 Quick Start
 
@@ -78,11 +92,11 @@ func main() {
 
     ctx := context.Background()
 
-    // SELECT - Query single row (convenience method)
+    // SELECT with Expression API (PREFERRED)
     var user User
     err = db.Select("*").
         From("users").
-        Where("id = ?", 1).
+        Where(relica.Eq("id", 1)).
         WithContext(ctx).
         One(&user)
     if err != nil {
@@ -90,31 +104,27 @@ func main() {
     }
     fmt.Printf("User: %+v\n", user)
 
-    // SELECT - Query multiple rows (convenience method)
+    // SELECT with multiple conditions (PREFERRED)
     var users []User
     err = db.Select("*").
         From("users").
-        Where("age > ?", 18).
+        Where(relica.And(
+            relica.GreaterThan("age", 18),
+            relica.Eq("status", "active"),
+        )).
         All(&users)
 
-    // INSERT (convenience method)
-    result, err := db.Insert("users", map[string]interface{}{
-        "name":  "Alice",
-        "email": "alice@example.com",
-    }).Execute()
+    // INSERT with Model() API (PREFERRED)
+    newUser := User{Name: "Alice", Email: "alice@example.com"}
+    err = db.Model(&newUser).Insert()
+    fmt.Println(newUser.ID) // Auto-populated!
 
-    // UPDATE (convenience method)
-    result, err = db.Update("users").
-        Set(map[string]interface{}{
-            "name": "Alice Updated",
-        }).
-        Where("id = ?", 1).
-        Execute()
+    // UPDATE with Model() API (PREFERRED)
+    newUser.Name = "Alice Updated"
+    err = db.Model(&newUser).Update()
 
-    // DELETE (convenience method)
-    result, err = db.Delete("users").
-        Where("id = ?", 1).
-        Execute()
+    // DELETE with Model() API (PREFERRED)
+    err = db.Model(&newUser).Delete()
 
     // For advanced queries (CTEs, UNION, etc.), use Builder()
     err = db.Builder().
@@ -129,49 +139,65 @@ func main() {
 
 ### CRUD Operations
 
-**Convenience methods** for shorter, more intuitive code!
+#### Model() API (PREFERRED)
+
+**Use Model() API for all struct-based CRUD operations:**
 
 ```go
-// SELECT (convenience method)
-var user User
-db.Select("*").From("users").Where("id = ?", 1).One(&user)
+// INSERT - Auto-populates ID (PREFERRED)
+user := User{Name: "Bob", Email: "bob@example.com"}
+db.Model(&user).Insert()
+fmt.Println(user.ID) // Auto-populated!
 
-// SELECT with multiple conditions
-var users []User
-db.Select("id", "name", "email").
-    From("users").
-    Where("age > ?", 18).
-    Where("status = ?", "active").
+// INSERT - Selective fields
+db.Model(&user).Insert("name", "email") // Only these fields
+
+// UPDATE - By primary key (PREFERRED)
+user.Status = "inactive"
+db.Model(&user).Update()
+
+// UPDATE - Selective fields
+db.Model(&user).Update("status") // Only update status
+
+// DELETE - By primary key (PREFERRED)
+db.Model(&user).Delete()
+```
+
+#### SELECT with Expression API (PREFERRED)
+
+```go
+// Simple equality
+db.Select("*").From("users").
+    Where(relica.Eq("id", 1)).
+    One(&user)
+
+// Multiple conditions
+db.Select("*").From("users").
+    Where(relica.And(
+        relica.GreaterThan("age", 18),
+        relica.Eq("status", "active"),
+    )).
     All(&users)
 
-// INSERT (convenience method)
+// HashExp for simple equality
+db.Select("*").From("users").
+    Where(relica.HashExp{"status": "active", "role": "admin"}).
+    All(&users)
+```
+
+#### Map-based Operations (AVOID - Use Only for Dynamic Data)
+
+> **Warning**: Use `map[string]interface{}` ONLY when struct is not available (dynamic schemas, JSON payloads).
+
+```go
+// AVOID - Only for dynamic/unknown schemas
 db.Insert("users", map[string]interface{}{
-    "name": "Bob",
-    "email": "bob@example.com",
+    "name": dynamicData["name"],
 }).Execute()
 
-// UPDATE (convenience method)
-db.Update("users").
-    Set(map[string]interface{}{"status": "inactive"}).
-    Where("last_login < ?", time.Now().AddDate(0, -6, 0)).
-    Execute()
-
-// DELETE (convenience method)
-db.Delete("users").Where("id = ?", 123).Execute()
-
-// For advanced operations, use Builder()
-db.Builder().
-    Upsert("users", map[string]interface{}{
-        "id":    1,
-        "name":  "Alice",
-        "email": "alice@example.com",
-    }).
-    OnConflict("id").
-    DoUpdate("name", "email").
-    Execute()
-
-// Builder() is still fully supported for all operations
-db.Builder().Select("*").From("users").All(&users)
+// PREFER - Use Model() API instead
+user := User{Name: dynamicData["name"].(string)}
+db.Model(&user).Insert()
 ```
 
 ### Expression API

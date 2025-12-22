@@ -1,0 +1,40 @@
+# Relica
+
+> Lightweight, type-safe database query builder for Go with zero production dependencies.
+
+## Documentation
+
+- [AGENTS.md](https://github.com/coregx/relica/blob/main/AGENTS.md): AI coding agent instructions - API patterns, correct usage
+- [README.md](https://github.com/coregx/relica/blob/main/README.md): Quick start, features, examples
+- [CHANGELOG.md](https://github.com/coregx/relica/blob/main/CHANGELOG.md): Version history
+- [pkg.go.dev](https://pkg.go.dev/github.com/coregx/relica): API reference
+
+## Critical: API Usage Priority
+
+When generating Relica code, follow this priority:
+
+1. **PREFERRED**: `db.Model(&struct).Insert/Update/Delete()` - All CRUD operations
+2. **PREFERRED**: `relica.Eq()`, `relica.And()`, `relica.In()` - WHERE conditions
+3. **PREFERRED**: `relica.HashExp{"col": val}` - Simple equality
+4. **ACCEPTABLE**: `Where("col = ?", val)` - Simple parameterized queries
+5. **AVOID**: `map[string]interface{}` - Only for dynamic/unknown schemas
+
+## Quick Examples
+
+```go
+// INSERT - Use Model() API
+user := User{Name: "Alice", Email: "alice@example.com"}
+db.Model(&user).Insert()
+
+// SELECT - Use Expression API
+db.Select("*").From("users").
+    Where(relica.Eq("status", "active")).
+    All(&users)
+
+// DO NOT use map[string]interface{} for CRUD!
+```
+
+## Links
+
+- GitHub: https://github.com/coregx/relica
+- Go Package: https://pkg.go.dev/github.com/coregx/relica
