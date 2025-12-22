@@ -1,7 +1,7 @@
 # Relica Roadmap
 
-> **Current Version**: v0.8.0 (Released: December 16, 2025)
-> **Previous Release**: v0.7.0 (Released: November 24, 2025)
+> **Current Version**: v0.9.1 (Released: December 23, 2025)
+> **Previous Release**: v0.9.0 (Released: December 16, 2025)
 > **Production Ready**: v1.0.0 (Target: Q3-Q4 2026)
 
 ---
@@ -14,7 +14,7 @@
 
 ---
 
-## 📍 Current State (v0.8.0 - ozzo-dbx API Parity)
+## 📍 Current State (v0.9.1 - AI Agent Documentation)
 
 ### ✅ Completed Features
 
@@ -27,6 +27,11 @@
 - **Transactional()** (v0.8.0): Auto commit/rollback with panic recovery
 - **Distinct()** (v0.8.0): SELECT DISTINCT support
 - **AndWhere() / OrWhere()** (v0.8.0): Dynamic WHERE clause building
+- **NullStringMap** (v0.9.0): Dynamic scanning without structs
+- **Query.Prepare() / Close()** (v0.9.0): Manual statement control
+- **Composite PK** (v0.9.0): `db:"col,pk"` syntax for composite primary keys
+- **Functional Expressions** (v0.9.0): CASE, COALESCE, NULLIF, GREATEST, LEAST, CONCAT
+- **AI Agent Documentation** (v0.9.1): AGENTS.md, llms.txt for AI coding assistants
 - **Type-Safe Scanning**: Struct tags, reflection-based
 - **Transactions**: All isolation levels, context support
 - **Batch Operations**: 3.3x faster INSERT, 2.5x faster UPDATE
@@ -48,7 +53,7 @@
 
 ### 📊 Metrics
 
-- **Test Coverage**: 85%+ (600+ tests)
+- **Test Coverage**: 86%+ (650+ tests)
 - **Dependencies**: 0 (production), 2 (tests only)
 - **Performance**:
   - Batch operations: 3.3x faster INSERT, 2.5x UPDATE
@@ -63,18 +68,17 @@
 
 ## 🚀 Upcoming Releases
 
-### v0.9.0 (Q1 2026)
+### v0.10.0 (Q1 2026)
 
-**Goal**: API stabilization & advanced features
+**Goal**: Documentation Excellence & Developer Experience
 
 **Planned Features**:
-- NullStringMap for dynamic scanning (TASK-016)
-- Query.Prepare() / Query.Close() manual control (TASK-017)
-- Composite primary key support
-- Advanced query helpers (CASE, COALESCE)
-- Error message improvements
+- Comprehensive API documentation (TASK-400)
+- Benchmark suite vs competitors (TASK-501)
+- Production-ready examples repository (TASK-502)
+- Developer experience improvements (TASK-101)
 
-**Focus**: Real-world production validation
+**Focus**: World-class documentation and developer onboarding
 
 ---
 
@@ -116,7 +120,7 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 
 ## 📊 Feature Comparison
 
-| Feature | v0.8.0 | v1.0.0 | GORM | sqlc |
+| Feature | v0.9.1 | v1.0.0 | GORM | sqlc |
 |---------|--------|--------|------|------|
 | **CRUD** | ✅ | ✅ | ✅ | ✅ |
 | **Expression API** | ✅ | ✅ | ✅ | ❌ |
@@ -148,7 +152,7 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 
 ## 📈 Performance Goals
 
-| Metric | v0.8.0 Actual | v1.0.0 Target |
+| Metric | v0.9.1 Actual | v1.0.0 Target |
 |--------|---------------|---------------|
 | **Statement Cache Hit** | <60ns ✅ | <50ns |
 | **Batch INSERT (100 rows)** | 327ms ✅ | <200ms |
@@ -202,6 +206,8 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 - **v0.6.0** (2025-11-24) - Struct operations (InsertStruct, Model API)
 - **v0.7.0** (2025-11-24) - Model() API parity (auto-populate ID, selective fields)
 - **v0.8.0** (2025-12-16) - Named placeholders, quoting, Row/Column, Transactional, Distinct, AndWhere/OrWhere
+- **v0.9.0** (2025-12-16) - NullStringMap, Prepare/Close, Composite PK, Functional Expressions
+- **v0.9.1** (2025-12-23) - AI Agent Documentation (AGENTS.md, llms.txt, README updates)
 - **v1.0.0** (Target: Q3-Q4 2026) - Production stable release
 
 ---
@@ -215,5 +221,5 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 
 ---
 
-*Last Updated: 2025-12-16*
+*Last Updated: 2025-12-23*
 *Maintained by: COREGX Team*

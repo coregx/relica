@@ -6,6 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.9.1] - 2025-12-23
+
+### Added
+
+**AI Agent Documentation** - Official documentation for AI coding assistants
+
+- **AGENTS.md** - Official standard file for AI coding agents
+  - API Priority guide: Model() API > Expression API > map[string]interface{}
+  - Correct usage examples for INSERT, UPDATE, DELETE, SELECT
+  - Anti-patterns to avoid (map[string]interface{} for CRUD)
+  - Complete Expression API reference table
+  - Production-ready code examples
+
+- **llms.txt** - LLM documentation index following industry standard
+  - Quick reference for AI agents
+  - Links to key documentation files
+  - API priority summary
+
+### Changed
+
+- **README.md** - Updated for AI agent compatibility
+  - Added AI agent callout at the top linking to AGENTS.md
+  - Added API Usage Priority table (PREFERRED/ACCEPTABLE/AVOID)
+  - Quick Start examples now use Model() API instead of map[string]interface{}
+  - CRUD Operations section reorganized with PREFERRED/AVOID labels
+  - All examples follow Expression API for WHERE conditions
+
+### Documentation
+
+This release ensures AI coding agents (GitHub Copilot, Claude, Cursor, etc.) generate correct Relica code by providing clear guidance on API usage patterns.
+
+---
+
 ## [0.9.0] - 2025-12-16
 
 ### Added
