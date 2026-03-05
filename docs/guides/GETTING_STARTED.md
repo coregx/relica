@@ -209,8 +209,19 @@ err := db.Select().
 
 ```go
 var user User
-err := db.Select().
-    From("users").
+
+// Expression API (PREFERRED)
+err := db.Select().From("users").
+    Where(relica.Eq("id", 1)).
+    One(&user)
+
+// Named placeholders
+err = db.Select().From("users").
+    Where("id = {:id}", relica.Params{"id": 1}).
+    One(&user)
+
+// Positional placeholders
+err = db.Select().From("users").
     Where("id = ?", 1).
     One(&user)
 ```

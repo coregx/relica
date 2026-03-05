@@ -71,12 +71,33 @@ db.Select().From("orders").
     All(&orders)
 ```
 
-### 3. FALLBACK ONLY: Raw Strings
+### 3. ACCEPTABLE: Named Placeholders
 
-**Use ONLY when dynamic SQL is absolutely required:**
+**Use `{:name}` syntax with `relica.Params` for readable parameterized queries:**
 
 ```go
-// ACCEPTABLE - Simple parameterized query
+// Named parameters - readable and safe
+db.Select().From("users").
+    Where("id = {:id} AND status = {:status}", relica.Params{
+        "id":     userID,
+        "status": "active",
+    }).
+    All(&users)
+
+// Same parameter reused
+db.Select().From("categories").
+    Where("parent_id = {:id} OR id = {:id}", relica.Params{"id": catID}).
+    All(&categories)
+```
+
+Works in `Where`, `AndWhere`, `OrWhere` on Select, Update, and Delete.
+
+### 4. FALLBACK ONLY: Positional Placeholders
+
+**Use ONLY when named params or expressions don't fit:**
+
+```go
+// ACCEPTABLE - Simple positional query
 db.Select().From("users").
     Where("id = ?", userID).
     One(&user)
@@ -87,7 +108,7 @@ db.Select().From("users").
     All(&users)
 ```
 
-### 4. AVOID: map[string]interface{}
+### 5. AVOID: map[string]interface{}
 
 **DO NOT use map[string]interface{} for CRUD operations!**
 
