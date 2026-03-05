@@ -126,9 +126,8 @@ func main() {
     // DELETE with Model() API (PREFERRED)
     err = db.Model(&newUser).Delete()
 
-    // For advanced queries (CTEs, UNION, etc.), use Builder()
-    statsQuery := db.Builder().
-        Select("user_id", "COUNT(*) as order_count").
+    // CTE (Common Table Expression)
+    statsQuery := db.Select("user_id", "COUNT(*) as order_count").
         From("orders").
         GroupBy("user_id")
 
@@ -136,8 +135,7 @@ func main() {
         UserID     int `db:"user_id"`
         OrderCount int `db:"order_count"`
     }
-    err = db.Builder().
-        Select("*").
+    err = db.Select("*").
         With("stats", statsQuery).
         From("stats").
         All(&results)
@@ -217,12 +215,12 @@ Relica supports fluent expression builders for type-safe, complex WHERE clauses:
 
 ```go
 // Simple equality
-db.Builder().Select().From("users").
+db.Select().From("users").
     Where(relica.HashExp{"status": 1}).
     All(&users)
 
 // Multiple conditions (AND)
-db.Builder().Select().From("users").
+db.Select().From("users").
     Where(relica.HashExp{
         "status": 1,
         "age":    30,
@@ -230,21 +228,21 @@ db.Builder().Select().From("users").
     All(&users)
 
 // IN clause (slice values)
-db.Builder().Select().From("users").
+db.Select().From("users").
     Where(relica.HashExp{
         "status": []interface{}{1, 2, 3},
     }).
     All(&users)
 
 // NULL handling
-db.Builder().Select().From("users").
+db.Select().From("users").
     Where(relica.HashExp{
         "deleted_at": nil,  // IS NULL
     }).
     All(&users)
 
 // Combined: IN + NULL + equality
-db.Builder().Select().From("users").
+db.Select().From("users").
     Where(relica.HashExp{
         "status":     []interface{}{1, 2},
         "deleted_at": nil,
@@ -257,12 +255,12 @@ db.Builder().Select().From("users").
 
 ```go
 // Greater than
-db.Builder().Select().From("users").
+db.Select().From("users").
     Where(relica.GreaterThan("age", 18)).
     All(&users)
 
 // Less than or equal
-db.Builder().Select().From("users").
+db.Select().From("users").
     Where(relica.LessOrEqual("price", 100.0)).
     All(&products)
 
@@ -273,17 +271,17 @@ db.Builder().Select().From("users").
 
 ```go
 // IN
-db.Builder().Select().From("users").
+db.Select().From("users").
     Where(relica.In("role", "admin", "moderator")).
     All(&users)
 
 // NOT IN
-db.Builder().Select().From("users").
+db.Select().From("users").
     Where(relica.NotIn("status", 0, 99)).
     All(&users)
 
 // BETWEEN
-db.Builder().Select().From("orders").
+db.Select().From("orders").
     Where(relica.Between("created_at", startDate, endDate)).
     All(&orders)
 ```
@@ -292,22 +290,22 @@ db.Builder().Select().From("orders").
 
 ```go
 // Default: %value% (partial match)
-db.Builder().Select().From("users").
+db.Select().From("users").
     Where(relica.Like("name", "john")).  // name LIKE '%john%'
     All(&users)
 
 // Multiple values (AND)
-db.Builder().Select().From("articles").
+db.Select().From("articles").
     Where(relica.Like("title", "go", "database")).  // title LIKE '%go%' AND title LIKE '%database%'
     All(&articles)
 
 // Custom matching (prefix/suffix)
-db.Builder().Select().From("files").
+db.Select().From("files").
     Where(relica.Like("filename", ".txt").Match(false, true)).  // filename LIKE '%.txt'
     All(&files)
 
 // OR logic
-db.Builder().Select().From("users").
+db.Select().From("users").
     Where(relica.OrLike("email", "gmail", "yahoo")).  // email LIKE '%gmail%' OR email LIKE '%yahoo%'
     All(&users)
 ```
@@ -316,7 +314,7 @@ db.Builder().Select().From("users").
 
 ```go
 // AND
-db.Builder().Select().From("users").
+db.Select().From("users").
     Where(relica.And(
         relica.Eq("status", 1),
         relica.GreaterThan("age", 18),
@@ -324,7 +322,7 @@ db.Builder().Select().From("users").
     All(&users)
 
 // OR
-db.Builder().Select().From("users").
+db.Select().From("users").
     Where(relica.Or(
         relica.Eq("role", "admin"),
         relica.Eq("role", "moderator"),
@@ -332,14 +330,14 @@ db.Builder().Select().From("users").
     All(&users)
 
 // NOT
-db.Builder().Select().From("users").
+db.Select().From("users").
     Where(relica.Not(
         relica.In("status", 0, 99),
     )).
     All(&users)
 
 // Nested combinations
-db.Builder().Select().From("users").
+db.Select().From("users").
     Where(relica.And(
         relica.Eq("status", 1),
         relica.Or(
@@ -356,12 +354,12 @@ String-based WHERE still works:
 
 ```go
 // Old style (still supported)
-db.Builder().Select().From("users").
+db.Select().From("users").
     Where("status = ? AND age > ?", 1, 18).
     All(&users)
 
 // Can mix both styles
-db.Builder().Select().From("users").
+db.Select().From("users").
     Where("status = ?", 1).
     Where(relica.GreaterThan("age", 18)).
     All(&users)
@@ -498,15 +496,13 @@ var results []struct {
     Title    string `db:"title"`
 }
 
-db.Builder().
-    Select("u.id as user_id", "u.name as user_name", "p.id as post_id", "p.title").
+db.Select("u.id as user_id", "u.name as user_name", "p.id as post_id", "p.title").
     From("users u").
     InnerJoin("posts p", "p.user_id = u.id").
     All(&results)
 
 // Multiple JOINs with aggregates
-db.Builder().
-    Select("messages.*", "users.name", "COUNT(attachments.id) as attachment_count").
+db.Select("messages.*", "users.name", "COUNT(attachments.id) as attachment_count").
     From("messages m").
     InnerJoin("users u", "m.user_id = u.id").
     LeftJoin("attachments a", "m.id = a.message_id").
@@ -515,15 +511,14 @@ db.Builder().
     All(&results)
 
 // All JOIN types supported
-db.Builder().InnerJoin(table, on)  // INNER JOIN
-db.Builder().LeftJoin(table, on)   // LEFT OUTER JOIN
-db.Builder().RightJoin(table, on)  // RIGHT OUTER JOIN
-db.Builder().FullJoin(table, on)   // FULL OUTER JOIN (PostgreSQL, SQLite)
-db.Builder().CrossJoin(table)      // CROSS JOIN (no ON condition)
+db.Select().From(table1).InnerJoin(table2, on)  // INNER JOIN
+db.Select().From(table1).LeftJoin(table2, on)   // LEFT OUTER JOIN
+db.Select().From(table1).RightJoin(table2, on)  // RIGHT OUTER JOIN
+db.Select().From(table1).FullJoin(table2, on)   // FULL OUTER JOIN (PostgreSQL, SQLite)
+db.Select().From(table1).CrossJoin(table2)      // CROSS JOIN (no ON condition)
 
 // JOIN with Expression API
-db.Builder().
-    Select().
+db.Select().
     From("messages m").
     InnerJoin("users u", relica.And(
         relica.NewExp("m.user_id = u.id"),
@@ -542,8 +537,7 @@ See the [Advanced Patterns Guide](docs/guides/ADVANCED_PATTERNS.md) for comprehe
 
 ```go
 // ORDER BY with multiple columns
-db.Builder().
-    Select().
+db.Select().
     From("messages").
     OrderBy("created_at DESC", "id ASC").
     All(&messages)
@@ -552,8 +546,7 @@ db.Builder().
 const pageSize = 100
 const pageNumber = 2 // Third page (0-indexed)
 
-db.Builder().
-    Select().
+db.Select().
     From("users").
     OrderBy("age DESC").
     Limit(pageSize).
@@ -561,8 +554,7 @@ db.Builder().
     All(&users)
 
 // Table column references
-db.Builder().
-    Select().
+db.Select().
     From("messages m").
     InnerJoin("users u", "m.user_id = u.id").
     OrderBy("m.created_at DESC", "u.name ASC").
@@ -579,8 +571,7 @@ db.Builder().
 ```go
 // Simple COUNT
 var count struct{ Total int `db:"total"` }
-db.Builder().
-    Select("COUNT(*) as total").
+db.Select("COUNT(*) as total").
     From("messages").
     One(&count)
 
@@ -594,8 +585,7 @@ type Stats struct {
 }
 
 var stats Stats
-db.Builder().
-    Select("COUNT(*) as count", "SUM(size) as sum", "AVG(size) as avg", "MIN(size) as min", "MAX(size) as max").
+db.Select("COUNT(*) as count", "SUM(size) as sum", "AVG(size) as avg", "MIN(size) as min", "MAX(size) as max").
     From("messages").
     One(&stats)
 
@@ -606,8 +596,7 @@ type UserStats struct {
 }
 
 var userStats []UserStats
-db.Builder().
-    Select("user_id", "COUNT(*) as message_count").
+db.Select("user_id", "COUNT(*) as message_count").
     From("messages").
     GroupBy("user_id").
     Having("COUNT(*) > ?", 100).
@@ -628,25 +617,23 @@ Relica adds powerful SQL features for complex queries.
 **IN/EXISTS Subqueries**:
 ```go
 // Find users who have placed orders
-sub := db.Builder().Select("user_id").From("orders").Where("status = ?", "completed")
-db.Builder().Select("*").From("users").Where(relica.In("id", sub)).All(&users)
+sub := db.Select("user_id").From("orders").Where("status = ?", "completed")
+db.Select("*").From("users").Where(relica.In("id", sub)).All(&users)
 
 // Find users with at least one order (EXISTS is often faster)
-orderCheck := db.Builder().Select("1").From("orders").Where("orders.user_id = users.id")
-db.Builder().Select("*").From("users").Where(relica.Exists(orderCheck)).All(&users)
+orderCheck := db.Select("1").From("orders").Where("orders.user_id = users.id")
+db.Select("*").From("users").Where(relica.Exists(orderCheck)).All(&users)
 ```
 
 **FROM Subqueries**:
 ```go
 // Calculate aggregates, then filter
-stats := db.Builder().
-    Select("user_id", "COUNT(*) as order_count", "SUM(total) as total_spent").
+stats := db.Select("user_id", "COUNT(*) as order_count", "SUM(total) as total_spent").
     From("orders").
     GroupBy("user_id")
 
-db.Builder().
+db.Select("user_id", "order_count", "total_spent").
     FromSelect(stats, "order_stats").
-    Select("user_id", "order_count", "total_spent").
     Where("order_count > ? AND total_spent > ?", 10, 5000).
     All(&topCustomers)
 ```
@@ -658,8 +645,8 @@ See [Subquery Guide](docs/SUBQUERY_GUIDE.md) for complete examples and performan
 **UNION/UNION ALL**:
 ```go
 // Combine active and archived users (UNION removes duplicates)
-active := db.Builder().Select("name").From("users").Where("status = ?", 1)
-archived := db.Builder().Select("name").From("archived_users").Where("status = ?", 1)
+active := db.Select("name").From("users").Where("status = ?", 1)
+archived := db.Select("name").From("archived_users").Where("status = ?", 1)
 active.Union(archived).All(&allNames)
 
 // UNION ALL is 2-3x faster (keeps duplicates)
@@ -669,8 +656,8 @@ active.UnionAll(archived).All(&allNames)
 **INTERSECT/EXCEPT** (PostgreSQL, MySQL 8.0.31+, SQLite):
 ```go
 // Find users who have placed orders (INTERSECT)
-allUsers := db.Builder().Select("id").From("users")
-orderUsers := db.Builder().Select("user_id").From("orders")
+allUsers := db.Select("id").From("users")
+orderUsers := db.Select("user_id").From("orders")
 allUsers.Intersect(orderUsers).All(&activeUsers)
 
 // Find users without orders (EXCEPT)
@@ -684,14 +671,12 @@ See [Set Operations Guide](docs/SET_OPERATIONS_GUIDE.md) for database compatibil
 **Basic CTEs**:
 ```go
 // Define reusable query
-orderTotals := db.Builder().
-    Select("user_id", "SUM(total) as total").
+orderTotals := db.Select("user_id", "SUM(total) as total").
     From("orders").
     GroupBy("user_id")
 
 // Use CTE in main query
-db.Builder().
-    Select("*").
+db.Select("*").
     With("order_totals", orderTotals).
     From("order_totals").
     Where("total > ?", 1000).
@@ -701,20 +686,17 @@ db.Builder().
 **Recursive CTEs** (organizational hierarchies, trees):
 ```go
 // Anchor: top-level employees
-anchor := db.Builder().
-    Select("id", "name", "manager_id", "1 as level").
+anchor := db.Select("id", "name", "manager_id", "1 as level").
     From("employees").
     Where("manager_id IS NULL")
 
 // Recursive: children
-recursive := db.Builder().
-    Select("e.id", "e.name", "e.manager_id", "h.level + 1").
+recursive := db.Select("e.id", "e.name", "e.manager_id", "h.level + 1").
     From("employees e").
     InnerJoin("hierarchy h", "e.manager_id = h.id")
 
 // Build hierarchy
-db.Builder().
-    Select("*").
+db.Select("*").
     WithRecursive("hierarchy", anchor.UnionAll(recursive)).
     From("hierarchy").
     OrderBy("level", "name").
@@ -729,14 +711,14 @@ Relica supports window functions via `SelectExpr()` for advanced analytics:
 
 ```go
 // Rank users by order total within each country
-db.Builder().
+db.Select().
     SelectExpr("user_id", "country", "total",
         "RANK() OVER (PARTITION BY country ORDER BY total DESC) as rank").
     From("orders").
     All(&rankedOrders)
 
 // Running totals with frame specification
-db.Builder().
+db.Select().
     SelectExpr("date", "amount",
         "SUM(amount) OVER (ORDER BY date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) as running_total").
     From("transactions").
@@ -759,13 +741,12 @@ if err != nil {
 defer tx.Rollback() // Rollback if not committed
 
 // Execute queries within transaction
-_, err = tx.Builder().Insert("users", userData).Execute()
+_, err = tx.Insert("users", userData).Execute()
 if err != nil {
     return err
 }
 
-_, err = tx.Builder().
-    Update("accounts").
+_, err = tx.Update("accounts").
     Set(map[string]interface{}{"balance": newBalance}).
     Where("user_id = ?", userID).
     Execute()
@@ -782,8 +763,7 @@ return tx.Commit()
 **Batch INSERT** (3.3x faster than individual inserts):
 
 ```go
-result, err := db.Builder().
-    BatchInsert("users", []string{"name", "email"}).
+result, err := db.BatchInsert("users", []string{"name", "email"}).
     Values("Alice", "alice@example.com").
     Values("Bob", "bob@example.com").
     Values("Charlie", "charlie@example.com").
@@ -795,7 +775,7 @@ users := []User{
     {Name: "Bob", Email: "bob@example.com"},
 }
 
-batch := db.Builder().BatchInsert("users", []string{"name", "email"})
+batch := db.BatchInsert("users", []string{"name", "email"})
 for _, user := range users {
     batch.Values(user.Name, user.Email)
 }
@@ -805,8 +785,7 @@ result, err := batch.Execute()
 **Batch UPDATE** (updates multiple rows with different values):
 
 ```go
-result, err := db.Builder().
-    BatchUpdate("users", "id").
+result, err := db.BatchUpdate("users", "id").
     Set(1, map[string]interface{}{"name": "Alice Updated", "status": "active"}).
     Set(2, map[string]interface{}{"name": "Bob Updated", "status": "active"}).
     Set(3, map[string]interface{}{"age": 30}).
@@ -821,22 +800,20 @@ ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 defer cancel()
 
 var users []User
-err := db.Builder().
-    WithContext(ctx).
-    Select().
+err := db.Select().
     From("users").
+    WithContext(ctx).
     All(&users)
 
 // Context on query level
-err = db.Builder().
-    Select().
+err = db.Select().
     From("users").
     WithContext(ctx).
     One(&user)
 
 // Transaction context auto-propagates
 tx, _ := db.BeginTx(ctx, nil)
-tx.Builder().Select().From("users").One(&user) // Uses ctx automatically
+tx.Select().From("users").One(&user) // Uses ctx automatically
 ```
 
 ## 🏗️ Database Support
@@ -931,8 +908,7 @@ db := relica.WrapDB(sqlDB, "postgres")
 
 // Use Relica's fluent API
 var users []User
-err = db.Builder().
-    Select().
+err = db.Select().
     From("users").
     Where("status = ?", 1).
     All(&users)

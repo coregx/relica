@@ -6,43 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [0.9.2] - 2026-03-05
+## [0.10.0] - 2026-03-05
 
 ### Added
+
+**Direct API Shortcuts** - All operations available without `Builder()`
+
+- `db.BatchInsert(table, columns)` — batch INSERT without `db.Builder().BatchInsert()`
+- `db.BatchUpdate(table, keyColumn)` — batch UPDATE without `db.Builder().BatchUpdate()`
+- `db.Upsert(table, values)` — UPSERT without `db.Builder().Upsert()`
+- All query types now accessible directly: `db.Select()`, `db.Insert()`, `db.Update()`, `db.Delete()`, `db.BatchInsert()`, `db.BatchUpdate()`, `db.Upsert()`, `db.Model()`
 
 **Comprehensive Test Coverage** - Enterprise-grade test suite for awesome-go submission
 
 - **internal/dialects**: 0% → **100%** coverage
-  - Full test coverage for PostgreSQL, MySQL, SQLite dialects
-  - Placeholder generation, identifier quoting, UpsertSQL for all dialects
-  - Cross-dialect comparison tests and interface compliance checks
-
 - **internal/util**: 41.2% → **97.1%** coverage
-  - `SetPrimaryKeyValue` — all numeric types, pointers, boundary values (14.6% → 97.6%)
-  - `IsPrimaryKeyZero` — all types including pointer dereferencing (33.3% → 100%)
-  - `FindPrimaryKeyFields` — all 4 priority levels, composite PKs (45.2% → 95.2%)
-  - `parseDBTag` — pk, column names, skip tag, combined options (55.6% → 100%)
-  - `SanitizeIdentifier` / `SanitizeString` — SQL injection vectors (0% → 100%)
-  - `IsCanceled` / `WithTimeout` — context utilities (0% → 100%)
-
 - **db.go (public API)**: 66.3% → **99.2%** coverage
-  - `DB.Stats()`, `DB.IsHealthy()`, `DB.WarmCache()`, `DB.PinQuery()`, `DB.UnpinQuery()`
-  - `DB.Model()` — Insert, Update, Delete, Exclude, Table chains
-  - `DB.NewQuery()` — Row, Bind, All, Column, Prepare/Close
-  - `DB.Transactional()` / `DB.TransactionalTx()` — commit, rollback, panic recovery
-  - `Tx.Model()`, `Tx.BatchInsertStruct()`, `Tx.UpdateStruct()`
-  - All `Unwrap()` methods for DB, Tx, SelectQuery, QueryBuilder
-  - Extended SelectQuery, UpdateQuery, DeleteQuery method coverage
+- Total coverage: **80.7% → 88.3%**, test cases: **650+ → 1500+**
 
 ### Fixed
 
-- **internal/security**: `extractTableName()` now parses SELECT/INSERT/UPDATE/DELETE
-  queries instead of returning empty string (resolved TODO)
+- `extractTableName()` in security/auditor now parses SQL instead of returning empty string
+- All golangci-lint issues resolved (misspell, prealloc, staticcheck, cyclop)
 
 ### Changed
 
-- Total test coverage: **80.7% → 88.3%**
-- Total test cases: **650+ → 1500+**
+- **Documentation**: all examples use direct API (`db.Select()`) instead of `db.Builder().Select()`
+- **Documentation**: fixed incorrect method signatures, non-compiling examples
+- **Documentation**: validated all public docs against actual code
 
 ---
 
