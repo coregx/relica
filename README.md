@@ -35,7 +35,7 @@
 - **Set Operations** - UNION, UNION ALL, INTERSECT, EXCEPT
 - **Common Table Expressions** - WITH clause, recursive CTEs
 - **Multi-Database** - PostgreSQL, MySQL 8.0+, SQLite 3.25+ support
-- **Well-Tested** - 650+ tests, 86%+ coverage
+- **Well-Tested** - 1500+ test cases, 88%+ coverage
 - **Clean API** - Fluent builder pattern with context support
 
 > **Latest Release:** See [CHANGELOG.md](CHANGELOG.md) for version history and [GitHub Releases](https://github.com/coregx/relica/releases) for release notes.

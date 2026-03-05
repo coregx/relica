@@ -108,7 +108,7 @@ func (c *CaseExp) Build(dialect dialects.Dialect) (string, []interface{}) {
 			args = append(args, when.condition)
 		} else {
 			// Searched CASE: WHEN condition (raw SQL)
-			sql.WriteString(fmt.Sprint(when.condition))
+			fmt.Fprint(&sql, when.condition)
 		}
 
 		sql.WriteString(" THEN ?")
@@ -250,12 +250,11 @@ func buildExprValue(val interface{}, dialect dialects.Dialect) (string, []interf
 
 // Build implements the Expression interface.
 func (n *NullIfExp) Build(dialect dialects.Dialect) (string, []interface{}) {
-	var args []interface{}
-
 	sql1, args1 := buildExprValue(n.expr1, dialect)
-	args = append(args, args1...)
-
 	sql2, args2 := buildExprValue(n.expr2, dialect)
+
+	args := make([]interface{}, 0, len(args1)+len(args2))
+	args = append(args, args1...)
 	args = append(args, args2...)
 
 	sql := "NULLIF(" + sql1 + ", " + sql2 + ")"

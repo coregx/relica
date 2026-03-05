@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 )
 
@@ -204,12 +205,49 @@ func hashParams(params []interface{}) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// extractTableName attempts to extract the table name from a SQL query.
-// This is a simple heuristic and may not work for complex queries.
-func extractTableName(_ string) string {
-	// TODO: Implement proper SQL parsing for table extraction
-	// For now, return empty string - table extraction can be improved later
-	return ""
+// extractTableName extracts the table name from a SQL query using simple heuristics.
+// It handles SELECT...FROM, INSERT INTO, UPDATE, and DELETE FROM patterns.
+// Complex queries (subqueries, CTEs) may not be fully parsed.
+func extractTableName(query string) string {
+	q := strings.TrimSpace(query)
+	if q == "" {
+		return ""
+	}
+
+	upper := strings.ToUpper(q)
+
+	idx, ok := findTableStart(upper)
+	if !ok {
+		return ""
+	}
+
+	rest := strings.TrimSpace(q[idx:])
+	if rest == "" {
+		return ""
+	}
+
+	if end := strings.IndexAny(rest, " \t\n\r(,;"); end >= 0 {
+		return rest[:end]
+	}
+	return rest
+}
+
+// findTableStart returns the byte offset right after the keyword preceding
+// the table name, and true if found. Returns 0, false otherwise.
+func findTableStart(upper string) (int, bool) {
+	switch {
+	case strings.HasPrefix(upper, "SELECT"), strings.HasPrefix(upper, "DELETE"):
+		if idx := strings.Index(upper, "FROM"); idx >= 0 {
+			return idx + 4, true
+		}
+	case strings.HasPrefix(upper, "INSERT"):
+		if idx := strings.Index(upper, "INTO"); idx >= 0 {
+			return idx + 4, true
+		}
+	case strings.HasPrefix(upper, "UPDATE"):
+		return 6, true
+	}
+	return 0, false
 }
 
 // Context keys for audit metadata

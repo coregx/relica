@@ -289,7 +289,7 @@ func (o *BasicOptimizer) analyzeWhereIndexes(where *WhereClause, table string) [
 		return nil
 	}
 
-	var recommendations []IndexRecommendation
+	recommendations := make([]IndexRecommendation, 0, len(where.Conditions))
 	compositeColumns, hasFunctions := o.analyzeConditions(where.Conditions, table, &recommendations)
 
 	// Add composite or single column index recommendations
