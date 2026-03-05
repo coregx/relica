@@ -324,7 +324,7 @@ func BenchmarkReplicaSelect(b *testing.B) {
     b.ResetTimer()
     for i := 0; i < b.N; i++ {
         var user User
-        db.Select("*").From("users").Where("id = ?", i%10000).One(&user)
+        db.Select().From("users").Where("id = ?", i%10000).One(&user)
     }
 }
 ```

@@ -105,7 +105,7 @@ func main() {
 
     // 3. Query data
     var users []User
-    err = db.Select("*").
+    err = db.Select().
         From("users").
         Where("age > ?", 18).
         All(&users)
@@ -177,11 +177,8 @@ type User struct {
 
 **Fluent API:**
 ```go
-// Convenience methods (shorter)
-db.Select("*").From("users").All(&users)
-
-// Traditional (still works)
-db.Builder().Select("*").From("users").All(&users)
+// Direct API (recommended)
+db.Select().From("users").All(&users)
 ```
 
 **Chaining methods:**
@@ -202,7 +199,7 @@ db.Select("id", "name", "email").
 
 ```go
 var users []User
-err := db.Select("*").
+err := db.Select().
     From("users").
     Where("age > ?", 18).
     All(&users)
@@ -212,7 +209,7 @@ err := db.Select("*").
 
 ```go
 var user User
-err := db.Select("*").
+err := db.Select().
     From("users").
     Where("id = ?", 1).
     One(&user)
@@ -461,7 +458,7 @@ Build queries conditionally:
 
 ```go
 func searchUsers(db *relica.DB, name string, minAge int) ([]User, error) {
-    qb := db.Select("*").From("users")
+    qb := db.Select().From("users")
 
     if name != "" {
         qb = qb.Where("name LIKE ?", "%"+name+"%")
@@ -484,7 +481,7 @@ func getUsers(db *relica.DB, page, pageSize int) ([]User, error) {
     offset := (page - 1) * pageSize
 
     var users []User
-    err := db.Select("*").
+    err := db.Select().
         From("users").
         OrderBy("id ASC").
         Limit(pageSize).
@@ -519,7 +516,7 @@ func countUsers(db *relica.DB, status string) (int, error) {
 
 ```go
 func bulkInsertUsers(db *relica.DB, users []User) error {
-    batch := db.Builder().BatchInsert("users", []string{"name", "email", "age"})
+    batch := db.BatchInsert("users", []string{"name", "email", "age"})
 
     for _, user := range users {
         batch.Values(user.Name, user.Email, user.Age)
@@ -623,10 +620,10 @@ Relica caches prepared statements automatically:
 
 ```go
 // First call: prepares statement
-db.Select("*").From("users").Where("id = ?", 1).One(&user)
+db.Select().From("users").Where("id = ?", 1).One(&user)
 
 // Subsequent calls: uses cached statement (<60ns lookup)
-db.Select("*").From("users").Where("id = ?", 2).One(&user)
+db.Select().From("users").Where("id = ?", 2).One(&user)
 ```
 
 ### Tip 2: Batch Operations
@@ -643,7 +640,7 @@ for _, user := range users {
 }
 
 // ✅ Fast (1 query, 3.3x faster)
-batch := db.Builder().BatchInsert("users", []string{"name", "email"})
+batch := db.BatchInsert("users", []string{"name", "email"})
 for _, user := range users {
     batch.Values(user.Name, user.Email)
 }
@@ -656,7 +653,7 @@ batch.Execute()
 ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 defer cancel()
 
-err := db.Select("*").
+err := db.Select().
     From("users").
     WithContext(ctx).
     All(&users)
@@ -710,10 +707,10 @@ defer db.Close()
 
 ```go
 // ❌ WRONG: Ignoring errors
-db.Select("*").From("users").All(&users)
+db.Select().From("users").All(&users)
 
 // ✅ CORRECT: Check errors
-err := db.Select("*").From("users").All(&users)
+err := db.Select().From("users").All(&users)
 if err != nil {
     log.Fatal(err)
 }

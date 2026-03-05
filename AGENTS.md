@@ -34,18 +34,18 @@ err := db.Model(&user).Insert("name", "email") // Only these fields
 
 ```go
 // CORRECT - Type-safe expressions
-db.Select("*").From("users").
+db.Select().From("users").
     Where(relica.Eq("status", 1)).
     Where(relica.GreaterThan("age", 18)).
     All(&users)
 
 // CORRECT - HashExp for simple equality
-db.Select("*").From("users").
+db.Select().From("users").
     Where(relica.HashExp{"status": "active", "role": "admin"}).
     All(&users)
 
 // CORRECT - Logical combinators
-db.Select("*").From("users").
+db.Select().From("users").
     Where(relica.And(
         relica.Eq("status", 1),
         relica.Or(
@@ -56,17 +56,17 @@ db.Select("*").From("users").
     All(&users)
 
 // CORRECT - IN clause
-db.Select("*").From("users").
+db.Select().From("users").
     Where(relica.In("status", 1, 2, 3)).
     All(&users)
 
 // CORRECT - LIKE with escaping
-db.Select("*").From("users").
+db.Select().From("users").
     Where(relica.Like("name", "john")).
     All(&users)
 
 // CORRECT - BETWEEN
-db.Select("*").From("orders").
+db.Select().From("orders").
     Where(relica.Between("created_at", start, end)).
     All(&orders)
 ```
@@ -77,12 +77,12 @@ db.Select("*").From("orders").
 
 ```go
 // ACCEPTABLE - Simple parameterized query
-db.Select("*").From("users").
+db.Select().From("users").
     Where("id = ?", userID).
     One(&user)
 
 // ACCEPTABLE - Complex custom SQL
-db.Select("*").From("users").
+db.Select().From("users").
     Where("LOWER(email) = LOWER(?)", email).
     All(&users)
 ```
@@ -129,17 +129,17 @@ db.Model(&user).Insert()
 
 ```go
 // IS NULL - use Eq with nil
-db.Select("*").From("users").
+db.Select().From("users").
     Where(relica.Eq("deleted_at", nil)).  // → deleted_at IS NULL
     All(&users)
 
 // IS NOT NULL - use NotEq with nil
-db.Select("*").From("users").
+db.Select().From("users").
     Where(relica.NotEq("deleted_at", nil)).  // → deleted_at IS NOT NULL
     All(&users)
 
 // Alternative: HashExp
-db.Select("*").From("users").
+db.Select().From("users").
     Where(relica.HashExp{"deleted_at": nil}).  // → deleted_at IS NULL
     All(&users)
 ```
@@ -154,12 +154,15 @@ db.Select("*").From("users").
 
 **Empty slice behavior:**
 ```go
-// In() with empty slice → 0=1 (always false, returns no rows)
-ids := []int64{}
-db.Select("*").From("users").Where(relica.In("id", ids)).All(&users)  // → WHERE 0=1
+// In() with no values → 0=1 (always false, returns no rows)
+db.Select().From("users").Where(relica.In("id")).All(&users)  // → WHERE 0=1
 
-// NotIn() with empty slice → ignored (returns all rows)
-db.Select("*").From("users").Where(relica.NotIn("id", ids)).All(&users)  // → no WHERE
+// NotIn() with no values → ignored (returns all rows)
+db.Select().From("users").Where(relica.NotIn("id")).All(&users)  // → no WHERE
+
+// To pass a dynamic slice, use HashExp with []interface{}:
+ids := []interface{}{1, 2, 3}
+db.Select().From("users").Where(relica.HashExp{"id": ids}).All(&users)  // → WHERE id IN (1, 2, 3)
 ```
 
 ### String Operators
@@ -275,7 +278,7 @@ func CreateUser(db *relica.DB, name, email string) (*User, error) {
 func FindActiveAdmins(db *relica.DB, minAge int) ([]User, error) {
     var users []User
 
-    err := db.Select("*").From("users").
+    err := db.Select().From("users").
         Where(relica.And(
             relica.Eq("status", "active"),
             relica.Eq("role", "admin"),
@@ -296,12 +299,12 @@ func FindActiveAdmins(db *relica.DB, minAge int) ([]User, error) {
 
 ```go
 // CORRECT
-func UpdateUserStatus(db *relica.DB, userID int, status string) error {
-    return db.Transactional(func(tx *relica.Tx) error {
+func UpdateUserStatus(ctx context.Context, db *relica.DB, userID int, status string) error {
+    return db.Transactional(ctx, func(tx *relica.Tx) error {
         var user User
 
         // Find user
-        err := tx.Builder().Select("*").From("users").
+        err := tx.Select().From("users").
             Where(relica.Eq("id", userID)).
             One(&user)
         if err != nil {
@@ -324,7 +327,7 @@ func UpdateUserStatus(db *relica.DB, userID int, status string) error {
 func SearchUsers(db *relica.DB, query string) ([]User, error) {
     var users []User
 
-    err := db.Select("*").From("users").
+    err := db.Select().From("users").
         Where(relica.Or(
             relica.Like("name", query),
             relica.Like("email", query),
@@ -359,12 +362,12 @@ db.Model(&user).Insert()
 
 ```go
 // WRONG - SQL injection risk!
-db.Select("*").From("users").
+db.Select().From("users").
     Where("name = '" + name + "'").
     All(&users)
 
 // CORRECT - Parameterized
-db.Select("*").From("users").
+db.Select().From("users").
     Where(relica.Eq("name", name)).
     All(&users)
 ```
@@ -380,7 +383,7 @@ db.Update("users").
 
 // CORRECT - Load, modify, save
 var user User
-db.Select("*").From("users").Where(relica.Eq("id", id)).One(&user)
+db.Select().From("users").Where(relica.Eq("id", id)).One(&user)
 user.Status = "active"
 db.Model(&user).Update("status")
 ```

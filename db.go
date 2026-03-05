@@ -141,7 +141,7 @@ type SelectQuery struct {
 //	}
 //	defer tx.Rollback() // Safe to call even after Commit
 //
-//	_, err = tx.Builder().Insert("users", data).Execute()
+//	_, err = tx.Insert("users", data).Execute()
 //	if err != nil {
 //	    return err
 //	}
@@ -703,6 +703,48 @@ func (d *DB) Delete(table string) *DeleteQuery {
 	return d.Builder().Delete(table)
 }
 
+// BatchInsert creates a new batch INSERT query for inserting multiple rows efficiently.
+//
+// This is a convenience method equivalent to db.Builder().BatchInsert(table, columns).
+//
+// Example:
+//
+//	result, err := db.BatchInsert("users", []string{"name", "email"}).
+//	    Values("Alice", "alice@example.com").
+//	    Values("Bob", "bob@example.com").
+//	    Execute()
+func (d *DB) BatchInsert(table string, columns []string) *BatchInsertQuery {
+	return d.Builder().BatchInsert(table, columns)
+}
+
+// BatchUpdate creates a new batch UPDATE query for updating multiple rows with different values.
+//
+// This is a convenience method equivalent to db.Builder().BatchUpdate(table, keyColumn).
+//
+// Example:
+//
+//	result, err := db.BatchUpdate("users", "id").
+//	    Set(1, map[string]interface{}{"name": "Alice"}).
+//	    Set(2, map[string]interface{}{"name": "Bob"}).
+//	    Execute()
+func (d *DB) BatchUpdate(table, keyColumn string) *BatchUpdateQuery {
+	return d.Builder().BatchUpdate(table, keyColumn)
+}
+
+// Upsert creates a new UPSERT query (INSERT ... ON CONFLICT).
+//
+// This is a convenience method equivalent to db.Builder().Upsert(table, values).
+//
+// Example:
+//
+//	result, err := db.Upsert("users", map[string]interface{}{
+//	    "email": "alice@example.com",
+//	    "name":  "Alice",
+//	}).OnConflict("email").DoUpdate("name").Execute()
+func (d *DB) Upsert(table string, values map[string]interface{}) *UpsertQuery {
+	return d.Builder().Upsert(table, values)
+}
+
 // Begin starts a transaction with default options.
 //
 // The transaction must be committed or rolled back to release resources.
@@ -717,7 +759,7 @@ func (d *DB) Delete(table string) *DeleteQuery {
 //	defer tx.Rollback() // Safe even after Commit
 //
 //	// Use transaction
-//	_, err = tx.Builder().Insert("users", data).Execute()
+//	_, err = tx.Insert("users", data).Execute()
 //	if err != nil {
 //	    return err
 //	}

@@ -6,6 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.10.0] - 2026-03-05
+
+### Added
+
+**Direct API Shortcuts** - All operations available without `Builder()`
+
+- `db.BatchInsert(table, columns)` — batch INSERT without `db.Builder().BatchInsert()`
+- `db.BatchUpdate(table, keyColumn)` — batch UPDATE without `db.Builder().BatchUpdate()`
+- `db.Upsert(table, values)` — UPSERT without `db.Builder().Upsert()`
+- All query types now accessible directly: `db.Select()`, `db.Insert()`, `db.Update()`, `db.Delete()`, `db.BatchInsert()`, `db.BatchUpdate()`, `db.Upsert()`, `db.Model()`
+
+**Comprehensive Test Coverage** - Enterprise-grade test suite for awesome-go submission
+
+- **internal/dialects**: 0% → **100%** coverage
+- **internal/util**: 41.2% → **97.1%** coverage
+- **db.go (public API)**: 66.3% → **99.2%** coverage
+- Total coverage: **80.7% → 88.3%**, test cases: **650+ → 1500+**
+
+### Fixed
+
+- `extractTableName()` in security/auditor now parses SQL instead of returning empty string
+- All golangci-lint issues resolved (misspell, prealloc, staticcheck, cyclop)
+
+### Changed
+
+- **Documentation**: all examples use direct API (`db.Select()`) instead of `db.Builder().Select()`
+- **Documentation**: fixed incorrect method signatures, non-compiling examples
+- **Documentation**: validated all public docs against actual code
+
+---
+
 ## [0.9.1] - 2025-12-23
 
 ### Added

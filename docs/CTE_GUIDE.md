@@ -41,15 +41,13 @@ import (
 // Find high-value customers using CTE
 func GetHighValueCustomers(db *relica.DB) ([]Customer, error) {
     // CTE: Calculate total spending per user
-    orderTotals := db.Builder().
-        Select("user_id", "SUM(total) as total_spent").
+    orderTotals := db.Select("user_id", "SUM(total) as total_spent").
         From("orders").
         GroupBy("user_id")
 
     // Main query: Filter high-value customers
     var customers []Customer
-    err := db.Builder().
-        Select("*").
+    err := db.Select().
         With("order_totals", orderTotals).
         From("order_totals").
         Where("total_spent > ?", 1000).
@@ -80,8 +78,7 @@ SELECT * FROM "order_totals" WHERE total_spent > $1
 // Join CTE results with another table
 func GetTopCustomerDetails(db *relica.DB) ([]CustomerDetail, error) {
     // CTE: Top customers by sales
-    topCustomers := db.Builder().
-        Select("user_id", "SUM(total) as total_spent").
+    topCustomers := db.Select("user_id", "SUM(total) as total_spent").
         From("orders").
         GroupBy("user_id").
         Having("SUM(total) > ?", 5000)
@@ -93,8 +90,7 @@ func GetTopCustomerDetails(db *relica.DB) ([]CustomerDetail, error) {
     }
     var details []CustomerDetail
 
-    err := db.Builder().
-        Select("u.name", "u.email", "tc.total_spent").
+    err := db.Select("u.name", "u.email", "tc.total_spent").
         With("top_customers", topCustomers).
         From("users u").
         InnerJoin("top_customers tc", "u.id = tc.user_id").
@@ -125,14 +121,12 @@ ORDER BY "tc"."total_spent" DESC
 // Use CTE in subquery
 func GetCustomersAboveAverage(db *relica.DB) ([]Customer, error) {
     // CTE: Customer spending
-    customerSpending := db.Builder().
-        Select("user_id", "SUM(total) as total_spent").
+    customerSpending := db.Select("user_id", "SUM(total) as total_spent").
         From("orders").
         GroupBy("user_id")
 
     var customers []Customer
-    err := db.Builder().
-        Select("*").
+    err := db.Select().
         With("customer_spending", customerSpending).
         From("customers").
         Where("id IN (SELECT user_id FROM customer_spending WHERE total_spent > 1000)").
@@ -152,14 +146,12 @@ You can define multiple CTEs and reference them in the main query or in other CT
 // Multiple CTEs for complex analysis
 func GetEngagedPremiumUsers(db *relica.DB) ([]UserEngagement, error) {
     // CTE 1: Active users
-    activeUsers := db.Builder().
-        Select("id", "name").
+    activeUsers := db.Select("id", "name").
         From("users").
         Where("status = ?", "active")
 
     // CTE 2: Recent orders
-    recentOrders := db.Builder().
-        Select("user_id", "COUNT(*) as order_count").
+    recentOrders := db.Select("user_id", "COUNT(*) as order_count").
         From("orders").
         Where("created_at > ?", "2024-01-01").
         GroupBy("user_id")
@@ -171,8 +163,7 @@ func GetEngagedPremiumUsers(db *relica.DB) ([]UserEngagement, error) {
     }
     var users []UserEngagement
 
-    err := db.Builder().
-        Select("u.name", "o.order_count").
+    err := db.Select("u.name", "o.order_count").
         With("active_users", activeUsers).
         With("recent_orders", recentOrders).
         From("active_users u").
@@ -207,21 +198,18 @@ INNER JOIN "recent_orders" AS "o" ON u.id = o.user_id
 // Second CTE references first CTE
 func GetHighValueActiveCustomers(db *relica.DB) ([]Customer, error) {
     // CTE 1: Calculate user spending
-    userSpending := db.Builder().
-        Select("user_id", "SUM(total) as total_spent").
+    userSpending := db.Select("user_id", "SUM(total) as total_spent").
         From("orders").
         GroupBy("user_id")
 
     // CTE 2: Filter high spenders (references CTE 1)
-    highSpenders := db.Builder().
-        Select("user_id", "total_spent").
+    highSpenders := db.Select("user_id", "total_spent").
         From("user_spending").  // References first CTE!
         Where("total_spent > ?", 5000)
 
     // Main query: Get user details
     var customers []Customer
-    err := db.Builder().
-        Select("u.*", "hs.total_spent").
+    err := db.Select("u.*", "hs.total_spent").
         With("user_spending", userSpending).
         With("high_spenders", highSpenders).
         From("users u").
@@ -264,14 +252,12 @@ Recursive CTEs traverse hierarchical data structures like organizational charts,
 // Traverse employee hierarchy from CEO down
 func GetOrgChart(db *relica.DB) ([]Employee, error) {
     // Anchor: Top-level employees (no manager)
-    anchor := db.Builder().
-        Select("id", "name", "manager_id", "1 as level").
+    anchor := db.Select("id", "name", "manager_id", "1 as level").
         From("employees").
         Where("manager_id IS NULL")
 
     // Recursive: Employees with managers
-    recursive := db.Builder().
-        Select("e.id", "e.name", "e.manager_id", "h.level + 1").
+    recursive := db.Select("e.id", "e.name", "e.manager_id", "h.level + 1").
         From("employees e").
         InnerJoin("hierarchy h", "e.manager_id = h.id")
 
@@ -287,8 +273,7 @@ func GetOrgChart(db *relica.DB) ([]Employee, error) {
     }
     var employees []Employee
 
-    err := db.Builder().
-        Select("*").
+    err := db.Select().
         WithRecursive("hierarchy", cte).
         From("hierarchy").
         OrderBy("level", "name").
@@ -330,14 +315,12 @@ ORDER BY "level", "name"
 // Traverse category hierarchy
 func GetCategoryTree(db *relica.DB, rootID int) ([]Category, error) {
     // Anchor: Root category
-    anchor := db.Builder().
-        Select("id", "name", "parent_id", "1 as depth", "name as path").
+    anchor := db.Select("id", "name", "parent_id", "1 as depth", "name as path").
         From("categories").
         Where("id = ?", rootID)
 
     // Recursive: Child categories
-    recursive := db.Builder().
-        Select("c.id", "c.name", "c.parent_id", "t.depth + 1", "t.path || '/' || c.name").
+    recursive := db.Select("c.id", "c.name", "c.parent_id", "t.depth + 1", "t.path || '/' || c.name").
         From("categories c").
         InnerJoin("category_tree t", "c.parent_id = t.id")
 
@@ -352,8 +335,7 @@ func GetCategoryTree(db *relica.DB, rootID int) ([]Category, error) {
     }
     var categories []Category
 
-    err := db.Builder().
-        Select("*").
+    err := db.Select().
         WithRecursive("category_tree", cte).
         From("category_tree").
         OrderBy("path").
@@ -379,14 +361,12 @@ Depth  Path
 // Calculate total cost of product including all components
 func GetBillOfMaterials(db *relica.DB, productID int) ([]BOM, error) {
     // Anchor: Top-level product
-    anchor := db.Builder().
-        Select("id", "name", "cost", "1 as quantity", "1 as level").
+    anchor := db.Select("id", "name", "cost", "1 as quantity", "1 as level").
         From("parts").
         Where("id = ?", productID)
 
     // Recursive: Components
-    recursive := db.Builder().
-        Select("p.id", "p.name", "p.cost", "bom.quantity * c.quantity", "bom.level + 1").
+    recursive := db.Select("p.id", "p.name", "p.cost", "bom.quantity * c.quantity", "bom.level + 1").
         From("parts p").
         InnerJoin("components c", "p.id = c.part_id").
         InnerJoin("bom", "c.assembly_id = bom.id")
@@ -402,8 +382,7 @@ func GetBillOfMaterials(db *relica.DB, productID int) ([]BOM, error) {
     }
     var bom []BOM
 
-    err := db.Builder().
-        Select("*").
+    err := db.Select().
         WithRecursive("bom", cte).
         From("bom").
         OrderBy("level", "name").
@@ -418,14 +397,12 @@ func GetBillOfMaterials(db *relica.DB, productID int) ([]BOM, error) {
 ```go
 // Prevent infinite recursion with depth limit
 func GetCategoryTreeLimited(db *relica.DB, rootID int, maxDepth int) ([]Category, error) {
-    anchor := db.Builder().
-        Select("id", "name", "parent_id", "1 as depth").
+    anchor := db.Select("id", "name", "parent_id", "1 as depth").
         From("categories").
         Where("id = ?", rootID)
 
     // Add depth limit in recursive part
-    recursive := db.Builder().
-        Select("c.id", "c.name", "c.parent_id", "t.depth + 1").
+    recursive := db.Select("c.id", "c.name", "c.parent_id", "t.depth + 1").
         From("categories c").
         InnerJoin("category_tree t", "c.parent_id = t.id").
         Where("t.depth < ?", maxDepth)  // Stop at max depth
@@ -433,8 +410,7 @@ func GetCategoryTreeLimited(db *relica.DB, rootID int, maxDepth int) ([]Category
     cte := anchor.UnionAll(recursive)
 
     var categories []Category
-    err := db.Builder().
-        Select("*").
+    err := db.Select().
         WithRecursive("category_tree", cte).
         From("category_tree").
         All(&categories)
@@ -449,14 +425,12 @@ func GetCategoryTreeLimited(db *relica.DB, rootID int, maxDepth int) ([]Category
 // Detect cycles in hierarchical data
 func FindCycles(db *relica.DB) ([]Cycle, error) {
     // Anchor: Start nodes
-    anchor := db.Builder().
-        Select("id", "parent_id", "ARRAY[id] as path", "false as is_cycle").
+    anchor := db.Select("id", "parent_id", "ARRAY[id] as path", "false as is_cycle").
         From("nodes").
         Where("parent_id IS NULL")
 
     // Recursive: Traverse with cycle detection
-    recursive := db.Builder().
-        Select("n.id", "n.parent_id", "t.path || n.id", "n.id = ANY(t.path)").
+    recursive := db.Select("n.id", "n.parent_id", "t.path || n.id", "n.id = ANY(t.path)").
         From("nodes n").
         InnerJoin("tree t", "n.parent_id = t.id").
         Where("NOT t.is_cycle")  // Stop traversing cycles
@@ -470,8 +444,7 @@ func FindCycles(db *relica.DB) ([]Cycle, error) {
     }
     var cycles []Cycle
 
-    err := db.Builder().
-        Select("*").
+    err := db.Select().
         WithRecursive("tree", cte).
         From("tree").
         Where("is_cycle = ?", true).
@@ -497,13 +470,12 @@ Both CTEs and subqueries achieve similar goals, but CTEs offer better readabilit
 **Example**: Complex multi-step query
 ```go
 // ✅ CLEAR: Step-by-step logic with CTEs
-activeUsers := db.Builder().Select("id").From("users").Where("active = ?", true)
-highSpenders := db.Builder().Select("user_id").From("orders").GroupBy("user_id").Having("SUM(total) > ?", 1000)
+activeUsers := db.Select("id").From("users").Where("active = ?", true)
+highSpenders := db.Select("user_id").From("orders").GroupBy("user_id").Having("SUM(total) > ?", 1000)
 
-db.Builder().
+db.Select().
     With("active_users", activeUsers).
     With("high_spenders", highSpenders).
-    Select("*").
     From("active_users").
     Where("id IN (SELECT user_id FROM high_spenders)")
 ```
@@ -519,8 +491,8 @@ db.Builder().
 **Example**: Simple filter
 ```go
 // ✅ SIMPLE: Inline subquery
-subquery := db.Builder().Select("user_id").From("orders")
-db.Builder().Select("*").From("users").Where(relica.In("id", subquery))
+subquery := db.Select("user_id").From("orders")
+db.Select().From("users").Where(relica.In("id", subquery))
 ```
 
 ### Performance Comparison
@@ -693,11 +665,11 @@ CREATE INDEX idx_employees_id ON employees(id);
 1. **Don't use CTE for simple queries**
    ```go
    // ❌ Overkill
-   cte := db.Builder().Select("id").From("users")
-   db.Builder().With("users_cte", cte).Select("*").From("users_cte")
+   cte := db.Select("id").From("users")
+   db.Select().With("users_cte", cte).From("users_cte")
 
    // ✅ Simple
-   db.Builder().Select("id").From("users")
+   db.Select("id").From("users")
    ```
 
 2. **Don't forget UNION ALL in recursive CTEs**
@@ -712,10 +684,10 @@ CREATE INDEX idx_employees_id ON employees(id);
 3. **Don't create infinite recursion**
    ```go
    // ❌ No termination condition
-   recursive := db.Builder().Select("*").From("nodes n").InnerJoin("tree t", "n.parent_id = t.id")
+   recursive := db.Select().From("nodes n").InnerJoin("tree t", "n.parent_id = t.id")
 
    // ✅ Add depth limit
-   recursive := db.Builder().Select("*").From("nodes n").InnerJoin("tree t", "n.parent_id = t.id").Where("t.depth < ?", 100)
+   recursive := db.Select().From("nodes n").InnerJoin("tree t", "n.parent_id = t.id").Where("t.depth < ?", 100)
    ```
 
 4. **Don't use empty CTE names**
@@ -741,20 +713,17 @@ CREATE INDEX idx_employees_id ON employees(id);
 // Multi-step data transformation
 func TransformCustomerData(db *relica.DB) ([]CustomerMetrics, error) {
     // Step 1: Raw order data
-    rawOrders := db.Builder().
-        Select("user_id", "total", "created_at").
+    rawOrders := db.Select("user_id", "total", "created_at").
         From("orders").
         Where("status = ?", "completed")
 
     // Step 2: Aggregate by month
-    monthlyStats := db.Builder().
-        Select("user_id", "DATE_TRUNC('month', created_at) as month", "SUM(total) as monthly_total").
+    monthlyStats := db.Select("user_id", "DATE_TRUNC('month', created_at) as month", "SUM(total) as monthly_total").
         From("raw_orders").
         GroupBy("user_id", "DATE_TRUNC('month', created_at)")
 
     // Step 3: Calculate growth
-    growth := db.Builder().
-        Select("user_id", "month", "monthly_total", "LAG(monthly_total) OVER (PARTITION BY user_id ORDER BY month) as prev_month").
+    growth := db.Select("user_id", "month", "monthly_total", "LAG(monthly_total) OVER (PARTITION BY user_id ORDER BY month) as prev_month").
         From("monthly_stats")
 
     type CustomerMetrics struct {
@@ -765,11 +734,10 @@ func TransformCustomerData(db *relica.DB) ([]CustomerMetrics, error) {
     }
     var metrics []CustomerMetrics
 
-    err := db.Builder().
+    err := db.Select("user_id", "month", "monthly_total", "(monthly_total - prev_month) / prev_month * 100 as growth").
         With("raw_orders", rawOrders).
         With("monthly_stats", monthlyStats).
         With("growth", growth).
-        Select("user_id", "month", "monthly_total", "(monthly_total - prev_month) / prev_month * 100 as growth").
         From("growth").
         Where("prev_month IS NOT NULL").
         All(&metrics)
@@ -784,21 +752,18 @@ func TransformCustomerData(db *relica.DB) ([]CustomerMetrics, error) {
 // Calculate total sales for each department and all subdepartments
 func GetDepartmentSalesRollup(db *relica.DB) ([]DeptSales, error) {
     // Recursive: Traverse department hierarchy
-    anchor := db.Builder().
-        Select("id", "parent_id", "name", "0 as level").
+    anchor := db.Select("id", "parent_id", "name", "0 as level").
         From("departments").
         Where("parent_id IS NULL")
 
-    recursive := db.Builder().
-        Select("d.id", "d.parent_id", "d.name", "dh.level + 1").
+    recursive := db.Select("d.id", "d.parent_id", "d.name", "dh.level + 1").
         From("departments d").
         InnerJoin("dept_hierarchy dh", "d.parent_id = dh.id")
 
     hierarchy := anchor.UnionAll(recursive)
 
     // Calculate sales per department
-    deptSales := db.Builder().
-        Select("department_id", "SUM(amount) as sales").
+    deptSales := db.Select("department_id", "SUM(amount) as sales").
         From("sales").
         GroupBy("department_id")
 
@@ -809,10 +774,9 @@ func GetDepartmentSalesRollup(db *relica.DB) ([]DeptSales, error) {
     }
     var sales []DeptSales
 
-    err := db.Builder().
+    err := db.Select("dh.name", "dh.level", "COALESCE(SUM(ds.sales), 0) as total_sales").
         With("dept_hierarchy", hierarchy).
         With("dept_sales", deptSales).
-        Select("dh.name", "dh.level", "COALESCE(SUM(ds.sales), 0) as total_sales").
         From("dept_hierarchy dh").
         LeftJoin("dept_sales ds", "dh.id = ds.department_id").
         GroupBy("dh.name", "dh.level").
@@ -829,14 +793,12 @@ func GetDepartmentSalesRollup(db *relica.DB) ([]DeptSales, error) {
 // Find missing order numbers
 func FindMissingOrderNumbers(db *relica.DB) ([]int, error) {
     // Generate expected sequence
-    expectedSeq := db.Builder().
-        Select("generate_series(1, (SELECT MAX(order_number) FROM orders)) as expected")
+    expectedSeq := db.Select("generate_series(1, (SELECT MAX(order_number) FROM orders)) as expected")
 
     // Find gaps
     var missing []int
-    err := db.Builder().
+    err := db.Select("expected").
         With("expected_sequence", expectedSeq).
-        Select("expected").
         From("expected_sequence").
         Where("expected NOT IN (SELECT order_number FROM orders)").
         All(&missing)
@@ -851,8 +813,7 @@ func FindMissingOrderNumbers(db *relica.DB) ([]int, error) {
 // Calculate running totals with CTE
 func GetRunningTotals(db *relica.DB) ([]DailySales, error) {
     // Daily sales
-    dailySales := db.Builder().
-        Select("DATE(created_at) as sale_date", "SUM(total) as daily_total").
+    dailySales := db.Select("DATE(created_at) as sale_date", "SUM(total) as daily_total").
         From("orders").
         GroupBy("DATE(created_at)")
 
@@ -863,9 +824,8 @@ func GetRunningTotals(db *relica.DB) ([]DailySales, error) {
     }
     var sales []DailySales
 
-    err := db.Builder().
+    err := db.Select("sale_date", "daily_total", "SUM(daily_total) OVER (ORDER BY sale_date) as running_total").
         With("daily_sales", dailySales).
-        Select("sale_date", "daily_total", "SUM(daily_total) OVER (ORDER BY sale_date) as running_total").
         From("daily_sales").
         OrderBy("sale_date").
         All(&sales)
@@ -882,14 +842,14 @@ func GetRunningTotals(db *relica.DB) ([]DailySales, error) {
 ```go
 // ❌ ERROR: UNION removes duplicates (breaks recursion)
 cte := anchor.Union(recursive)
-db.Builder().WithRecursive("tree", cte)
+db.Select().WithRecursive("tree", cte).From("tree").All(&results)
 ```
 
 **Solution**: Always use UNION ALL for recursive CTEs
 ```go
 // ✅ GOOD
 cte := anchor.UnionAll(recursive)
-db.Builder().WithRecursive("tree", cte)
+db.Select().WithRecursive("tree", cte).From("tree").All(&results)
 ```
 
 ### Issue: Infinite Recursion
@@ -897,8 +857,7 @@ db.Builder().WithRecursive("tree", cte)
 **Problem**: No termination condition
 ```go
 // ❌ BAD: No depth limit
-recursive := db.Builder().
-    Select("c.id", "t.depth + 1").
+recursive := db.Select("c.id", "t.depth + 1").
     From("categories c").
     InnerJoin("tree t", "c.parent_id = t.id")
 ```
@@ -906,15 +865,13 @@ recursive := db.Builder().
 **Solution**: Add depth limit or cycle detection
 ```go
 // ✅ GOOD: Depth limit
-recursive := db.Builder().
-    Select("c.id", "t.depth + 1").
+recursive := db.Select("c.id", "t.depth + 1").
     From("categories c").
     InnerJoin("tree t", "c.parent_id = t.id").
     Where("t.depth < ?", 10)
 
 // ✅ BETTER: Cycle detection (PostgreSQL)
-recursive := db.Builder().
-    Select("c.id", "t.path || c.id").
+recursive := db.Select("c.id", "t.path || c.id").
     From("categories c").
     InnerJoin("tree t", "c.parent_id = t.id").
     Where("NOT c.id = ANY(t.path)")
@@ -932,8 +889,8 @@ SELECT * FROM large_cte WHERE id = 1;
 **Solution**: Upgrade to PostgreSQL 12+ or use subquery
 ```go
 // Alternative: Use subquery for older databases
-subquery := db.Builder().Select("*").From("huge_table")
-db.Builder().FromSelect(subquery, "t").Where("id = ?", 1)
+subquery := db.Select().From("huge_table")
+db.Select().FromSelect(subquery, "t").Where("id = ?", 1)
 ```
 
 ### Issue: CTE Name Collision
@@ -941,7 +898,7 @@ db.Builder().FromSelect(subquery, "t").Where("id = ?", 1)
 **Problem**: Duplicate CTE names
 ```go
 // ❌ Second "stats" overwrites first
-db.Builder().
+db.Select().
     With("stats", cte1).
     With("stats", cte2) // Overwrites!
 ```
@@ -949,7 +906,7 @@ db.Builder().
 **Solution**: Use unique names
 ```go
 // ✅ GOOD
-db.Builder().
+db.Select().
     With("order_stats", cte1).
     With("user_stats", cte2)
 ```

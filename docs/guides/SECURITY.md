@@ -3,6 +3,16 @@
 > **Relica Security Features** - SQL Injection Prevention & Audit Logging
 >
 > **Last Updated**: 2025-11-13
+>
+> **Note**: Security features (`WithValidator`, `WithAuditLog`) use types from
+> `internal/security`, which is an internal package. These features are available
+> for use within the same Go module only. For external usage, the public API
+> exports these option functions via `relica.WithValidator()` and
+> `relica.WithAuditLog()` — but the validator/auditor types themselves must be
+> constructed from within the module. In practice, **these features are designed
+> for embedding Relica in your own Go module alongside the internal packages**.
+> The primary SQL injection defense is parameterized queries (all builder methods
+> use `?` placeholders, never string interpolation).
 
 ---
 
@@ -33,7 +43,7 @@ import (
 validator := security.NewValidator()
 
 // Enable validation on DB connection
-db, err := relica.NewDB("postgres", dsn,
+db, err := relica.Open("postgres", dsn,
     relica.WithValidator(validator),
 )
 if err != nil {
@@ -71,9 +81,9 @@ db.ExecContext(ctx, "EXEC xp_cmdshell 'dir'")                            // Comm
 Maximum security - blocks even legitimate OR/AND/UNION queries:
 
 ```go
-validator := security.NewValidator(security.WithStrictMode())
+validator := security.NewValidator(security.WithStrict(true))
 
-db, err := relica.NewDB("postgres", dsn,
+db, err := relica.Open("postgres", dsn,
     relica.WithValidator(validator),
 )
 
@@ -158,7 +168,7 @@ logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 auditor := security.NewAuditor(logger, security.AuditWrites)
 
 // Enable auditing on DB connection
-db, err := relica.NewDB("postgres", dsn,
+db, err := relica.Open("postgres", dsn,
     relica.WithAuditLog(auditor),
 )
 if err != nil {
@@ -341,7 +351,7 @@ func setupSecureDB(dsn string) (*relica.DB, error) {
     auditor := security.NewAuditor(logger, security.AuditReads)
 
     // Create DB with all security features enabled
-    db, err := relica.NewDB("postgres", dsn,
+    db, err := relica.Open("postgres", dsn,
         relica.WithValidator(validator),
         relica.WithAuditLog(auditor),
         relica.WithMaxOpenConns(25),
@@ -492,13 +502,13 @@ func TestAuditLogging(t *testing.T) {
 ✅ **Enable validation for user-facing applications**
 ```go
 validator := security.NewValidator()
-db, _ := relica.NewDB("postgres", dsn, relica.WithValidator(validator))
+db, _ := relica.Open("postgres", dsn, relica.WithValidator(validator))
 ```
 
 ✅ **Use audit logging for compliance requirements**
 ```go
 auditor := security.NewAuditor(logger, security.AuditReads)
-db, _ := relica.NewDB("postgres", dsn, relica.WithAuditLog(auditor))
+db, _ := relica.Open("postgres", dsn, relica.WithAuditLog(auditor))
 ```
 
 ✅ **Add context metadata for forensics**

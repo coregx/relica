@@ -23,15 +23,14 @@ import (
 )
 
 func main() {
-    db, err := relica.NewDB("postgres", "postgres://...")
+    db, err := relica.Open("postgres", "postgres://...")
     if err != nil {
         log.Fatal(err)
     }
     defer db.Close()
 
     // Analyze a query without executing it
-    plan, err := db.Builder().
-        Select("*").
+    plan, err := db.Select().
         From("users").
         Where("email = ?", "alice@example.com").
         Explain()
@@ -56,8 +55,7 @@ func main() {
 Analyzes the query plan **without executing the query**. Safe for production.
 
 ```go
-plan, err := db.Builder().
-    Select("*").
+plan, err := db.Select().
     From("users").
     Where("status = ?", 1).
     Explain()
@@ -82,8 +80,7 @@ plan, err := db.Builder().
 Analyzes the query plan **and executes the query**. Returns actual metrics.
 
 ```go
-plan, err := db.Builder().
-    Select("*").
+plan, err := db.Select().
     From("orders").
     Where("total > ?", 1000).
     ExplainAnalyze()
@@ -144,8 +141,7 @@ type QueryPlan struct {
 ### 1. Verify Index Usage
 
 ```go
-plan, err := db.Builder().
-    Select("*").
+plan, err := db.Select().
     From("users").
     Where("email = ?", "alice@example.com").
     Explain()
@@ -159,8 +155,7 @@ if !plan.UsesIndex {
 ### 2. Detect Full Table Scans
 
 ```go
-plan, err := db.Builder().
-    Select("*").
+plan, err := db.Select().
     From("large_table").
     Where("status = ?", 1).
     Explain()
@@ -176,8 +171,7 @@ if plan.FullScan {
 
 ```go
 // Before optimization
-planBefore, _ := db.Builder().
-    Select("*").
+planBefore, _ := db.Select().
     From("users").
     Where("status = ?", 1).
     Explain()
@@ -186,8 +180,7 @@ planBefore, _ := db.Builder().
 db.Exec("CREATE INDEX users_status_idx ON users(status)")
 
 // After optimization
-planAfter, _ := db.Builder().
-    Select("*").
+planAfter, _ := db.Select().
     From("users").
     Where("status = ?", 1).
     Explain()
@@ -201,8 +194,7 @@ fmt.Printf("Cost reduction: %.2f -> %.2f (%.1f%%)\n",
 ### 4. Analyze Join Performance
 
 ```go
-plan, err := db.Builder().
-    Select("u.name", "COUNT(o.id) as order_count").
+plan, err := db.Select("u.name", "COUNT(o.id) as order_count").
     From("users u").
     LeftJoin("orders o", "u.id = o.user_id").
     GroupBy("u.id", "u.name").
@@ -226,8 +218,7 @@ import "time"
 
 // Analyze without execution
 explainStart := time.Now()
-plan, err := db.Builder().
-    Select("*").
+plan, err := db.Select().
     From("large_table").
     Where("column = ?", value).
     Explain()
@@ -238,8 +229,7 @@ fmt.Printf("Estimated cost: %.2f\n", plan.Cost)
 
 // Execute with analysis
 analyzeStart := time.Now()
-analyzePlan, err := db.Builder().
-    Select("*").
+analyzePlan, err := db.Select().
     From("large_table").
     Where("column = ?", value).
     ExplainAnalyze()
@@ -274,8 +264,7 @@ err = query.All(&results)
 
 ```go
 func TestExpensiveQuery(t *testing.T) {
-    plan, err := db.Builder().
-        Select("*").
+    plan, err := db.Select().
         From("users").
         InnerJoin("orders", "users.id = orders.user_id").
         Where("orders.total > ?", 1000).
@@ -310,8 +299,7 @@ func executeWithMonitoring(query *relica.SelectQuery) error {
 
 ```go
 // Get actual execution metrics
-plan, err := db.Builder().
-    Select("*").
+plan, err := db.Select().
     From("users").
     Where("created_at > ?", time.Now().Add(-24*time.Hour)).
     ExplainAnalyze()
@@ -384,9 +372,8 @@ fmt.Printf("Index Name: %s\n", plan.IndexName)         // users_email_idx
 
 **Example Output:**
 ```go
-db, _ := relica.NewDB("mysql", "user:pass@tcp(localhost:3306)/db")
-plan, _ := db.Builder().
-    Select("*").
+db, _ := relica.Open("mysql", "user:pass@tcp(localhost:3306)/db")
+plan, _ := db.Select().
     From("users").
     Where("email = ?", "alice@example.com").
     Explain()
@@ -426,9 +413,8 @@ fmt.Printf("Full Scan: %v\n", plan.FullScan)           // false
 
 **Example Output:**
 ```go
-db, _ := relica.NewDB("sqlite3", "file:test.db")
-plan, _ := db.Builder().
-    Select("*").
+db, _ := relica.Open("sqlite3", "file:test.db")
+plan, _ := db.Select().
     From("users").
     Where("email = ?", "alice@example.com").
     Explain()
@@ -459,8 +445,7 @@ fmt.Println(plan.RawOutput)
 
 1. **Verify index usage:**
 ```go
-plan, _ := db.Builder().
-    Select("*").
+plan, _ := db.Select().
     From("users").
     Where("email = ?", "alice@example.com").
     Explain()
@@ -473,8 +458,7 @@ if !plan.UsesIndex {
 
 2. **Detect full table scans:**
 ```go
-plan, _ := db.Builder().
-    Select("*").
+plan, _ := db.Select().
     From("large_table").
     Where("status = ?", 1).
     Explain()
@@ -488,8 +472,7 @@ if plan.FullScan {
 3. **Verify covering index:**
 ```go
 // Query only indexed columns
-plan, _ := db.Builder().
-    Select("email").
+plan, _ := db.Select("email").
     From("users").
     Where("email = ?", "alice@example.com").
     Explain()
@@ -502,8 +485,7 @@ if strings.Contains(strings.ToUpper(plan.RawOutput), "COVERING INDEX") {
 
 4. **Analyze JOIN queries:**
 ```go
-plan, _ := db.Builder().
-    Select("u.name", "o.total").
+plan, _ := db.Select("u.name", "o.total").
     From("users u").
     InnerJoin("orders o", "u.id = o.user_id").
     Where("u.email = ?", "alice@example.com").
@@ -525,8 +507,7 @@ if plan.UsesIndex {
 ## Error Handling
 
 ```go
-plan, err := db.Builder().
-    Select("*").
+plan, err := db.Select().
     From("users").
     Where("email = ?", email).
     Explain()

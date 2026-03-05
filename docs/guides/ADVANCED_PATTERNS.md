@@ -14,7 +14,7 @@ type UserFilter struct {
 }
 
 func buildQuery(db *relica.DB, filter UserFilter) *relica.QueryBuilder {
-    qb := db.Select("*").From("users")
+    qb := db.Select().From("users")
 
     if filter.Name != "" {
         qb = qb.Where(relica.Like("name", filter.Name))
@@ -59,12 +59,11 @@ All(&stats)
 ### IN Subquery
 
 ```go
-subquery := db.Builder().
-    Select("DISTINCT user_id").
+subquery := db.Select("DISTINCT user_id").
     From("orders").
     Where("status = ?", "completed")
 
-db.Select("*").
+db.Select().
     From("users").
     Where(relica.In("id", subquery)).
     All(&users)
@@ -73,12 +72,11 @@ db.Select("*").
 ### EXISTS (Faster)
 
 ```go
-orderCheck := db.Builder().
-    Select("1").
+orderCheck := db.Select("1").
     From("orders").
     Where("orders.user_id = users.id")
 
-db.Select("*").
+db.Select().
     From("users").
     Where(relica.Exists(orderCheck)).
     All(&users)
@@ -90,19 +88,16 @@ db.Select("*").
 
 ```go
 // Organizational hierarchy
-anchor := db.Builder().
-    Select("id", "name", "manager_id", "1 as level").
+anchor := db.Select("id", "name", "manager_id", "1 as level").
     From("employees").
     Where("manager_id IS NULL")
 
-recursive := db.Builder().
-    Select("e.id", "e.name", "e.manager_id", "h.level + 1").
+recursive := db.Select("e.id", "e.name", "e.manager_id", "h.level + 1").
     From("employees e").
     InnerJoin("hierarchy h", "e.manager_id = h.id")
 
-db.Builder().
+db.Select().
     WithRecursive("hierarchy", anchor.UnionAll(recursive)).
-    Select("*").
     From("hierarchy").
     OrderBy("level", "name").
     All(&orgChart)
@@ -114,12 +109,11 @@ db.Builder().
 
 ```go
 // PostgreSQL/SQLite: ON CONFLICT
-db.Builder().
-    Upsert("users", map[string]interface{}{
-        "id":    1,
-        "name":  "Alice",
-        "email": "alice@example.com",
-    }).
+db.Upsert("users", map[string]interface{}{
+    "id":    1,
+    "name":  "Alice",
+    "email": "alice@example.com",
+}).
     OnConflict("id").
     DoUpdate("name", "email").
     Execute()
@@ -165,7 +159,7 @@ func executeWithRetry(db *relica.DB, fn func(*relica.Tx) error) error {
 
 ```go
 func getUsersWithCursor(db *relica.DB, cursor *int, limit int) ([]User, *int, error) {
-    qb := db.Select("*").From("users").OrderBy("id").Limit(limit + 1)
+    qb := db.Select().From("users").OrderBy("id").Limit(limit + 1)
 
     if cursor != nil {
         qb = qb.Where("id > ?", *cursor)
@@ -200,7 +194,7 @@ db.Update("records").
     Execute()
 
 // Query non-deleted
-db.Select("*").
+db.Select().
     From("records").
     Where("deleted_at IS NULL").
     All(&records)
@@ -218,7 +212,7 @@ db.ExecContext(ctx, `
 `)
 
 // Search
-db.Select("*").
+db.Select().
     From("articles").
     Where("to_tsvector('english', title || ' ' || content) @@ to_tsquery('english', ?)",
         "database & query").

@@ -100,7 +100,7 @@ err := db.Get(&user, "SELECT * FROM users WHERE id = $1", 1)
 **Relica:**
 ```go
 var user User
-err := db.Select("*").From("users").Where("id = ?", 1).One(&user)
+err := db.Select().From("users").Where("id = ?", 1).One(&user)
 
 // Or raw SQL (like sqlx)
 row := db.QueryRowContext(ctx, "SELECT * FROM users WHERE id = ?", 1)
@@ -122,7 +122,7 @@ err := db.Select(&users, "SELECT * FROM users WHERE age > $1", 18)
 **Relica:**
 ```go
 var users []User
-err := db.Select("*").From("users").Where("age > ?", 18).All(&users)
+err := db.Select().From("users").Where("age > ?", 18).All(&users)
 
 // Or raw SQL (like sqlx)
 rows, err := db.QueryContext(ctx, "SELECT * FROM users WHERE age > ?", 18)
@@ -269,13 +269,13 @@ err = db.Select(&users, query, args...)
 ```go
 // Expression API (type-safe)
 var users []User
-err := db.Select("*").
+err := db.Select().
     From("users").
     Where(relica.In("id", 1, 2, 3)).
     All(&users)
 
 // Or HashExp with slice
-err := db.Select("*").
+err := db.Select().
     From("users").
     Where(relica.HashExp{"id": []interface{}{1, 2, 3}}).
     All(&users)
@@ -361,7 +361,7 @@ ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 defer cancel()
 
 // Context in builder
-err := db.Select("*").
+err := db.Select().
     From("users").
     Where("id = ?", 1).
     WithContext(ctx).
@@ -401,7 +401,7 @@ err := db.Select(&users, query, args...)
 
 **Relica (fluent builder):**
 ```go
-qb := db.Select("*").From("users")
+qb := db.Select().From("users")
 
 if name != "" {
     qb = qb.Where("name = ?", name)
@@ -431,8 +431,8 @@ err = stmt.Get(&user, 2)  // Faster (reuses prepared statement)
 **Relica:**
 ```go
 // Automatic LRU caching (<60ns hit latency)
-err := db.Select("*").From("users").Where("id = ?", 1).One(&user)
-err = db.Select("*").From("users").Where("id = ?", 2).One(&user)  // Auto-cached!
+err := db.Select().From("users").Where("id = ?", 1).One(&user)
+err = db.Select().From("users").Where("id = ?", 2).One(&user)  // Auto-cached!
 ```
 
 **Benefit:** Relica caches 1000 prepared statements automatically (configurable).
@@ -451,7 +451,7 @@ query = db.Rebind(query)  // Converts ? to $1
 **Relica:**
 ```go
 // Automatic placeholder conversion
-db.Select("*").From("users").Where("id = ?", 1)
+db.Select().From("users").Where("id = ?", 1)
 // PostgreSQL: WHERE id = $1
 // MySQL: WHERE id = ?
 // SQLite: WHERE id = ?
@@ -468,7 +468,7 @@ err := db.Select(&users, "SELECT * FROM users WHERE age > ? AND status = ?", 18,
 **Relica:**
 ```go
 // Expression API (type-safe)
-err := db.Select("*").
+err := db.Select().
     From("users").
     Where(relica.And(
         relica.GreaterThan("age", 18),
@@ -500,7 +500,7 @@ Replace sqlx queries with Relica one-by-one:
 err := db.Get(&user, "SELECT * FROM users WHERE id = $1", 1)
 
 // After (Relica)
-err := db.Select("*").From("users").Where("id = ?", 1).One(&user)
+err := db.Select().From("users").Where("id = ?", 1).One(&user)
 ```
 
 **Benefits:**
@@ -528,7 +528,7 @@ relicaDB := relica.WrapDB(sqlDB, "postgres")
 sqlxDB.Get(&user, "SELECT * FROM users WHERE id = $1", 1)
 
 // Use Relica for complex queries
-relicaDB.Select("*").
+relicaDB.Select().
     From("users").
     InnerJoin("posts", "posts.user_id = users.id").
     Where("users.status = ?", "active").
@@ -598,7 +598,7 @@ type User struct {
 db.Get(&user, "SELECT * FROM users WHERE id = $1", 1)
 
 // Relica (same struct!)
-db.Select("*").From("users").Where("id = ?", 1).One(&user)
+db.Select().From("users").Where("id = ?", 1).One(&user)
 ```
 
 ### Tip 2: Gradual Builder Adoption
@@ -610,8 +610,7 @@ Start with raw SQL, move to builder when beneficial:
 db.ExecContext(ctx, "INSERT INTO users (name) VALUES (?)", "Alice")
 
 // Phase 2: Adopt builder for complex queries
-db.Builder().
-    Select("*").
+db.Select().
     From("users").
     InnerJoin("posts", "posts.user_id = users.id").
     Where(relica.And(
@@ -632,7 +631,7 @@ for _, user := range users {
 }
 
 // Relica (single query, 3.3x faster)
-batch := db.Builder().BatchInsert("users", []string{"name", "email"})
+batch := db.BatchInsert("users", []string{"name", "email"})
 for _, user := range users {
     batch.Values(user.Name, user.Email)
 }
@@ -729,7 +728,7 @@ func searchUsers(db *sqlx.DB, name string, minAge int) ([]User, error) {
 **Relica:**
 ```go
 func searchUsers(db *relica.DB, name string, minAge int) ([]User, error) {
-    qb := db.Select("*").From("users")
+    qb := db.Select().From("users")
 
     if name != "" {
         qb = qb.Where(relica.Like("name", name))  // Auto % wrapping
@@ -772,7 +771,7 @@ func bulkInsert(db *sqlx.DB, users []User) error {
 **Relica:**
 ```go
 func bulkInsert(db *relica.DB, users []User) error {
-    batch := db.Builder().BatchInsert("users", []string{"name", "email"})
+    batch := db.BatchInsert("users", []string{"name", "email"})
 
     for _, user := range users {
         batch.Values(user.Name, user.Email)

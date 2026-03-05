@@ -351,3 +351,73 @@ func TestAuditEvent_JSONSerialization(t *testing.T) {
 		t.Errorf("Success mismatch: got %v, want %v", decoded.Success, event.Success)
 	}
 }
+
+func TestExtractTableName(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+		want  string
+	}{
+		{"empty", "", ""},
+		{"whitespace only", "   ", ""},
+		{"unknown statement", "TRUNCATE users", ""},
+
+		// SELECT
+		{"select simple", "SELECT * FROM users", "users"},
+		{"select with where", "SELECT id FROM orders WHERE id = 1", "orders"},
+		{"select no from", "SELECT 1", ""},
+		{"select lowercase", "select * from accounts", "accounts"},
+
+		// INSERT
+		{"insert simple", "INSERT INTO users (name) VALUES (?)", "users"},
+		{"insert no into", "INSERT users VALUES (?)", ""},
+
+		// UPDATE
+		{"update simple", "UPDATE users SET name = ?", "users"},
+		{"update with where", "UPDATE orders SET status = ? WHERE id = ?", "orders"},
+
+		// DELETE
+		{"delete simple", "DELETE FROM users WHERE id = ?", "users"},
+		{"delete no from", "DELETE users", ""},
+
+		// Edge cases
+		{"trailing whitespace", "  SELECT * FROM  users  ", "users"},
+		{"table only", "UPDATE users", "users"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractTableName(tt.query)
+			if got != tt.want {
+				t.Errorf("extractTableName(%q) = %q, want %q", tt.query, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFindTableStart(t *testing.T) {
+	tests := []struct {
+		name  string
+		upper string
+		idx   int
+		ok    bool
+	}{
+		{"select with from", "SELECT * FROM USERS", 13, true}, // "FROM" at 9, +4=13
+		{"select no from", "SELECT 1", 0, false},
+		{"insert into", "INSERT INTO USERS", 11, true}, // "INTO" at 7, +4=11
+		{"insert no into", "INSERT USERS", 0, false},
+		{"update", "UPDATE USERS SET", 6, true},        // len("UPDATE")=6
+		{"delete from", "DELETE FROM USERS", 11, true}, // "FROM" at 7, +4=11
+		{"delete no from", "DELETE USERS", 0, false},
+		{"unknown", "TRUNCATE USERS", 0, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			idx, ok := findTableStart(tt.upper)
+			if idx != tt.idx || ok != tt.ok {
+				t.Errorf("findTableStart(%q) = (%d, %v), want (%d, %v)", tt.upper, idx, ok, tt.idx, tt.ok)
+			}
+		})
+	}
+}

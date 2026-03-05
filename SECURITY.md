@@ -63,8 +63,7 @@ Relica uses prepared statements by default, but you must use them correctly:
 
 ```go
 // ✅ GOOD - Parameterized queries (safe)
-db.Builder().
-    Select().
+db.Select().
     From("users").
     Where("email = ?", userEmail).  // Safe - parameterized
     One(&user)
@@ -74,8 +73,7 @@ query := "SELECT * FROM users WHERE email = '" + userEmail + "'"
 db.DB().Query(query)  // UNSAFE!
 
 // ❌ BAD - Direct string interpolation
-db.Builder().
-    Select().
+db.Select().
     From("users").
     Where(fmt.Sprintf("email = '%s'", userEmail)).  // VULNERABLE!
     One(&user)
@@ -124,15 +122,13 @@ Always set timeouts to prevent resource exhaustion:
 ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 defer cancel()
 
-db.Builder().
-    WithContext(ctx).
-    Select().
+db.Select().
     From("users").
+    WithContext(ctx).
     All(&users)
 
 // ❌ BAD - No timeout
-db.Builder().
-    Select().
+db.Select().
     From("large_table").  // Could hang forever
     All(&data)
 ```
@@ -164,13 +160,13 @@ Be aware of statement cache implications:
 
 // ✅ GOOD - Reuse query patterns
 for _, id := range ids {
-    db.Builder().Select().From("users").Where("id = ?", id).One(&user)
+    db.Select().From("users").Where("id = ?", id).One(&user)
     // Same SQL pattern, cache reused
 }
 
 // ⚠️ WARNING - Cache pollution
 for _, table := range dynamicTables {
-    db.Builder().Select().From(table).All(&data)
+    db.Select().From(table).All(&data)
     // Different SQL each time, fills cache
 }
 ```
@@ -184,14 +180,14 @@ Relica does **not** parameterize table/column names (this is a database limitati
 ```go
 // ⚠️ DANGEROUS - User input as table name
 tableName := getUserInput()
-db.Builder().Select().From(tableName).All(&data)  // Vulnerable!
+db.Select().From(tableName).All(&data)  // Vulnerable!
 
 // ✅ MITIGATION - Whitelist table names
 allowedTables := map[string]bool{"users": true, "posts": true}
 if !allowedTables[tableName] {
     return errors.New("invalid table")
 }
-db.Builder().Select().From(tableName).All(&data)  // Safe
+db.Select().From(tableName).All(&data)  // Safe
 ```
 
 **Recommendation**: Never use user input directly for table/column names. Use a whitelist.
@@ -239,11 +235,10 @@ Unbounded queries can exhaust resources:
 
 ```go
 // ⚠️ RISK - Unbounded query
-db.Builder().Select().From("huge_table").All(&data)  // May load millions of rows
+db.Select().From("huge_table").All(&data)  // May load millions of rows
 
 // ✅ MITIGATION - Pagination
-db.Builder().
-    Select().
+db.Select().
     From("huge_table").
     Where("id > ?", lastID).
     Limit(100).  // Process in batches

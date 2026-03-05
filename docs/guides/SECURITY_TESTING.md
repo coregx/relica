@@ -3,6 +3,12 @@
 > **Testing Relica's Security Features** - Validator & Auditor Integration
 >
 > **Last Updated**: 2025-11-13
+>
+> **Important**: The code examples in this guide use `internal/security` types
+> directly. These examples are intended for developers working within the Relica
+> module itself or for reference purposes. External users cannot import
+> `internal/security` due to Go module restrictions.
+> Use `relica.Open()` instead of the deprecated `relica.NewDB()` in your code.
 
 ---
 
