@@ -101,8 +101,8 @@ recursive := db.Builder().
     InnerJoin("hierarchy h", "e.manager_id = h.id")
 
 db.Builder().
-    WithRecursive("hierarchy", anchor.UnionAll(recursive)).
     Select("*").
+    WithRecursive("hierarchy", anchor.UnionAll(recursive)).
     From("hierarchy").
     OrderBy("level", "name").
     All(&orgChart)

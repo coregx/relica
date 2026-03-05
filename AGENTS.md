@@ -154,12 +154,15 @@ db.Select("*").From("users").
 
 **Empty slice behavior:**
 ```go
-// In() with empty slice → 0=1 (always false, returns no rows)
-ids := []int64{}
-db.Select("*").From("users").Where(relica.In("id", ids)).All(&users)  // → WHERE 0=1
+// In() with no values → 0=1 (always false, returns no rows)
+db.Select("*").From("users").Where(relica.In("id")).All(&users)  // → WHERE 0=1
 
-// NotIn() with empty slice → ignored (returns all rows)
-db.Select("*").From("users").Where(relica.NotIn("id", ids)).All(&users)  // → no WHERE
+// NotIn() with no values → ignored (returns all rows)
+db.Select("*").From("users").Where(relica.NotIn("id")).All(&users)  // → no WHERE
+
+// To pass a dynamic slice, use HashExp with []interface{}:
+ids := []interface{}{1, 2, 3}
+db.Select("*").From("users").Where(relica.HashExp{"id": ids}).All(&users)  // → WHERE id IN (1, 2, 3)
 ```
 
 ### String Operators
@@ -296,8 +299,8 @@ func FindActiveAdmins(db *relica.DB, minAge int) ([]User, error) {
 
 ```go
 // CORRECT
-func UpdateUserStatus(db *relica.DB, userID int, status string) error {
-    return db.Transactional(func(tx *relica.Tx) error {
+func UpdateUserStatus(ctx context.Context, db *relica.DB, userID int, status string) error {
+    return db.Transactional(ctx, func(tx *relica.Tx) error {
         var user User
 
         // Find user

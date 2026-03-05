@@ -127,9 +127,18 @@ func main() {
     err = db.Model(&newUser).Delete()
 
     // For advanced queries (CTEs, UNION, etc.), use Builder()
+    statsQuery := db.Builder().
+        Select("user_id", "COUNT(*) as order_count").
+        From("orders").
+        GroupBy("user_id")
+
+    var results []struct {
+        UserID     int `db:"user_id"`
+        OrderCount int `db:"order_count"`
+    }
     err = db.Builder().
-        With("stats", statsQuery).
         Select("*").
+        With("stats", statsQuery).
         From("stats").
         All(&results)
 }
@@ -431,12 +440,16 @@ db.Model(&user).Exclude("status").Insert("name", "email", "status")
 
 #### Primary Key Detection
 
-Priority: `db:"pk"` tag → "ID" field → "Id" field
+Priority order:
+1. Field tagged `db:"pk"` — legacy single PK (maps to column "pk")
+2. Field tagged `db:"column,pk"` — explicit PK with column name
+3. Field named `ID` (no tag) — auto-detected
+4. Field named `Id` (no tag) — last resort
 
 ```go
 type Product struct {
-    ID    int    `db:"pk"`    // Explicit PK marking
-    Name  string `db:"name"`
+    ProductID int    `db:"product_id,pk"` // Explicit PK with column name
+    Name      string `db:"name"`
 }
 
 type Order struct {
@@ -513,7 +526,7 @@ db.Builder().
     Select().
     From("messages m").
     InnerJoin("users u", relica.And(
-        relica.Raw("m.user_id = u.id"),
+        relica.NewExp("m.user_id = u.id"),
         relica.GreaterThan("u.status", 0),
     )).
     All(&results)
@@ -521,7 +534,7 @@ db.Builder().
 
 **Performance**: 100x query reduction (N+1 problem solved), 6-25x faster depending on database.
 
-See [JOIN Guide](docs/dev/reports/JOIN_GUIDE.md) for comprehensive examples and best practices.
+See the [Advanced Patterns Guide](docs/guides/ADVANCED_PATTERNS.md) for comprehensive JOIN examples and best practices.
 
 ### Sorting and Pagination
 
@@ -604,7 +617,7 @@ db.Builder().
 
 **Performance**: 2,500,000x memory reduction (database aggregation vs fetching all rows), 20x faster.
 
-See [Aggregates Guide](docs/dev/reports/AGGREGATES_GUIDE.md) for comprehensive examples and patterns.
+See the [Advanced Patterns Guide](docs/guides/ADVANCED_PATTERNS.md) for comprehensive aggregate examples and patterns.
 
 ### Advanced SQL Features
 
@@ -678,8 +691,8 @@ orderTotals := db.Builder().
 
 // Use CTE in main query
 db.Builder().
-    With("order_totals", orderTotals).
     Select("*").
+    With("order_totals", orderTotals).
     From("order_totals").
     Where("total > ?", 1000).
     All(&premiumUsers)
@@ -701,8 +714,8 @@ recursive := db.Builder().
 
 // Build hierarchy
 db.Builder().
-    WithRecursive("hierarchy", anchor.UnionAll(recursive)).
     Select("*").
+    WithRecursive("hierarchy", anchor.UnionAll(recursive)).
     From("hierarchy").
     OrderBy("level", "name").
     All(&orgChart)
@@ -851,9 +864,10 @@ db, err := relica.Open("postgres", dsn,
     relica.WithMaxIdleConns(5),
 )
 
-// Check cache statistics
-stats := db.stmtCache.Stats()
-fmt.Printf("Cache hit rate: %.2f%%\n", stats.HitRate*100)
+// Check connection pool statistics
+stats := db.Stats()
+fmt.Printf("Open: %d, Idle: %d, InUse: %d\n",
+    stats.OpenConnections, stats.Idle, stats.InUse)
 ```
 
 ### Batch Operations Performance
@@ -946,22 +960,21 @@ Relica provides enterprise-grade security features for protecting your database 
 
 ### SQL Injection Prevention
 
-**Pattern-based detection** of OWASP Top 10 SQL injection attacks with <2% overhead:
+**Pattern-based detection** of OWASP Top 10 SQL injection attacks with <2% overhead.
+
+> **Note**: Security features (`WithValidator`, `WithAuditLog`) use internal types from `internal/security`. See [Security Guide](docs/guides/SECURITY.md) for integration instructions.
+
+**Relica's primary defense** against SQL injection is the use of parameterized queries (placeholders `?`). All query builder methods pass values as parameters, never interpolated into SQL strings:
 
 ```go
-import "github.com/coregx/relica/internal/security"
+// Safe - values are always parameterized
+db.Select("*").From("users").
+    Where(relica.Eq("id", userInput)).
+    One(&user)
 
-// Create validator
-validator := security.NewValidator()
-
-// Enable validation on DB connection
-db, err := relica.Open("postgres", dsn,
-    relica.WithValidator(validator),
-)
-
-// All ExecContext and QueryContext calls are now validated
-_, err = db.ExecContext(ctx, "SELECT * FROM users WHERE id = ?", userID)
-// Malicious queries blocked: stacked queries, UNION attacks, comment injection, etc.
+// Safe - Model() API uses parameterized queries internally
+db.Model(&user).Insert()
+db.Model(&user).Update("status")
 ```
 
 **Detected attack vectors:**
@@ -975,30 +988,9 @@ _, err = db.ExecContext(ctx, "SELECT * FROM users WHERE id = ?", userID)
 
 ### Audit Logging
 
-**Comprehensive operation tracking** for GDPR, HIPAA, PCI-DSS, SOC2 compliance:
+**Comprehensive operation tracking** for GDPR, HIPAA, PCI-DSS, SOC2 compliance.
 
-```go
-// Create logger
-logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-    Level: slog.LevelInfo,
-}))
-
-// Create auditor with desired level
-auditor := security.NewAuditor(logger, security.AuditReads)
-
-// Enable auditing
-db, err := relica.Open("postgres", dsn,
-    relica.WithAuditLog(auditor),
-)
-
-// Add context metadata for forensics
-ctx := security.WithUser(ctx, "john.doe@example.com")
-ctx = security.WithClientIP(ctx, "192.168.1.100")
-ctx = security.WithRequestID(ctx, "req-12345")
-
-// All operations are logged with metadata
-_, err = db.ExecContext(ctx, "UPDATE users SET status = ? WHERE id = ?", 2, 123)
-```
+> **Note**: Audit logging uses internal types. See [Security Guide](docs/guides/SECURITY.md) for integration instructions.
 
 **Audit log includes:**
 - Timestamp, user, client IP, request ID
@@ -1054,10 +1046,6 @@ Switching from another library? We've got you covered:
 ### Additional Resources
 
 - **[Performance Comparison](docs/PERFORMANCE_COMPARISON.md)** - Benchmarks vs GORM, sqlx, sqlc, database/sql
-- [Transaction Guide](docs/reports/TRANSACTION_IMPLEMENTATION_REPORT.md)
-- [UPSERT Examples](docs/reports/UPSERT_EXAMPLES.md)
-- [Batch Operations](docs/reports/BATCH_OPERATIONS.md)
-- [Zero Dependencies Achievement](docs/reports/ZERO_DEPS_ACHIEVEMENT.md)
 - [API Reference](https://pkg.go.dev/github.com/coregx/relica)
 
 ## 🧪 Testing
@@ -1089,8 +1077,8 @@ go test -bench=. -benchmem ./benchmark/...
 
 - **Go Version**: 1.25+
 - **Production Ready**: Yes (beta)
-- **Test Coverage**: 93.3%
-- **Dependencies**: 0 (production), 2 (tests only)
+- **Test Coverage**: 88.2%
+- **Dependencies**: 0 (production), test-only: testify + DB drivers
 - **API**: Stable public API, internal packages protected
 
 ## 🤝 Contributing

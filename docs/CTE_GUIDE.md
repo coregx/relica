@@ -694,7 +694,7 @@ CREATE INDEX idx_employees_id ON employees(id);
    ```go
    // ❌ Overkill
    cte := db.Builder().Select("id").From("users")
-   db.Builder().With("users_cte", cte).Select("*").From("users_cte")
+   db.Builder().Select("*").With("users_cte", cte).From("users_cte")
 
    // ✅ Simple
    db.Builder().Select("id").From("users")
@@ -882,14 +882,14 @@ func GetRunningTotals(db *relica.DB) ([]DailySales, error) {
 ```go
 // ❌ ERROR: UNION removes duplicates (breaks recursion)
 cte := anchor.Union(recursive)
-db.Builder().WithRecursive("tree", cte)
+db.Builder().Select("*").WithRecursive("tree", cte).From("tree").All(&results)
 ```
 
 **Solution**: Always use UNION ALL for recursive CTEs
 ```go
 // ✅ GOOD
 cte := anchor.UnionAll(recursive)
-db.Builder().WithRecursive("tree", cte)
+db.Builder().Select("*").WithRecursive("tree", cte).From("tree").All(&results)
 ```
 
 ### Issue: Infinite Recursion
