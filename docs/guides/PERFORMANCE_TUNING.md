@@ -10,7 +10,7 @@
 
 ```go
 // ❌ SLOW: Fetches all columns
-db.Select("*").From("users").All(&users)
+db.Select().From("users").All(&users)
 
 // ✅ FAST: Only needed columns
 db.Select("id", "name", "email").From("users").All(&users)
@@ -47,11 +47,11 @@ rows, _ := db.QueryContext(ctx, "EXPLAIN ANALYZE SELECT * FROM users WHERE email
 
 ```go
 // First call: Prepares statement
-db.Select("*").From("users").Where("id = ?", 1).One(&user) // ~10ms
+db.Select().From("users").Where("id = ?", 1).One(&user) // ~10ms
 
 // Subsequent calls: Uses cache
-db.Select("*").From("users").Where("id = ?", 2).One(&user) // <60ns
-db.Select("*").From("users").Where("id = ?", 3).One(&user) // <60ns
+db.Select().From("users").Where("id = ?", 2).One(&user) // <60ns
+db.Select().From("users").Where("id = ?", 3).One(&user) // <60ns
 ```
 
 ### Maximize Cache Hits
@@ -60,7 +60,7 @@ db.Select("*").From("users").Where("id = ?", 3).One(&user) // <60ns
 // ✅ GOOD: Same query pattern
 func getUserByID(db *relica.DB, id int) (*User, error) {
     var user User
-    err := db.Select("*").From("users").Where("id = ?", id).One(&user)
+    err := db.Select().From("users").Where("id = ?", id).One(&user)
     return &user, err
 }
 
@@ -104,7 +104,7 @@ for _, user := range users {
 }
 
 // ✅ FAST: Batch insert
-batch := db.Builder().BatchInsert("users", []string{"name", "email"})
+batch := db.BatchInsert("users", []string{"name", "email"})
 for _, user := range users {
     batch.Values(user.Name, user.Email)
 }
@@ -123,7 +123,7 @@ for id, status := range updates {
 }
 
 // ✅ FAST: Batch update
-batch := db.Builder().BatchUpdate("users", "id")
+batch := db.BatchUpdate("users", "id")
 for id, status := range updates {
     batch.Set(id, map[string]interface{}{"status": status})
 }
@@ -174,20 +174,20 @@ func monitorConnectionPool(db *relica.DB) {
 
 ```go
 // ✅ FAST: Indexed column
-db.Select("*").From("users").Where("email = ?", email) // Uses idx_users_email
+db.Select().From("users").Where("email = ?", email) // Uses idx_users_email
 
 // ❌ SLOW: Function on indexed column (can't use index)
-db.Select("*").From("users").Where("LOWER(email) = ?", strings.ToLower(email))
+db.Select().From("users").Where("LOWER(email) = ?", strings.ToLower(email))
 ```
 
 ### Limit Result Sets
 
 ```go
 // ❌ BAD: Fetch all rows
-db.Select("*").From("large_table").All(&results)
+db.Select().From("large_table").All(&results)
 
 // ✅ GOOD: Paginate
-db.Select("*").
+db.Select().
     From("large_table").
     OrderBy("id").
     Limit(100).
@@ -233,7 +233,7 @@ for rows.Next() {
 
 ```go
 // ❌ BAD: Load everything into memory
-db.Select("*").From("logs").All(&logs) // 1M rows = OOM
+db.Select().From("logs").All(&logs) // 1M rows = OOM
 
 // ✅ GOOD: Process in chunks
 const batchSize = 1000
@@ -241,7 +241,7 @@ offset := 0
 
 for {
     var batch []Log
-    db.Select("*").From("logs").Limit(batchSize).Offset(offset).All(&batch)
+    db.Select().From("logs").Limit(batchSize).Offset(offset).All(&batch)
 
     if len(batch) == 0 {
         break
@@ -263,7 +263,7 @@ func benchmarkQuery(db *relica.DB) {
     start := time.Now()
 
     var users []User
-    db.Select("*").From("users").Where("status = ?", 1).All(&users)
+    db.Select().From("users").Where("status = ?", 1).All(&users)
 
     duration := time.Since(start)
     log.Printf("Query took: %v, Rows: %d", duration, len(users))
@@ -280,7 +280,7 @@ func BenchmarkSelect(b *testing.B) {
     b.ResetTimer()
     for i := 0; i < b.N; i++ {
         var user User
-        db.Select("*").From("users").Where("id = ?", 1).One(&user)
+        db.Select().From("users").Where("id = ?", 1).One(&user)
     }
 }
 ```

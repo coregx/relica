@@ -46,22 +46,21 @@ db, err := relica.Open("postgres", dsn)
 defer db.Close()
 
 // ✅ Query building
-db.Builder().Select("*").From("users").All(&users)
+db.Select().From("users").All(&users)
 
 // ✅ Transactions
 tx, _ := db.Begin(ctx)
-tx.Builder().Insert("users", userData).Execute()
+tx.Insert("users", userData).Execute()
 tx.Commit()
 
 // ✅ WrapDB() - External connection integration
 sqlDB, _ := sql.Open("postgres", dsn)
 db := relica.WrapDB(sqlDB, "postgres")
-db.Builder().Select("*").From("users").All(&users)
+db.Select().From("users").All(&users)
 defer sqlDB.Close()  // Still works!
 
 // ✅ All query operations
-db.Builder().
-    Select("u.id", "u.name").
+db.Select("u.id", "u.name").
     From("users u").
     InnerJoin("orders o", "o.user_id = u.id").
     Where("u.status = ?", 1).
@@ -130,7 +129,7 @@ assert.IsType(t, &core.DB{}, db.Unwrap())
 ```go
 // ❌ v0.3.0 (worked with type aliases):
 func processDB(db *core.DB) {
-    db.Builder().Select("*").From("users").All(&users)
+    db.Select().From("users").All(&users)
 }
 
 db, _ := relica.Open("postgres", dsn)
@@ -138,7 +137,7 @@ processDB(db)  // ❌ Type mismatch in v0.4.0
 
 // ✅ v0.4.0 Option 1 (use public type):
 func processDB(db *relica.DB) {
-    db.Builder().Select("*").From("users").All(&users)
+    db.Select().From("users").All(&users)
 }
 
 // ✅ v0.4.0 Option 2 (use Unwrap if you need core):
@@ -272,7 +271,7 @@ pkg.go.dev shows:
       Builder returns a new QueryBuilder for constructing queries.
 
       Example:
-        db.Builder().Select("*").From("users").All(&users)
+        db.Select().From("users").All(&users)
 
   func (d *DB) Close() error
       Close closes the database connection...
@@ -333,8 +332,7 @@ func Open(dsn string) (*Database, error) {
 func (d *Database) GetUserMessages(ctx context.Context, email string) ([]MessageView, error) {
     var results []MessageView
 
-    err := d.relicaDB.Builder().
-        Select("m.id", "m.subject", "mb.name as mailbox_name").
+    err := d.relicaDB.Select("m.id", "m.subject", "mb.name as mailbox_name").
         From("messages m").
         InnerJoin("mailboxes mb", "m.mailbox_id = mb.id").
         InnerJoin("users u", "mb.user_id = u.id").
@@ -363,8 +361,7 @@ sqlDB.SetMaxOpenConns(100)
 
 relicaDB := relica.WrapDB(sqlDB, "postgres")  // ✅ Still works!
 
-relicaDB.Builder().
-    Select("*").
+relicaDB.Select().
     From("users").
     Where("email = ?", email).
     All(&users)  // ✅ Still works!

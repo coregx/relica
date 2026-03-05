@@ -43,13 +43,11 @@ import (
 
 // Get all unique names from both active and archived users
 func GetAllUserNames(db *relica.DB) ([]string, error) {
-    q1 := db.Builder().
-        Select("name").
+    q1 := db.Select("name").
         From("users").
         Where("status = ?", 1)
 
-    q2 := db.Builder().
-        Select("name").
+    q2 := db.Select("name").
         From("archived_users").
         Where("status = ?", 1)
 
@@ -75,18 +73,15 @@ SELECT "name" FROM "archived_users" WHERE status = $2
 ```go
 // Combine customer emails from multiple sources
 func GetAllCustomerEmails(db *relica.DB) ([]string, error) {
-    customers := db.Builder().
-        Select("email").
+    customers := db.Select("email").
         From("customers").
         Where("active = ?", true)
 
-    subscribers := db.Builder().
-        Select("email").
+    subscribers := db.Select("email").
         From("newsletter_subscribers").
         Where("subscribed = ?", true)
 
-    partners := db.Builder().
-        Select("contact_email").
+    partners := db.Select("contact_email").
         From("business_partners")
 
     var emails []string
@@ -116,13 +111,11 @@ func GetTopProductNames(db *relica.DB) ([]Product, error) {
         Price float64 `db:"price"`
     }
 
-    current := db.Builder().
-        Select("name", "price").
+    current := db.Select("name", "price").
         From("products").
         Where("active = ?", true)
 
-    legacy := db.Builder().
-        Select("name", "price").
+    legacy := db.Select("name", "price").
         From("legacy_products").
         Where("available = ?", true)
 
@@ -171,12 +164,10 @@ UNION ALL combines results and **keeps all duplicates**. Much faster than UNION.
 ```go
 // Get all order IDs from 2023 and 2024 (including duplicates if any)
 func GetAllOrderIDs(db *relica.DB) ([]int, error) {
-    orders2023 := db.Builder().
-        Select("id").
+    orders2023 := db.Select("id").
         From("orders_2023")
 
-    orders2024 := db.Builder().
-        Select("id").
+    orders2024 := db.Select("id").
         From("orders_2024")
 
     var ids []int
@@ -201,18 +192,15 @@ SELECT "id" FROM "orders_2024"
 ```go
 // Query across time-partitioned tables
 func GetOrdersDateRange(db *relica.DB, startDate, endDate time.Time) ([]Order, error) {
-    q2023 := db.Builder().
-        Select("*").
+    q2023 := db.Select().
         From("orders_2023").
         Where("created_at BETWEEN ? AND ?", startDate, endDate)
 
-    q2024 := db.Builder().
-        Select("*").
+    q2024 := db.Select().
         From("orders_2024").
         Where("created_at BETWEEN ? AND ?", startDate, endDate)
 
-    q2025 := db.Builder().
-        Select("*").
+    q2025 := db.Select().
         From("orders_2025").
         Where("created_at BETWEEN ? AND ?", startDate, endDate)
 
@@ -236,20 +224,16 @@ func GetTotalSalesByRegion(db *relica.DB) ([]RegionSales, error) {
         Total  float64 `db:"total"`
     }
 
-    north := db.Builder().
-        Select("'North' as region", "SUM(amount) as total").
+    north := db.Select("'North' as region", "SUM(amount) as total").
         From("sales_north")
 
-    south := db.Builder().
-        Select("'South' as region", "SUM(amount) as total").
+    south := db.Select("'South' as region", "SUM(amount) as total").
         From("sales_south")
 
-    east := db.Builder().
-        Select("'East' as region", "SUM(amount) as total").
+    east := db.Select("'East' as region", "SUM(amount) as total").
         From("sales_east")
 
-    west := db.Builder().
-        Select("'West' as region", "SUM(amount) as total").
+    west := db.Select("'West' as region", "SUM(amount) as total").
         From("sales_west")
 
     var sales []RegionSales
@@ -299,13 +283,11 @@ INTERSECT returns only rows that appear in **both** queries (set intersection �
 ```go
 // Find users who are both premium members AND forum participants
 func GetEngagedPremiumUsers(db *relica.DB) ([]int, error) {
-    premiumMembers := db.Builder().
-        Select("user_id").
+    premiumMembers := db.Select("user_id").
         From("premium_memberships").
         Where("active = ?", true)
 
-    forumParticipants := db.Builder().
-        Select("user_id").
+    forumParticipants := db.Select("user_id").
         From("forum_posts").
         GroupBy("user_id").
         Having("COUNT(*) >= ?", 10)
@@ -332,13 +314,11 @@ SELECT "user_id" FROM "forum_posts" GROUP BY "user_id" HAVING COUNT(*) >= $2
 ```go
 // Find products sold in both stores
 func GetCommonProducts(db *relica.DB) ([]Product, error) {
-    store1Products := db.Builder().
-        Select("product_id", "name").
+    store1Products := db.Select("product_id", "name").
         From("store1_inventory").
         Where("stock > ?", 0)
 
-    store2Products := db.Builder().
-        Select("product_id", "name").
+    store2Products := db.Select("product_id", "name").
         From("store2_inventory").
         Where("stock > ?", 0)
 
@@ -367,13 +347,11 @@ func GetCommonProducts(db *relica.DB) ([]Product, error) {
 **Alternative with EXISTS**:
 ```go
 // Equivalent to INTERSECT using EXISTS (works on all databases)
-db.Builder().
-    Select("user_id").
+db.Select("user_id").
     From("premium_memberships").
     Where("active = ?", true).
     Where(relica.Exists(
-        db.Builder().
-            Select("1").
+        db.Select("1").
             From("forum_posts").
             Where("forum_posts.user_id = premium_memberships.user_id").
             GroupBy("user_id").
@@ -397,12 +375,10 @@ EXCEPT returns rows from first query that are **not** in second query (set diffe
 ```go
 // Find users who registered but never placed an order
 func GetInactiveUsers(db *relica.DB) ([]int, error) {
-    allUsers := db.Builder().
-        Select("id").
+    allUsers := db.Select("id").
         From("users")
 
-    usersWithOrders := db.Builder().
-        Select("user_id").
+    usersWithOrders := db.Select("user_id").
         From("orders")
 
     var inactiveUserIDs []int
@@ -427,13 +403,11 @@ SELECT "user_id" FROM "orders"
 ```go
 // Find products in inventory but not in active orders
 func GetUnorderedProducts(db *relica.DB) ([]Product, error) {
-    inventory := db.Builder().
-        Select("product_id", "name").
+    inventory := db.Select("product_id", "name").
         From("inventory").
         Where("stock > ?", 0)
 
-    orderedProducts := db.Builder().
-        Select("product_id", "name").
+    orderedProducts := db.Select("product_id", "name").
         From("order_items oi").
         InnerJoin("orders o", "oi.order_id = o.id").
         Where("o.status IN (?, ?)", "pending", "processing")
@@ -451,17 +425,14 @@ func GetUnorderedProducts(db *relica.DB) ([]Product, error) {
 ```go
 // Find active users excluding banned and suspended users
 func GetActiveNonBannedUsers(db *relica.DB) ([]int, error) {
-    allUsers := db.Builder().
-        Select("id").
+    allUsers := db.Select("id").
         From("users").
         Where("active = ?", true)
 
-    bannedUsers := db.Builder().
-        Select("user_id").
+    bannedUsers := db.Select("user_id").
         From("banned_accounts")
 
-    suspendedUsers := db.Builder().
-        Select("user_id").
+    suspendedUsers := db.Select("user_id").
         From("suspended_accounts")
 
     var userIDs []int
@@ -498,12 +469,10 @@ SELECT "user_id" FROM "suspended_accounts"
 **Alternative with NOT EXISTS**:
 ```go
 // Equivalent to EXCEPT using NOT EXISTS (works on all databases)
-db.Builder().
-    Select("id").
+db.Select("id").
     From("users").
     Where(relica.NotExists(
-        db.Builder().
-            Select("1").
+        db.Select("1").
             From("orders").
             Where("orders.user_id = users.id"),
     ))
@@ -518,16 +487,13 @@ You can chain multiple set operations to create complex queries.
 ```go
 // (Products from store1 UNION products from store2) EXCEPT discontinued products
 func GetAvailableProducts(db *relica.DB) ([]int, error) {
-    store1 := db.Builder().
-        Select("product_id").
+    store1 := db.Select("product_id").
         From("store1_inventory")
 
-    store2 := db.Builder().
-        Select("product_id").
+    store2 := db.Select("product_id").
         From("store2_inventory")
 
-    discontinued := db.Builder().
-        Select("id").
+    discontinued := db.Select("id").
         From("discontinued_products")
 
     var productIDs []int
@@ -552,20 +518,17 @@ SELECT "id" FROM "discontinued_products"
 ```go
 // Users active in forums OR purchased recently, AND have premium membership
 func GetEngagedPremiumUsers(db *relica.DB, since time.Time) ([]int, error) {
-    forumUsers := db.Builder().
-        Select("user_id").
+    forumUsers := db.Select("user_id").
         From("forum_posts").
         Where("created_at > ?", since).
         GroupBy("user_id")
 
-    buyers := db.Builder().
-        Select("user_id").
+    buyers := db.Select("user_id").
         From("orders").
         Where("created_at > ?", since).
         GroupBy("user_id")
 
-    premiumMembers := db.Builder().
-        Select("user_id").
+    premiumMembers := db.Select("user_id").
         From("premium_memberships").
         Where("active = ?", true)
 
@@ -676,13 +639,13 @@ Need to combine query results?
 
 ```go
 // ❌ BAD: Column count mismatch
-q1 := db.Builder().Select("id", "name").From("users")
-q2 := db.Builder().Select("id").From("archived_users")
+q1 := db.Select("id", "name").From("users")
+q2 := db.Select("id").From("archived_users")
 q1.Union(q2) // Error: column count mismatch
 
 // ✅ GOOD: Same columns
-q1 := db.Builder().Select("id", "name").From("users")
-q2 := db.Builder().Select("id", "name").From("archived_users")
+q1 := db.Select("id", "name").From("users")
+q2 := db.Select("id", "name").From("archived_users")
 q1.Union(q2) // OK
 ```
 
@@ -745,12 +708,10 @@ Modern databases can parallelize set operations:
 func intersectWorkaround(db *relica.DB) {
     // Instead of: q1.Intersect(q2)
     // Use: q1 WHERE EXISTS (SELECT ... FROM q2)
-    q1 := db.Builder().
-        Select("user_id").
+    q1 := db.Select("user_id").
         From("premium_memberships").
         Where(relica.Exists(
-            db.Builder().
-                Select("1").
+            db.Select("1").
                 From("forum_posts").
                 Where("forum_posts.user_id = premium_memberships.user_id"),
         ))
@@ -760,12 +721,10 @@ func intersectWorkaround(db *relica.DB) {
 func exceptWorkaround(db *relica.DB) {
     // Instead of: q1.Except(q2)
     // Use: q1 WHERE NOT EXISTS (SELECT ... FROM q2)
-    q1 := db.Builder().
-        Select("id").
+    q1 := db.Select("id").
         From("users").
         Where(relica.NotExists(
-            db.Builder().
-                Select("1").
+            db.Select("1").
                 From("orders").
                 Where("orders.user_id = users.id"),
         ))
@@ -783,8 +742,8 @@ func exceptWorkaround(db *relica.DB) {
 
 2. **Match column count and types**
    ```go
-   q1 := db.Builder().Select("id", "name").From("users")
-   q2 := db.Builder().Select("id", "name").From("archived_users")
+   q1 := db.Select("id", "name").From("users")
+   q2 := db.Select("id", "name").From("archived_users")
    ```
 
 3. **Apply ORDER BY to final result**
@@ -794,8 +753,8 @@ func exceptWorkaround(db *relica.DB) {
 
 4. **Use meaningful column aliases**
    ```go
-   q1 := db.Builder().Select("'active' as source", "id", "name").From("users")
-   q2 := db.Builder().Select("'archived' as source", "id", "name").From("archived_users")
+   q1 := db.Select("'active' as source", "id", "name").From("users")
+   q2 := db.Select("'archived' as source", "id", "name").From("archived_users")
    ```
 
 5. **Index WHERE clause columns**
@@ -817,8 +776,8 @@ func exceptWorkaround(db *relica.DB) {
 2. **Don't mix incompatible column types**
    ```go
    // ❌ Bad: Type mismatch
-   q1 := db.Builder().Select("id", "created_at").From("users")
-   q2 := db.Builder().Select("id", "name").From("archived") // String vs timestamp
+   q1 := db.Select("id", "created_at").From("users")
+   q2 := db.Select("id", "name").From("archived") // String vs timestamp
    ```
 
 3. **Don't use set operations when JOIN is clearer**
@@ -855,13 +814,11 @@ func exceptWorkaround(db *relica.DB) {
 ```go
 // Combine current orders with archived orders
 func GetAllOrders(db *relica.DB, userID int) ([]Order, error) {
-    current := db.Builder().
-        Select("*").
+    current := db.Select().
         From("orders").
         Where("user_id = ?", userID)
 
-    archived := db.Builder().
-        Select("*").
+    archived := db.Select().
         From("orders_archive").
         Where("user_id = ?", userID)
 
@@ -880,9 +837,9 @@ func GetAllOrders(db *relica.DB, userID int) ([]Order, error) {
 ```go
 // Get unique email addresses from multiple sources
 func GetAllUniqueEmails(db *relica.DB) ([]string, error) {
-    customers := db.Builder().Select("email").From("customers")
-    subscribers := db.Builder().Select("email").From("newsletter")
-    partners := db.Builder().Select("email").From("partners")
+    customers := db.Select("email").From("customers")
+    subscribers := db.Select("email").From("newsletter")
+    partners := db.Select("email").From("partners")
 
     var emails []string
     query := customers.Union(subscribers).Union(partners).Build()
@@ -902,8 +859,7 @@ func GetOrdersByDateRange(db *relica.DB, start, end time.Time) ([]Order, error) 
     // Determine which partitions to query
     years := []int{2023, 2024, 2025}
     for _, year := range years {
-        q := db.Builder().
-            Select("*").
+        q := db.Select().
             From(fmt.Sprintf("orders_%d", year)).
             Where("created_at BETWEEN ? AND ?", start, end)
         queries = append(queries, q)
@@ -928,20 +884,17 @@ func GetOrdersByDateRange(db *relica.DB, start, end time.Time) ([]Order, error) 
 ```go
 // Find VIP customers: (high spenders OR frequent buyers) AND active
 func GetVIPCustomers(db *relica.DB) ([]int, error) {
-    highSpenders := db.Builder().
-        Select("user_id").
+    highSpenders := db.Select("user_id").
         From("orders").
         GroupBy("user_id").
         Having("SUM(total) > ?", 10000)
 
-    frequentBuyers := db.Builder().
-        Select("user_id").
+    frequentBuyers := db.Select("user_id").
         From("orders").
         GroupBy("user_id").
         Having("COUNT(*) >= ?", 50)
 
-    activeUsers := db.Builder().
-        Select("id").
+    activeUsers := db.Select("id").
         From("users").
         Where("active = ? AND last_login > ?", true, time.Now().AddDate(0, -1, 0))
 
@@ -958,13 +911,11 @@ func GetVIPCustomers(db *relica.DB) ([]int, error) {
 ```go
 // Find orphaned order items (items without valid orders)
 func FindOrphanedItems(db *relica.DB) ([]int, error) {
-    allItemOrderIDs := db.Builder().
-        Select("order_id").
+    allItemOrderIDs := db.Select("order_id").
         From("order_items").
         GroupBy("order_id")
 
-    validOrderIDs := db.Builder().
-        Select("id").
+    validOrderIDs := db.Select("id").
         From("orders")
 
     var orphanedIDs []int
@@ -982,16 +933,16 @@ func FindOrphanedItems(db *relica.DB) ([]int, error) {
 **Problem**: Queries have different number of columns
 ```go
 // ❌ ERROR: The used SELECT statements have a different number of columns
-q1 := db.Builder().Select("id", "name").From("users")
-q2 := db.Builder().Select("id").From("archived")
+q1 := db.Select("id", "name").From("users")
+q2 := db.Select("id").From("archived")
 q1.Union(q2)
 ```
 
 **Solution**: Match column counts
 ```go
 // ✅ GOOD: Same column count
-q1 := db.Builder().Select("id", "name").From("users")
-q2 := db.Builder().Select("id", "NULL as name").From("archived") // Add placeholder
+q1 := db.Select("id", "name").From("users")
+q2 := db.Select("id", "NULL as name").From("archived") // Add placeholder
 q1.Union(q2)
 ```
 
@@ -1000,15 +951,15 @@ q1.Union(q2)
 **Problem**: Column types are incompatible
 ```go
 // ❌ ERROR: Types don't match (INT vs VARCHAR)
-q1 := db.Builder().Select("id").From("users") // INT
-q2 := db.Builder().Select("name").From("archived") // VARCHAR
+q1 := db.Select("id").From("users") // INT
+q2 := db.Select("name").From("archived") // VARCHAR
 ```
 
 **Solution**: Cast types
 ```go
 // ✅ GOOD: Cast to compatible type
-q1 := db.Builder().Select("CAST(id AS VARCHAR)").From("users")
-q2 := db.Builder().Select("name").From("archived")
+q1 := db.Select("CAST(id AS VARCHAR)").From("users")
+q2 := db.Select("name").From("archived")
 ```
 
 ### Issue: INTERSECT/EXCEPT Not Supported
@@ -1022,23 +973,19 @@ q1.Intersect(q2)
 **Solution**: Use JOIN or EXISTS
 ```go
 // ✅ GOOD: INTERSECT alternative using EXISTS
-q1 := db.Builder().
-    Select("user_id").
+q1 := db.Select("user_id").
     From("premium_memberships").
     Where(relica.Exists(
-        db.Builder().
-            Select("1").
+        db.Select("1").
             From("forum_posts").
             Where("forum_posts.user_id = premium_memberships.user_id"),
     ))
 
 // ✅ GOOD: EXCEPT alternative using NOT EXISTS
-q1 := db.Builder().
-    Select("id").
+q1 := db.Select("id").
     From("users").
     Where(relica.NotExists(
-        db.Builder().
-            Select("1").
+        db.Select("1").
             From("orders").
             Where("orders.user_id = users.id"),
     ))
@@ -1063,16 +1010,16 @@ q1.UnionAll(q2) // 800ms for 2M rows (4.3x faster)
 **Problem**: ORDER BY in individual queries ignored
 ```go
 // ❌ ORDER BY in q1 is ignored
-q1 := db.Builder().Select("name").From("users").OrderBy("name")
-q2 := db.Builder().Select("name").From("archived")
+q1 := db.Select("name").From("users").OrderBy("name")
+q2 := db.Select("name").From("archived")
 q1.Union(q2) // q1's ORDER BY has no effect
 ```
 
 **Solution**: Apply ORDER BY to final result
 ```go
 // ✅ GOOD: ORDER BY on union result
-q1 := db.Builder().Select("name").From("users")
-q2 := db.Builder().Select("name").From("archived")
+q1 := db.Select("name").From("users")
+q2 := db.Select("name").From("archived")
 q1.Union(q2).OrderBy("name")
 ```
 

@@ -131,7 +131,7 @@ func NewUserRepository(db *relica.DB) *UserRepository {
 
 func (r *UserRepository) FindByID(ctx context.Context, id int) (*models.User, error) {
     var user models.User
-    err := r.db.Select("*").
+    err := r.db.Select().
         From("users").
         Where("id = ?", id).
         WithContext(ctx).
@@ -281,7 +281,7 @@ func createUsersSlowly(db *relica.DB, users []User) error {
 
 // ✅ FAST: 1 query (3.3x faster)
 func createUsersFast(db *relica.DB, users []User) error {
-    batch := db.Builder().BatchInsert("users", []string{"name", "email"})
+    batch := db.BatchInsert("users", []string{"name", "email"})
     for _, user := range users {
         batch.Values(user.Name, user.Email)
     }
@@ -298,7 +298,7 @@ Reuse query patterns for cache hits:
 // ✅ GOOD: Cache-friendly (same query pattern)
 func getUserByID(db *relica.DB, id int) (*User, error) {
     var user User
-    err := db.Select("*").From("users").Where("id = ?", id).One(&user)
+    err := db.Select().From("users").Where("id = ?", id).One(&user)
     return &user, err
 }
 
@@ -335,7 +335,7 @@ db, err := relica.Open("postgres", dsn,
 ```go
 func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*User, error) {
     var user User
-    err := r.db.Select("*").
+    err := r.db.Select().
         From("users").
         Where("email = ?", email).
         WithContext(ctx).
@@ -356,7 +356,7 @@ import "database/sql"
 
 func (r *UserRepository) FindByID(ctx context.Context, id int) (*User, error) {
     var user User
-    err := r.db.Select("*").
+    err := r.db.Select().
         From("users").
         Where("id = ?", id).
         One(&user)
@@ -395,7 +395,7 @@ func searchUsers(db *relica.DB, filters map[string]interface{}) ([]User, error) 
 
 // ✅ Type-safe: Expression API
 func searchUsers(db *relica.DB, name string, minAge int) ([]User, error) {
-    qb := db.Select("*").From("users")
+    qb := db.Select().From("users")
 
     if name != "" {
         qb = qb.Where(relica.Eq("name", name))

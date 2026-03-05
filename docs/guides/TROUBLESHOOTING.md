@@ -67,7 +67,7 @@ type User struct {
 ```go
 // Add query logging
 start := time.Now()
-db.Select("*").From("users").All(&users)
+db.Select().From("users").All(&users)
 log.Printf("Query took: %v", time.Since(start))
 ```
 

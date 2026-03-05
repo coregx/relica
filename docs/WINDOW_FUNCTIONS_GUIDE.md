@@ -55,8 +55,7 @@ func GetNumberedProducts(db *relica.DB) ([]Product, error) {
     }
     var products []Product
 
-    err := db.Builder().
-        Select("id", "name", "price").
+    err := db.Select("id", "name", "price").
         SelectExpr("ROW_NUMBER() OVER (ORDER BY price DESC)", "row_num").
         From("products").
         All(&products)
@@ -113,8 +112,7 @@ func RankProductsByPrice(db *relica.DB) ([]ProductRank, error) {
     }
     var products []ProductRank
 
-    err := db.Builder().
-        Select("name", "price").
+    err := db.Select("name", "price").
         SelectExpr("ROW_NUMBER() OVER (ORDER BY price DESC)", "rank").
         From("products").
         All(&products)
@@ -153,8 +151,7 @@ func RankProductsWithGaps(db *relica.DB) ([]ProductRank, error) {
     }
     var products []ProductRank
 
-    err := db.Builder().
-        Select("name", "price").
+    err := db.Select("name", "price").
         SelectExpr("RANK() OVER (ORDER BY price DESC)", "rank").
         From("products").
         All(&products)
@@ -188,8 +185,7 @@ func RankProductsDense(db *relica.DB) ([]ProductRank, error) {
     }
     var products []ProductRank
 
-    err := db.Builder().
-        Select("name", "price").
+    err := db.Select("name", "price").
         SelectExpr("DENSE_RANK() OVER (ORDER BY price DESC)", "rank").
         From("products").
         All(&products)
@@ -223,8 +219,7 @@ func GetPriceQuartiles(db *relica.DB) ([]ProductQuartile, error) {
     }
     var products []ProductQuartile
 
-    err := db.Builder().
-        Select("name", "price").
+    err := db.Select("name", "price").
         SelectExpr("NTILE(4) OVER (ORDER BY price)", "quartile").
         From("products").
         All(&products)
@@ -263,8 +258,7 @@ func GetRunningTotalSales(db *relica.DB) ([]DailySales, error) {
     }
     var sales []DailySales
 
-    err := db.Builder().
-        Select("DATE(created_at) as sale_date", "SUM(total) as daily_total").
+    err := db.Select("DATE(created_at) as sale_date", "SUM(total) as daily_total").
         SelectExpr("SUM(SUM(total)) OVER (ORDER BY DATE(created_at))", "running_total").
         From("orders").
         GroupBy("DATE(created_at)").
@@ -307,8 +301,7 @@ func GetMovingAverage(db *relica.DB) ([]DailySales, error) {
     }
     var sales []DailySales
 
-    err := db.Builder().
-        Select("DATE(created_at) as sale_date", "SUM(total) as daily_total").
+    err := db.Select("DATE(created_at) as sale_date", "SUM(total) as daily_total").
         SelectExpr("AVG(SUM(total)) OVER (ORDER BY DATE(created_at) ROWS BETWEEN 6 PRECEDING AND CURRENT ROW)", "avg_last_7_days").
         From("orders").
         GroupBy("DATE(created_at)").
@@ -343,8 +336,7 @@ func GetCustomerOrderCounts(db *relica.DB) ([]CustomerOrders, error) {
     }
     var customers []CustomerOrders
 
-    err := db.Builder().
-        Select("customer_id", "COUNT(*) as order_count").
+    err := db.Select("customer_id", "COUNT(*) as order_count").
         SelectExpr("SUM(COUNT(*)) OVER ()", "total_orders").
         From("orders").
         GroupBy("customer_id").
@@ -371,8 +363,7 @@ func GetMonthlySalesComparison(db *relica.DB) ([]MonthlySales, error) {
     }
     var sales []MonthlySales
 
-    err := db.Builder().
-        Select("DATE_TRUNC('month', created_at) as month", "SUM(total) as sales").
+    err := db.Select("DATE_TRUNC('month', created_at) as month", "SUM(total) as sales").
         SelectExpr("LAG(SUM(total)) OVER (ORDER BY DATE_TRUNC('month', created_at))", "prev_month_sales").
         SelectExpr("(SUM(total) - LAG(SUM(total)) OVER (ORDER BY DATE_TRUNC('month', created_at))) / LAG(SUM(total)) OVER (ORDER BY DATE_TRUNC('month', created_at)) * 100", "growth_pct").
         From("orders").
@@ -406,8 +397,7 @@ func GetPriceComparison(db *relica.DB) ([]PriceComp, error) {
     }
     var products []PriceComp
 
-    err := db.Builder().
-        Select("name", "price").
+    err := db.Select("name", "price").
         SelectExpr("LEAD(price) OVER (ORDER BY price)", "next_price").
         From("products").
         OrderBy("price").
@@ -442,8 +432,7 @@ func GetCategoryPriceRange(db *relica.DB) ([]ProductPrice, error) {
     }
     var products []ProductPrice
 
-    err := db.Builder().
-        Select("category", "name", "price").
+    err := db.Select("category", "name", "price").
         SelectExpr("FIRST_VALUE(price) OVER (PARTITION BY category ORDER BY price)", "min_price").
         SelectExpr("LAST_VALUE(price) OVER (PARTITION BY category ORDER BY price ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)", "max_price").
         From("products").
@@ -471,8 +460,7 @@ func RankProductsByCategory(db *relica.DB) ([]ProductRank, error) {
     }
     var products []ProductRank
 
-    err := db.Builder().
-        Select("category", "name", "price").
+    err := db.Select("category", "name", "price").
         SelectExpr("ROW_NUMBER() OVER (PARTITION BY category ORDER BY price DESC)", "rank").
         From("products").
         OrderBy("category", "rank").
@@ -515,15 +503,13 @@ func GetTopProductsPerCategory(db *relica.DB, topN int) ([]Product, error) {
     }
 
     // Use subquery to filter ranked results
-    ranked := db.Builder().
-        Select("category", "name", "price").
+    ranked := db.Select("category", "name", "price").
         SelectExpr("ROW_NUMBER() OVER (PARTITION BY category ORDER BY price DESC)", "rank").
         From("products")
 
     var products []Product
-    err := db.Builder().
+    err := db.Select("category", "name", "price", "rank").
         FromSelect(ranked, "ranked").
-        Select("category", "name", "price", "rank").
         Where("rank <= ?", topN).
         OrderBy("category", "rank").
         All(&products)
@@ -542,15 +528,13 @@ ORDER BY within window functions determines row order for calculations.
 // Different ORDER BY gives different results
 func DemonstrateOrderBy(db *relica.DB) {
     // Ascending order
-    db.Builder().
-        Select("name", "price").
+    db.Select("name", "price").
         SelectExpr("ROW_NUMBER() OVER (ORDER BY price ASC)", "rank_asc").
         From("products")
     // rank_asc: 1=cheapest, 2=next cheapest, ...
 
     // Descending order
-    db.Builder().
-        Select("name", "price").
+    db.Select("name", "price").
         SelectExpr("ROW_NUMBER() OVER (ORDER BY price DESC)", "rank_desc").
         From("products")
     // rank_desc: 1=most expensive, 2=next expensive, ...
@@ -570,8 +554,7 @@ func RankByMultipleColumns(db *relica.DB) ([]Product, error) {
     }
     var products []Product
 
-    err := db.Builder().
-        Select("category", "name", "sales").
+    err := db.Select("category", "name", "sales").
         SelectExpr("ROW_NUMBER() OVER (ORDER BY category ASC, sales DESC)", "rank").
         From("products").
         All(&products)
@@ -615,8 +598,7 @@ func GetMovingAverage3(db *relica.DB) ([]OrderAvg, error) {
     }
     var orders []OrderAvg
 
-    err := db.Builder().
-        Select("id as order_id", "total").
+    err := db.Select("id as order_id", "total").
         SelectExpr("AVG(total) OVER (ORDER BY id ROWS BETWEEN 2 PRECEDING AND CURRENT ROW)", "avg_last_3").
         From("orders").
         OrderBy("id").
@@ -650,8 +632,7 @@ func GetDailyTotals(db *relica.DB) ([]DailyOrder, error) {
     }
     var orders []DailyOrder
 
-    err := db.Builder().
-        Select("id as order_id", "DATE(created_at) as order_date", "total").
+    err := db.Select("id as order_id", "DATE(created_at) as order_date", "total").
         SelectExpr("SUM(total) OVER (ORDER BY DATE(created_at) RANGE BETWEEN CURRENT ROW AND CURRENT ROW)", "daily_total").
         From("orders").
         OrderBy("created_at").
@@ -673,8 +654,7 @@ func GetCumulativeSum(db *relica.DB) ([]OrderTotal, error) {
     }
     var orders []OrderTotal
 
-    err := db.Builder().
-        Select("id as order_id", "total").
+    err := db.Select("id as order_id", "total").
         SelectExpr("SUM(total) OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)", "cumulative_sum").
         From("orders").
         OrderBy("id").
@@ -760,15 +740,13 @@ ROWS BETWEEN 1000 PRECEDING AND 1000 FOLLOWING
 
 ```go
 // ❌ BAD: Same window defined twice
-db.Builder().
-    Select("name").
+db.Select("name").
     SelectExpr("ROW_NUMBER() OVER (PARTITION BY category ORDER BY price)", "rank").
     SelectExpr("DENSE_RANK() OVER (PARTITION BY category ORDER BY price)", "dense_rank")
 // Computes same window twice
 
 // ✅ GOOD: Define window once (PostgreSQL)
-db.Builder().
-    Select("name").
+db.Select("name").
     SelectExpr("ROW_NUMBER() OVER w", "rank").
     SelectExpr("DENSE_RANK() OVER w", "dense_rank").
     SelectExpr("WINDOW w AS (PARTITION BY category ORDER BY price)")
@@ -831,8 +809,8 @@ db.Builder().
 
 5. **Use CTEs for complex window queries**
    ```go
-   ranked := db.Builder().Select("*").SelectExpr("ROW_NUMBER() OVER (...)", "rn").From("products")
-   db.Builder().FromSelect(ranked, "r").Where("rn <= 10")
+   ranked := db.Select().SelectExpr("ROW_NUMBER() OVER (...)", "rn").From("products")
+   db.Select().FromSelect(ranked, "r").Where("rn <= 10")
    ```
 
 ### ❌ DON'T
@@ -886,15 +864,13 @@ func GetTopSellingProducts(db *relica.DB) ([]Product, error) {
         Rank     int    `db:"rank"`
     }
 
-    ranked := db.Builder().
-        Select("category", "name", "sales").
+    ranked := db.Select("category", "name", "sales").
         SelectExpr("ROW_NUMBER() OVER (PARTITION BY category ORDER BY sales DESC)", "rank").
         From("products")
 
     var products []Product
-    err := db.Builder().
+    err := db.Select().
         FromSelect(ranked, "r").
-        Select("*").
         Where("rank <= ?", 3).
         OrderBy("category", "rank").
         All(&products)
@@ -915,8 +891,7 @@ func GetOrderPercentages(db *relica.DB) ([]OrderPct, error) {
     }
     var orders []OrderPct
 
-    err := db.Builder().
-        Select("id as order_id", "total").
+    err := db.Select("id as order_id", "total").
         SelectExpr("total / SUM(total) OVER () * 100", "pct_of_total").
         From("orders").
         All(&orders)
@@ -937,8 +912,7 @@ func GetMoMGrowth(db *relica.DB) ([]MonthlyGrowth, error) {
     }
     var growth []MonthlyGrowth
 
-    err := db.Builder().
-        Select("DATE_TRUNC('month', created_at) as month", "SUM(total) as sales").
+    err := db.Select("DATE_TRUNC('month', created_at) as month", "SUM(total) as sales").
         SelectExpr("(SUM(total) - LAG(SUM(total)) OVER (ORDER BY DATE_TRUNC('month', created_at))) / NULLIF(LAG(SUM(total)) OVER (ORDER BY DATE_TRUNC('month', created_at)), 0) * 100", "growth_rate").
         From("orders").
         GroupBy("DATE_TRUNC('month', created_at)").
@@ -961,8 +935,7 @@ func GetAccountBalance(db *relica.DB, accountID int) ([]Transaction, error) {
     }
     var txns []Transaction
 
-    err := db.Builder().
-        Select("DATE(created_at) as txn_date", "amount").
+    err := db.Select("DATE(created_at) as txn_date", "amount").
         SelectExpr("SUM(amount) OVER (ORDER BY created_at ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)", "balance").
         From("transactions").
         Where("account_id = ?", accountID).
@@ -984,8 +957,7 @@ func GetMedianPrices(db *relica.DB) ([]CategoryMedian, error) {
     }
     var medians []CategoryMedian
 
-    err := db.Builder().
-        Select("category").
+    err := db.Select("category").
         SelectExpr("PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price)", "median_price").
         From("products").
         GroupBy("category").
@@ -1002,8 +974,7 @@ func GetMedianPrices(db *relica.DB) ([]CategoryMedian, error) {
 **Problem**: Can't use window functions in WHERE
 ```go
 // ❌ ERROR: Window functions not allowed in WHERE clause
-db.Builder().
-    Select("*").
+db.Select().
     SelectExpr("ROW_NUMBER() OVER (ORDER BY price)", "rank").
     From("products").
     Where("rank <= ?", 10)
@@ -1012,14 +983,12 @@ db.Builder().
 **Solution**: Use subquery or CTE
 ```go
 // ✅ GOOD: Filter in outer query
-ranked := db.Builder().
-    Select("*").
+ranked := db.Select().
     SelectExpr("ROW_NUMBER() OVER (ORDER BY price)", "rank").
     From("products")
 
-db.Builder().
+db.Select().
     FromSelect(ranked, "r").
-    Select("*").
     Where("rank <= ?", 10)
 ```
 

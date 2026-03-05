@@ -44,7 +44,7 @@ func main() {
 
     // All queries are now logged
     var users []User
-    _ = db.Select("*").From("users").All(&users)
+    _ = db.Select().From("users").All(&users)
     // Output: {"time":"...","level":"INFO","msg":"query executed",
     //          "sql":"SELECT * FROM users","duration_ms":15,"rows":10}
 }
@@ -88,7 +88,7 @@ func main() {
     ctx := context.Background()
     var user User
     _ = db.WithContext(ctx).
-        Select("*").
+        Select().
         From("users").
         Where("id = ?", 123).
         One(&user)
@@ -213,7 +213,7 @@ func getUserHandler(w http.ResponseWriter, r *http.Request) {
     // Database query inherits trace context
     var user User
     err := db.WithContext(ctx).
-        Select("*").
+        Select().
         From("users").
         Where("id = ?", r.URL.Query().Get("id")).
         One(&user)

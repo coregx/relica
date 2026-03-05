@@ -101,8 +101,7 @@ func main() {
 
     // Queries now automatically analyzed!
     var users []User
-    err = db.Builder().
-        Select("*").
+    err = db.Select().
         From("users").
         Where("status = ?", 1).
         All(&users)
@@ -313,8 +312,7 @@ if os.Getenv("ENV") == "production" {
 **Code:**
 ```go
 var users []User
-err := db.Builder().
-    Select("*").
+err := db.Select().
     From("users").
     Where("status = ?", 1).
     All(&users)
@@ -338,8 +336,7 @@ CREATE INDEX idx_users_status ON users(status);
 **Code:**
 ```go
 var orders []Order
-err := db.Builder().
-    Select("*").
+err := db.Select().
     From("orders").
     Where("user_id = ? AND status = ?", 123, "pending").
     All(&orders)
@@ -363,8 +360,7 @@ CREATE INDEX idx_orders_user_id_status ON orders(user_id, status);
 ```go
 // Assuming email has index
 var user User
-err := db.Builder().
-    Select("*").
+err := db.Select().
     From("users").
     Where("email = ?", "alice@example.com").
     One(&user)
@@ -458,8 +454,7 @@ Detects multi-column AND conditions:
 
 ```go
 // Query with multiple AND conditions
-db.Builder().
-    Select("*").
+db.Select().
     From("users").
     Where("status = ? AND country = ?", 1, "US").
     All(&users)
@@ -487,8 +482,7 @@ Automatically detects missing foreign key indexes:
 
 ```go
 // Query with JOIN
-db.Builder().
-    Select("u.*, o.total").
+db.Select("u.*, o.total").
     From("users u").
     Join("orders o", "u.id = o.user_id").
     Where("u.status = ?", 1).
@@ -512,8 +506,7 @@ Identifies opportunities for index-only scans:
 
 ```go
 // Query selecting specific columns
-db.Builder().
-    Select("id", "name").
+db.Select("id", "name").
     From("users").
     Where("status = ?", 1).
     All(&users)
@@ -543,8 +536,7 @@ Detects functions in WHERE preventing index use:
 
 ```go
 // Function in WHERE clause
-db.Builder().
-    Select("*").
+db.Select().
     From("users").
     Where("UPPER(email) = ?", "ALICE@EXAMPLE.COM").
     All(&users)
@@ -569,7 +561,7 @@ db.Builder().
 3. **Query rewriting**:
    ```go
    // Store normalized values in application
-   db.Builder().Where("email = ?", strings.ToUpper(email))
+   db.Select().From("users").Where("email = ?", strings.ToUpper(email))
    ```
 
 ### Phase 2 Suggestion Types
@@ -632,8 +624,7 @@ CREATE INDEX idx_users_created_country ON users(created_at, country);
 ```go
 // No indexes
 var users []User
-db.Builder().
-    Select("*").
+db.Select().
     From("users").
     Where("status = ? AND country = ? AND age > ?", 1, "US", 18).
     All(&users)
@@ -648,8 +639,7 @@ CREATE INDEX idx_users_status_country_age ON users(status, country, age);
 ```go
 // Same query
 var users []User
-db.Builder().
-    Select("*").
+db.Select().
     From("users").
     Where("status = ? AND country = ? AND age > ?", 1, "US", 18).
     All(&users)
@@ -665,8 +655,7 @@ var results []struct {
     UserID int
     Orders int
 }
-db.Builder().
-    Select("u.id", "COUNT(o.id)").
+db.Select("u.id", "COUNT(o.id)").
     From("users u").
     Join("orders o", "u.id = o.user_id").
     GroupBy("u.id").
@@ -694,8 +683,7 @@ var users []struct {
     Name   string `db:"name"`
     Status int    `db:"status"`
 }
-db.Builder().
-    Select("id", "name", "status").
+db.Select("id", "name", "status").
     From("users").
     Where("status = ?", 1).
     All(&users)
@@ -1083,8 +1071,7 @@ PRAGMA journal_mode = WAL;
 **Query:**
 ```go
 var users []User
-db.Builder().
-    Select("*").
+db.Select().
     From("users").
     Where("status = ?", 1).
     All(&users)
@@ -1110,8 +1097,7 @@ db.Builder().
 **Query:**
 ```go
 var orders []Order
-db.Builder().
-    Select("*").
+db.Select().
     From("orders").
     Where("user_id = ?", 123).
     All(&orders)
@@ -1134,8 +1120,7 @@ OPTIMIZE TABLE orders;
 **Query:**
 ```go
 var products []Product
-db.Builder().
-    Select("*").
+db.Select().
     From("products").
     Where("category = ?", "electronics").
     All(&products)

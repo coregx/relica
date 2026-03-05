@@ -94,7 +94,7 @@ func main() {
 
     // SELECT with Expression API (PREFERRED)
     var user User
-    err = db.Select("*").
+    err = db.Select().
         From("users").
         Where(relica.Eq("id", 1)).
         WithContext(ctx).
@@ -106,7 +106,7 @@ func main() {
 
     // SELECT with multiple conditions (PREFERRED)
     var users []User
-    err = db.Select("*").
+    err = db.Select().
         From("users").
         Where(relica.And(
             relica.GreaterThan("age", 18),
@@ -135,7 +135,7 @@ func main() {
         UserID     int `db:"user_id"`
         OrderCount int `db:"order_count"`
     }
-    err = db.Select("*").
+    err = db.Select().
         With("stats", statsQuery).
         From("stats").
         All(&results)
@@ -174,12 +174,12 @@ db.Model(&user).Delete()
 
 ```go
 // Simple equality
-db.Select("*").From("users").
+db.Select().From("users").
     Where(relica.Eq("id", 1)).
     One(&user)
 
 // Multiple conditions
-db.Select("*").From("users").
+db.Select().From("users").
     Where(relica.And(
         relica.GreaterThan("age", 18),
         relica.Eq("status", "active"),
@@ -187,7 +187,7 @@ db.Select("*").From("users").
     All(&users)
 
 // HashExp for simple equality
-db.Select("*").From("users").
+db.Select().From("users").
     Where(relica.HashExp{"status": "active", "role": "admin"}).
     All(&users)
 ```
@@ -618,11 +618,11 @@ Relica adds powerful SQL features for complex queries.
 ```go
 // Find users who have placed orders
 sub := db.Select("user_id").From("orders").Where("status = ?", "completed")
-db.Select("*").From("users").Where(relica.In("id", sub)).All(&users)
+db.Select().From("users").Where(relica.In("id", sub)).All(&users)
 
 // Find users with at least one order (EXISTS is often faster)
 orderCheck := db.Select("1").From("orders").Where("orders.user_id = users.id")
-db.Select("*").From("users").Where(relica.Exists(orderCheck)).All(&users)
+db.Select().From("users").Where(relica.Exists(orderCheck)).All(&users)
 ```
 
 **FROM Subqueries**:
@@ -676,7 +676,7 @@ orderTotals := db.Select("user_id", "SUM(total) as total").
     GroupBy("user_id")
 
 // Use CTE in main query
-db.Select("*").
+db.Select().
     With("order_totals", orderTotals).
     From("order_totals").
     Where("total > ?", 1000).
@@ -696,7 +696,7 @@ recursive := db.Select("e.id", "e.name", "e.manager_id", "h.level + 1").
     InnerJoin("hierarchy h", "e.manager_id = h.id")
 
 // Build hierarchy
-db.Select("*").
+db.Select().
     WithRecursive("hierarchy", anchor.UnionAll(recursive)).
     From("hierarchy").
     OrderBy("level", "name").
@@ -944,7 +944,7 @@ Relica provides enterprise-grade security features for protecting your database 
 
 ```go
 // Safe - values are always parameterized
-db.Select("*").From("users").
+db.Select().From("users").
     Where(relica.Eq("id", userInput)).
     One(&user)
 

@@ -119,7 +119,7 @@ func TestNewFeature(t *testing.T) {
     defer db.Close()
 
     // Act
-    result, err := db.Builder()./* your code */
+    result, err := db./* your code */
 
     // Assert
     require.NoError(t, err)

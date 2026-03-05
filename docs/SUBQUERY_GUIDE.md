@@ -76,14 +76,12 @@ import (
 
 // Find users who have placed orders
 func GetActiveUsers(db *relica.DB) ([]User, error) {
-    subquery := db.Builder().
-        Select("user_id").
+    subquery := db.Select("user_id").
         From("orders").
         Where("status = ?", "completed")
 
     var users []User
-    err := db.Builder().
-        Select("*").
+    err := db.Select().
         From("users").
         Where(relica.In("id", subquery)).
         All(&users)
@@ -103,14 +101,12 @@ WHERE "id" IN (SELECT "user_id" FROM "orders" WHERE status = $1)
 ```go
 // Find users with high-value orders
 func GetPremiumUsers(db *relica.DB) ([]User, error) {
-    subquery := db.Builder().
-        Select("user_id").
+    subquery := db.Select("user_id").
         From("orders").
         Where("total > ? AND status = ?", 1000, "completed")
 
     var premiumUsers []User
-    err := db.Builder().
-        Select("id", "name", "email").
+    err := db.Select("id", "name", "email").
         From("users").
         Where(relica.In("id", subquery)).
         OrderBy("name").
@@ -132,13 +128,11 @@ ORDER BY "name"
 ```go
 // Find users who have never ordered
 func GetInactiveUsers(db *relica.DB) ([]User, error) {
-    subquery := db.Builder().
-        Select("user_id").
+    subquery := db.Select("user_id").
         From("orders")
 
     var inactiveUsers []User
-    err := db.Builder().
-        Select("*").
+    err := db.Select().
         From("users").
         Where(relica.NotIn("id", subquery)).
         All(&inactiveUsers)
@@ -176,14 +170,12 @@ WHERE "id" NOT IN (SELECT "user_id" FROM "orders")
 ```go
 // Find users with at least one order
 func GetUsersWithOrders(db *relica.DB) ([]User, error) {
-    orderCheck := db.Builder().
-        Select("1").
+    orderCheck := db.Select("1").
         From("orders").
         Where("orders.user_id = users.id")
 
     var activeUsers []User
-    err := db.Builder().
-        Select("*").
+    err := db.Select().
         From("users").
         Where(relica.Exists(orderCheck)).
         All(&activeUsers)
@@ -205,14 +197,12 @@ WHERE EXISTS (SELECT 1 FROM "orders" WHERE orders.user_id = users.id)
 ```go
 // Find users with no orders (NULL-safe)
 func GetUsersWithoutOrders(db *relica.DB) ([]User, error) {
-    orderCheck := db.Builder().
-        Select("1").
+    orderCheck := db.Select("1").
         From("orders").
         Where("orders.user_id = users.id")
 
     var inactiveUsers []User
-    err := db.Builder().
-        Select("*").
+    err := db.Select().
         From("users").
         Where(relica.NotExists(orderCheck)).
         All(&inactiveUsers)
@@ -232,15 +222,13 @@ WHERE NOT EXISTS (SELECT 1 FROM "orders" WHERE orders.user_id = users.id)
 ```go
 // Find users with recent high-value orders
 func GetHighValueRecentCustomers(db *relica.DB, since time.Time) ([]User, error) {
-    recentOrders := db.Builder().
-        Select("1").
+    recentOrders := db.Select("1").
         From("orders o").
         Where("o.user_id = u.id AND o.total > ? AND o.created_at > ?",
             1000, since)
 
     var users []User
-    err := db.Builder().
-        Select("*").
+    err := db.Select().
         From("users u").
         Where(relica.Exists(recentOrders)).
         All(&users)
@@ -263,19 +251,16 @@ WHERE EXISTS (
 ```go
 // Find users who have both orders AND reviews
 func GetEngagedUsers(db *relica.DB) ([]User, error) {
-    hasOrders := db.Builder().
-        Select("1").
+    hasOrders := db.Select("1").
         From("orders").
         Where("orders.user_id = users.id")
 
-    hasReviews := db.Builder().
-        Select("1").
+    hasReviews := db.Select("1").
         From("reviews").
         Where("reviews.user_id = users.id")
 
     var users []User
-    err := db.Builder().
-        Select("*").
+    err := db.Select().
         From("users").
         Where(relica.And(
             relica.Exists(hasOrders),
@@ -309,8 +294,7 @@ FROM subqueries (derived tables) allow you to use query results as a table sourc
 ```go
 // Calculate order statistics per user, then filter
 func GetTopCustomers(db *relica.DB) ([]CustomerStats, error) {
-    stats := db.Builder().
-        Select("user_id", "COUNT(*) as order_count", "SUM(total) as total_spent").
+    stats := db.Select("user_id", "COUNT(*) as order_count", "SUM(total) as total_spent").
         From("orders").
         GroupBy("user_id")
 
@@ -321,9 +305,8 @@ func GetTopCustomers(db *relica.DB) ([]CustomerStats, error) {
     }
     var topCustomers []CustomerStats
 
-    err := db.Builder().
+    err := db.Select("user_id", "order_count", "total_spent").
         FromSelect(stats, "order_stats").
-        Select("user_id", "order_count", "total_spent").
         Where("order_count > ? AND total_spent > ?", 10, 5000).
         OrderBy("total_spent DESC").
         All(&topCustomers)
@@ -349,8 +332,7 @@ ORDER BY "total_spent" DESC
 ```go
 // Join aggregated data with users table
 func GetUsersWithAvgRating(db *relica.DB, minRating float64) ([]UserRating, error) {
-    stats := db.Builder().
-        Select("user_id", "AVG(rating) as avg_rating").
+    stats := db.Select("user_id", "AVG(rating) as avg_rating").
         From("reviews").
         GroupBy("user_id")
 
@@ -360,8 +342,7 @@ func GetUsersWithAvgRating(db *relica.DB, minRating float64) ([]UserRating, erro
     }
     var users []UserRating
 
-    err := db.Builder().
-        Select("u.name", "r.avg_rating").
+    err := db.Select("u.name", "r.avg_rating").
         From("users u").
         InnerJoin("("+stats.Build().SQL()+") AS r", "u.id = r.user_id").
         Where("r.avg_rating >= ?", minRating).
@@ -375,8 +356,7 @@ func GetUsersWithAvgRating(db *relica.DB, minRating float64) ([]UserRating, erro
 ```go
 // Better approach: use FromSelect for main subquery, then JOIN
 func GetUsersWithAvgRating(db *relica.DB, minRating float64) ([]UserRating, error) {
-    stats := db.Builder().
-        Select("user_id", "AVG(rating) as avg_rating").
+    stats := db.Select("user_id", "AVG(rating) as avg_rating").
         From("reviews").
         GroupBy("user_id")
 
@@ -386,8 +366,7 @@ func GetUsersWithAvgRating(db *relica.DB, minRating float64) ([]UserRating, erro
     }
     var users []UserRating
 
-    err := db.Builder().
-        Select("u.name", "s.avg_rating").
+    err := db.Select("u.name", "s.avg_rating").
         FromSelect(stats, "s").
         InnerJoin("users u", "u.id = s.user_id").
         Where("s.avg_rating >= ?", minRating).
@@ -403,14 +382,12 @@ func GetUsersWithAvgRating(db *relica.DB, minRating float64) ([]UserRating, erro
 // Multi-level aggregation
 func GetTopSellingCategories(db *relica.DB) ([]CategorySales, error) {
     // Inner: product sales
-    productSales := db.Builder().
-        Select("product_id", "SUM(quantity) as total_sold").
+    productSales := db.Select("product_id", "SUM(quantity) as total_sold").
         From("order_items").
         GroupBy("product_id")
 
     // Middle: join with products to get categories
-    categorySales := db.Builder().
-        Select("p.category_id", "SUM(ps.total_sold) as category_total").
+    categorySales := db.Select("p.category_id", "SUM(ps.total_sold) as category_total").
         FromSelect(productSales, "ps").
         InnerJoin("products p", "p.id = ps.product_id").
         GroupBy("p.category_id")
@@ -422,8 +399,7 @@ func GetTopSellingCategories(db *relica.DB) ([]CategorySales, error) {
     }
     var result []CategorySales
 
-    err := db.Builder().
-        Select("category_id", "category_total").
+    err := db.Select("category_id", "category_total").
         FromSelect(categorySales, "cs").
         Where("category_total > ?", 1000).
         OrderBy("category_total DESC").
@@ -466,8 +442,7 @@ func GetUsersWithOrderCount(db *relica.DB) ([]UserWithStats, error) {
     }
     var users []UserWithStats
 
-    err := db.Builder().
-        Select("id", "name").
+    err := db.Select("id", "name").
         SelectExpr("(SELECT COUNT(*) FROM orders WHERE user_id = users.id)", "order_count").
         From("users").
         All(&users)
@@ -496,8 +471,7 @@ func GetUserStats(db *relica.DB) ([]UserStats, error) {
     }
     var users []UserStats
 
-    err := db.Builder().
-        Select("id", "name").
+    err := db.Select("id", "name").
         SelectExpr("(SELECT COUNT(*) FROM orders WHERE user_id = users.id)", "order_count").
         SelectExpr("(SELECT COALESCE(SUM(total), 0) FROM orders WHERE user_id = users.id)", "total_spent").
         SelectExpr("(SELECT MAX(created_at) FROM orders WHERE user_id = users.id)", "last_order").
@@ -515,8 +489,7 @@ func GetUserStats(db *relica.DB) ([]UserStats, error) {
 func GetAboveAverageSpenders(db *relica.DB) ([]User, error) {
     var users []User
 
-    err := db.Builder().
-        Select("*").
+    err := db.Select().
         SelectExpr("(SELECT SUM(total) FROM orders WHERE user_id = users.id)", "total_spent").
         From("users").
         Where("(SELECT SUM(total) FROM orders WHERE user_id = users.id) > (SELECT AVG(total) FROM orders)").
@@ -553,13 +526,11 @@ Subquery can run independently (no reference to outer query).
 
 ```go
 // Non-correlated: subquery doesn't reference parent table
-subquery := db.Builder().
-    Select("user_id").
+subquery := db.Select("user_id").
     From("orders").
     Where("total > ?", 1000)
 
-db.Builder().
-    Select("*").
+db.Select().
     From("users").
     Where(relica.In("id", subquery))
 ```
@@ -578,13 +549,11 @@ Subquery references columns from outer query.
 
 ```go
 // Correlated: subquery references users.id from parent
-orderCheck := db.Builder().
-    Select("1").
+orderCheck := db.Select("1").
     From("orders").
     Where("orders.user_id = users.id")  // References parent!
 
-db.Builder().
-    Select("*").
+db.Select().
     From("users").
     Where(relica.Exists(orderCheck))
 ```
@@ -620,20 +589,20 @@ Need data from related table?
 1. **Complex filtering based on aggregates**
    ```go
    // Users with more than average orders
-   avgOrderCount := db.Builder().Select("AVG(order_count)").From("user_stats")
+   avgOrderCount := db.Select("AVG(order_count)").From("user_stats")
    ```
 
 2. **Checking existence**
    ```go
    // EXISTS is clearer than JOIN when you don't need joined data
-   exists := db.Builder().Select("1").From("orders").Where("user_id = users.id")
+   exists := db.Select("1").From("orders").Where("user_id = users.id")
    ```
 
 3. **Filtering aggregated results**
    ```go
    // FROM subquery allows WHERE on aggregated columns
-   stats := db.Builder().Select("user_id, COUNT(*) as cnt").From("orders").GroupBy("user_id")
-   db.Builder().FromSelect(stats, "s").Where("cnt > 10")
+   stats := db.Select("user_id, COUNT(*) as cnt").From("orders").GroupBy("user_id")
+   db.Select().FromSelect(stats, "s").Where("cnt > 10")
    ```
 
 4. **Simplifying complex queries**
@@ -721,14 +690,12 @@ Use LIMIT when checking existence:
 
 ```go
 // Check if ANY orders exist (stop at first match)
-orderCheck := db.Builder().
-    Select("1").
+orderCheck := db.Select("1").
     From("orders").
     Where("user_id = users.id").
     Limit(1)  // Stop after first row
 
-db.Builder().
-    Select("*").
+db.Select().
     From("users").
     Where(relica.Exists(orderCheck))
 ```
@@ -739,14 +706,12 @@ db.Builder().
 
 ```go
 // ❌ BAD: Scalar subquery executes for each row
-db.Builder().
-    Select("id").
+db.Select("id").
     SelectExpr("(SELECT COUNT(*) FROM orders WHERE user_id = users.id)").
     From("users") // Executes subquery 1M times for 1M users
 
 // ✅ GOOD: Use JOIN + GROUP BY
-db.Builder().
-    Select("u.id", "COUNT(o.id) as order_count").
+db.Select("u.id", "COUNT(o.id) as order_count").
     From("users u").
     LeftJoin("orders o", "u.id = o.user_id").
     GroupBy("u.id")
@@ -774,12 +739,12 @@ db.Builder().
 
 1. **Use EXISTS for existence checks**
    ```go
-   relica.Exists(db.Builder().Select("1").From("orders").Where("user_id = users.id"))
+   relica.Exists(db.Select("1").From("orders").Where("user_id = users.id"))
    ```
 
 2. **Add LIMIT 1 to EXISTS subqueries** (clarity)
    ```go
-   db.Builder().Select("1").From("orders").Where("user_id = users.id").Limit(1)
+   db.Select("1").From("orders").Where("user_id = users.id").Limit(1)
    ```
 
 3. **Index subquery WHERE columns**
@@ -789,14 +754,14 @@ db.Builder().
 
 4. **Use FROM subquery for complex aggregations**
    ```go
-   stats := db.Builder().Select("...").From("orders").GroupBy("user_id")
-   db.Builder().FromSelect(stats, "s").Where("total > 1000")
+   stats := db.Select("...").From("orders").GroupBy("user_id")
+   db.Select().FromSelect(stats, "s").Where("total > 1000")
    ```
 
 5. **Keep subqueries simple and readable**
    ```go
    // Break complex queries into variables
-   subquery := db.Builder().Select("...").From("...").Where("...")
+   subquery := db.Select("...").From("...").Where("...")
    ```
 
 ### ❌ DON'T
@@ -804,10 +769,10 @@ db.Builder().
 1. **Don't use SELECT * in subqueries** (specify columns)
    ```go
    // ❌ Bad
-   db.Builder().Select("*").From("orders")
+   db.Select().From("orders")
 
    // ✅ Good
-   db.Builder().Select("user_id").From("orders")
+   db.Select("user_id").From("orders")
    ```
 
 2. **Don't use NOT IN with NULLable columns** (use NOT EXISTS)
@@ -850,14 +815,12 @@ db.Builder().
 ```go
 // Users with no orders (NOT EXISTS pattern)
 func GetUsersWithoutOrders(db *relica.DB) ([]User, error) {
-    orderCheck := db.Builder().
-        Select("1").
+    orderCheck := db.Select("1").
         From("orders").
         Where("orders.user_id = users.id")
 
     var users []User
-    err := db.Builder().
-        Select("*").
+    err := db.Select().
         From("users").
         Where(relica.NotExists(orderCheck)).
         All(&users)
@@ -871,15 +834,13 @@ func GetUsersWithoutOrders(db *relica.DB) ([]User, error) {
 ```go
 // Top 3 products per category
 func GetTopProductsPerCategory(db *relica.DB) ([]Product, error) {
-    subquery := db.Builder().
-        Select("*").
+    subquery := db.Select().
         SelectExpr("ROW_NUMBER() OVER (PARTITION BY category_id ORDER BY sales DESC)", "rn").
         From("products")
 
     var topProducts []Product
-    err := db.Builder().
+    err := db.Select().
         FromSelect(subquery, "ranked").
-        Select("*").
         Where("rn <= ?", 3).
         All(&topProducts)
 
@@ -892,15 +853,13 @@ func GetTopProductsPerCategory(db *relica.DB) ([]Product, error) {
 ```go
 // Users with total spent > $1000
 func GetHighSpenders(db *relica.DB) ([]User, error) {
-    spendingQuery := db.Builder().
-        Select("user_id").
+    spendingQuery := db.Select("user_id").
         From("orders").
         GroupBy("user_id").
         Having("SUM(total) > ?", 1000)
 
     var highSpenders []User
-    err := db.Builder().
-        Select("u.*").
+    err := db.Select("u.*").
         From("users u").
         Where(relica.In("u.id", spendingQuery)).
         All(&highSpenders)
@@ -914,14 +873,12 @@ func GetHighSpenders(db *relica.DB) ([]User, error) {
 ```go
 // Latest order for each user
 func GetLatestOrders(db *relica.DB) ([]Order, error) {
-    latestOrderIds := db.Builder().
-        Select("MAX(id) as order_id").
+    latestOrderIds := db.Select("MAX(id) as order_id").
         From("orders").
         GroupBy("user_id")
 
     var orders []Order
-    err := db.Builder().
-        Select("*").
+    err := db.Select().
         From("orders").
         Where(relica.In("id", latestOrderIds)).
         All(&orders)
@@ -935,8 +892,7 @@ func GetLatestOrders(db *relica.DB) ([]Order, error) {
 ```go
 // Users with orders in multiple categories
 func GetDiverseShoppers(db *relica.DB) ([]User, error) {
-    diverseUsers := db.Builder().
-        Select("o.user_id").
+    diverseUsers := db.Select("o.user_id").
         From("orders o").
         InnerJoin("order_items oi", "o.id = oi.order_id").
         InnerJoin("products p", "oi.product_id = p.id").
@@ -944,8 +900,7 @@ func GetDiverseShoppers(db *relica.DB) ([]User, error) {
         Having("COUNT(DISTINCT p.category_id) >= ?", 3)
 
     var users []User
-    err := db.Builder().
-        Select("*").
+    err := db.Select().
         From("users").
         Where(relica.In("id", diverseUsers)).
         All(&users)
@@ -961,8 +916,7 @@ func GetDiverseShoppers(db *relica.DB) ([]User, error) {
 **Problem**: NOT IN with NULL returns no rows
 ```go
 // ❌ BAD: Returns nothing if subquery has NULL
-db.Builder().
-    Select("*").
+db.Select().
     From("users").
     Where(relica.NotIn("id", subquery))
 ```
@@ -972,13 +926,11 @@ db.Builder().
 **Solution**: Use NOT EXISTS instead
 ```go
 // ✅ GOOD: NULL-safe
-orderCheck := db.Builder().
-    Select("1").
+orderCheck := db.Select("1").
     From("orders").
     Where("orders.user_id = users.id")
 
-db.Builder().
-    Select("*").
+db.Select().
     From("users").
     Where(relica.NotExists(orderCheck))
 ```
@@ -988,8 +940,7 @@ db.Builder().
 **Problem**: Correlated subquery executes for each row
 ```go
 // ❌ SLOW: Executes subquery 1M times for 1M users
-db.Builder().
-    Select("id", "name").
+db.Select("id", "name").
     SelectExpr("(SELECT COUNT(*) FROM orders WHERE user_id = users.id)", "order_count").
     From("users")
 ```
@@ -997,8 +948,7 @@ db.Builder().
 **Solution**: Use LEFT JOIN + GROUP BY
 ```go
 // ✅ FASTER: Single query with join
-db.Builder().
-    Select("u.id", "u.name", "COUNT(o.id) as order_count").
+db.Select("u.id", "u.name", "COUNT(o.id) as order_count").
     From("users u").
     LeftJoin("orders o", "u.id = o.user_id").
     GroupBy("u.id", "u.name")
@@ -1026,13 +976,13 @@ SelectExpr("(SELECT COUNT(*) FROM products WHERE category_id = c.id)", "product_
 **Problem**: No alias provided for derived table
 ```go
 // ❌ PANIC: Alias required
-db.Builder().FromSelect(subquery, "")
+db.Select().FromSelect(subquery, "")
 ```
 
 **Solution**: Always provide alias
 ```go
 // ✅ GOOD
-db.Builder().FromSelect(subquery, "stats")
+db.Select().FromSelect(subquery, "stats")
 ```
 
 ### Issue: Parameter Order Confusion
@@ -1044,8 +994,7 @@ db.Builder().FromSelect(subquery, "stats")
 
 **Solution**: Build step-by-step and test SQL output
 ```go
-query := db.Builder().
-    Select("*").
+query := db.Select().
     Where(relica.In("id", subquery1)).
     Where(relica.Exists(subquery2)).
     Build()

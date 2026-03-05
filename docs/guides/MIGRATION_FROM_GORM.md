@@ -86,8 +86,7 @@ func createUser(db *relica.DB, user *User) error {
 // (golang-migrate, goose, etc.)
 
 // No preloading - use JOINs
-db.Builder().
-    Select("users.*", "posts.title").
+db.Select("users.*", "posts.title").
     From("users").
     LeftJoin("posts", "posts.user_id = users.id").
     All(&results)
@@ -112,9 +111,9 @@ db.Find(&users)
 **Relica:**
 ```go
 var users []User
-db.Select("*").From("users").All(&users)
+db.Select().From("users").All(&users)
 // Or shorter:
-db.Select("*").From("users").All(&users)
+db.Select().From("users").All(&users)
 ```
 
 #### SELECT - Find by ID
@@ -128,7 +127,7 @@ db.First(&user, 1)  // WHERE id = 1
 **Relica:**
 ```go
 var user User
-db.Select("*").From("users").Where("id = ?", 1).One(&user)
+db.Select().From("users").Where("id = ?", 1).One(&user)
 ```
 
 #### SELECT - Find with Conditions
@@ -148,17 +147,17 @@ db.Where(map[string]interface{}{"name": "Alice", "age": 30}).Find(&users)
 **Relica:**
 ```go
 var users []User
-db.Select("*").From("users").Where("age > ?", 18).All(&users)
+db.Select().From("users").Where("age > ?", 18).All(&users)
 
 // Multiple conditions (chaining)
-db.Select("*").
+db.Select().
     From("users").
     Where("age > ?", 18).
     Where("status = ?", "active").
     All(&users)
 
 // Expression API (type-safe)
-db.Select("*").
+db.Select().
     From("users").
     Where(relica.HashExp{"name": "Alice", "age": 30}).
     All(&users)
@@ -257,7 +256,7 @@ db.Order("age desc").Limit(10).Offset(20).Find(&users)
 **Relica:**
 ```go
 var users []User
-db.Select("*").
+db.Select().
     From("users").
     OrderBy("age DESC").
     Limit(10).
@@ -491,7 +490,7 @@ type App struct {
 app.gormDB.AutoMigrate(&User{}, &Post{})
 
 // Use Relica for fast, explicit queries
-db.Select("*").
+db.Select().
     From("users").
     InnerJoin("posts", "posts.user_id = users.id").
     Where("users.status = ?", "active").
@@ -632,10 +631,10 @@ Replace GORM entirely:
 Instead of string concatenation:
 ```go
 // ❌ Error-prone
-db.Select("*").From("users").Where("name = ?", name)
+db.Select().From("users").Where("name = ?", name)
 
 // ✅ Type-safe
-db.Select("*").From("users").Where(relica.Eq("name", name))
+db.Select().From("users").Where(relica.Eq("name", name))
 ```
 
 ### Tip 2: Batch Operations for Performance
@@ -648,7 +647,7 @@ for _, user := range users {
 }
 
 // Relica (1 query, 3.3x faster)
-batch := db.Builder().BatchInsert("users", []string{"name", "email"})
+batch := db.BatchInsert("users", []string{"name", "email"})
 for _, user := range users {
     batch.Values(user.Name, user.Email)
 }
@@ -674,10 +673,10 @@ tx.Commit()
 Relica caches prepared statements automatically:
 ```go
 // First call: prepares statement
-db.Select("*").From("users").Where("id = ?", 1).One(&user)
+db.Select().From("users").Where("id = ?", 1).One(&user)
 
 // Subsequent calls: uses cached statement (<60ns)
-db.Select("*").From("users").Where("id = ?", 2).One(&user)
+db.Select().From("users").Where("id = ?", 2).One(&user)
 ```
 
 ---
