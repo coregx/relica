@@ -222,4 +222,4 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 ---
 
 *Last Updated: 2025-12-23*
-*Maintained by: COREGX Team*
+*Maintained by: Andrey Kolkov and CoreGX contributors*

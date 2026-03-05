@@ -1273,7 +1273,7 @@ All existing code works without modifications. New features are additive only.
 
 ### Contributors
 
-- COREGX Team
+- Andrey Kolkov and CoreGX contributors
 - IrisMX Project (feature request and beta testing)
 - Community contributors
 
@@ -1576,7 +1576,7 @@ This is the initial beta release. No migration required.
 
 ## Contributors
 
-- COREGX Team
+- Andrey Kolkov and CoreGX contributors
 - Community contributors
 
 ---

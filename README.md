@@ -1109,6 +1109,6 @@ Relica is released under the [MIT License](LICENSE).
 
 ---
 
-**Made with ❤️ by COREGX Team**
+**Made with ❤️ by Andrey Kolkov and CoreGX contributors**
 
 *Relica - Lightweight, Fast, Zero-Dependency Database Query Builder for Go*
