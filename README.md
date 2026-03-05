@@ -47,7 +47,8 @@
 | **PREFERRED** | `db.Model(&struct).Insert/Update/Delete()` | All CRUD operations with structs |
 | **PREFERRED** | `relica.Eq()`, `relica.And()`, `relica.In()`, etc. | WHERE conditions |
 | **PREFERRED** | `relica.HashExp{"col": val}` | Simple equality conditions |
-| **ACCEPTABLE** | `Where("col = ?", val)` | Simple parameterized queries |
+| **ACCEPTABLE** | `Where("col = {:col}", relica.Params{"col": val})` | Named placeholders |
+| **ACCEPTABLE** | `Where("col = ?", val)` | Positional placeholders |
 | **AVOID** | `map[string]interface{}` | Only for dynamic/unknown schemas |
 
 > **For AI Agents**: See [AGENTS.md](AGENTS.md) for complete patterns and examples.
@@ -348,17 +349,42 @@ db.Select().From("users").
     All(&users)
 ```
 
-#### Backward Compatibility
+#### Named Placeholders
 
-String-based WHERE still works:
+Named parameters use `{:name}` syntax with `relica.Params` map — readable, safe, and reusable:
 
 ```go
-// Old style (still supported)
+// Single parameter
+db.Select().From("users").
+    Where("id = {:id}", relica.Params{"id": 1}).
+    One(&user)
+
+// Multiple parameters
+db.Select().From("users").
+    Where("status = {:status} AND role = {:role}", relica.Params{
+        "status": "active",
+        "role":   "admin",
+    }).
+    All(&users)
+
+// Same parameter used multiple times
+db.Select().From("categories").
+    Where("parent_id = {:id} OR id = {:id}", relica.Params{"id": categoryID}).
+    All(&categories)
+```
+
+Named placeholders work in `Where`, `AndWhere`, `OrWhere` on Select, Update, and Delete queries.
+
+#### Positional Placeholders
+
+Positional `?` parameters also work (backward compatible):
+
+```go
 db.Select().From("users").
     Where("status = ? AND age > ?", 1, 18).
     All(&users)
 
-// Can mix both styles
+// Can mix styles
 db.Select().From("users").
     Where("status = ?", 1).
     Where(relica.GreaterThan("age", 18)).

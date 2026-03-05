@@ -11,6 +11,36 @@ import (
 	"github.com/coregx/relica/internal/dialects"
 )
 
+// resolveNamedParams checks if the SQL condition contains named placeholders {:name}
+// and resolves them to positional ? placeholders using the provided Params map.
+// If the condition has no named placeholders, returns it unchanged with original params.
+//
+// Usage in Where:
+//
+//	Where("id = {:id} AND status = {:status}", relica.Params{"id": 1, "status": "active"})
+//	Where("status = ?", 1)  // also works (positional)
+func resolveNamedParams(condition string, params []interface{}) (string, []interface{}) {
+	if !namedPlaceholderRegex.MatchString(condition) {
+		return condition, params
+	}
+	if len(params) != 1 {
+		return condition, params
+	}
+	p, ok := params[0].(Params)
+	if !ok {
+		return condition, params
+	}
+	var orderedArgs []interface{}
+	resolved := namedPlaceholderRegex.ReplaceAllStringFunc(condition, func(match string) string {
+		name := match[2 : len(match)-1]
+		if val, exists := p[name]; exists {
+			orderedArgs = append(orderedArgs, val)
+		}
+		return "?"
+	})
+	return resolved, orderedArgs
+}
+
 // QueryPlan represents a unified query execution plan from database EXPLAIN.
 // Type alias from internal/analyzer package.
 type QueryPlan = analyzer.QueryPlan
@@ -191,9 +221,9 @@ func (sq *SelectQuery) SelectExpr(expr string, args ...interface{}) *SelectQuery
 func (sq *SelectQuery) Where(condition interface{}, params ...interface{}) *SelectQuery {
 	switch cond := condition.(type) {
 	case string:
-		// Legacy string-based WHERE (backward compatible)
-		sq.where = append(sq.where, cond)
-		sq.params = append(sq.params, params...)
+		resolved, resolvedArgs := resolveNamedParams(cond, params)
+		sq.where = append(sq.where, resolved)
+		sq.params = append(sq.params, resolvedArgs...)
 
 	case Expression:
 		// New Expression-based WHERE
@@ -249,13 +279,11 @@ func (sq *SelectQuery) OrWhere(condition interface{}, params ...interface{}) *Se
 
 	switch cond := condition.(type) {
 	case string:
-		newSQL = cond
-		newArgs = params
+		newSQL, newArgs = resolveNamedParams(cond, params)
 
 	case Expression:
 		newSQL, newArgs = cond.Build(sq.builder.db.dialect)
 		if newSQL == "" {
-			// Empty expression - nothing to add.
 			return sq
 		}
 
@@ -1422,12 +1450,11 @@ func (uq *UpdateQuery) Set(values map[string]interface{}) *UpdateQuery {
 func (uq *UpdateQuery) Where(condition interface{}, params ...interface{}) *UpdateQuery {
 	switch cond := condition.(type) {
 	case string:
-		// Legacy string-based WHERE (backward compatible)
-		uq.where = append(uq.where, cond)
-		uq.params = append(uq.params, params...)
+		resolved, resolvedArgs := resolveNamedParams(cond, params)
+		uq.where = append(uq.where, resolved)
+		uq.params = append(uq.params, resolvedArgs...)
 
 	case Expression:
-		// New Expression-based WHERE
 		sqlStr, args := cond.Build(uq.builder.db.dialect)
 		if sqlStr != "" {
 			uq.where = append(uq.where, sqlStr)
@@ -1480,13 +1507,11 @@ func (uq *UpdateQuery) OrWhere(condition interface{}, params ...interface{}) *Up
 
 	switch cond := condition.(type) {
 	case string:
-		newSQL = cond
-		newArgs = params
+		newSQL, newArgs = resolveNamedParams(cond, params)
 
 	case Expression:
 		newSQL, newArgs = cond.Build(uq.builder.db.dialect)
 		if newSQL == "" {
-			// Empty expression - nothing to add.
 			return uq
 		}
 
@@ -1601,12 +1626,11 @@ func (qb *QueryBuilder) Delete(table string) *DeleteQuery {
 func (dq *DeleteQuery) Where(condition interface{}, params ...interface{}) *DeleteQuery {
 	switch cond := condition.(type) {
 	case string:
-		// Legacy string-based WHERE (backward compatible)
-		dq.where = append(dq.where, cond)
-		dq.params = append(dq.params, params...)
+		resolved, resolvedArgs := resolveNamedParams(cond, params)
+		dq.where = append(dq.where, resolved)
+		dq.params = append(dq.params, resolvedArgs...)
 
 	case Expression:
-		// New Expression-based WHERE
 		sqlStr, args := cond.Build(dq.builder.db.dialect)
 		if sqlStr != "" {
 			dq.where = append(dq.where, sqlStr)
@@ -1659,13 +1683,11 @@ func (dq *DeleteQuery) OrWhere(condition interface{}, params ...interface{}) *De
 
 	switch cond := condition.(type) {
 	case string:
-		newSQL = cond
-		newArgs = params
+		newSQL, newArgs = resolveNamedParams(cond, params)
 
 	case Expression:
 		newSQL, newArgs = cond.Build(dq.builder.db.dialect)
 		if newSQL == "" {
-			// Empty expression - nothing to add.
 			return dq
 		}
 

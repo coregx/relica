@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.10.1] - 2026-03-05
+
+### Fixed
+
+- Named placeholders `{:name}` now work in fluent builder `Where`, `AndWhere`, `OrWhere` on Select, Update, and Delete queries
+- Previously `{:name}` only worked with `NewQuery()` + `BindParams()`, now consistent across the entire API
+
+### Example
+
+```go
+db.Select().From("users").
+    Where("id = {:id} AND status = {:status}", relica.Params{"id": 1, "status": "active"}).
+    All(&users)
+```
+
+---
+
 ## [0.10.0] - 2026-03-05
 
 ### Added
