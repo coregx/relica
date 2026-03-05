@@ -625,10 +625,10 @@ func TestPlaceholder_DialectDifferences(t *testing.T) {
 // use double quotes while mysql uses backticks.
 func TestQuoteIdentifier_DialectDifferences(t *testing.T) {
 	tests := []struct {
-		dialectKey  string
-		input       string
-		wantPrefix  byte
-		wantSuffix  byte
+		dialectKey string
+		input      string
+		wantPrefix byte
+		wantSuffix byte
 	}{
 		{"postgres", "users", '"', '"'},
 		{"postgresql", "orders", '"', '"'},

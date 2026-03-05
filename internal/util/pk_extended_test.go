@@ -536,9 +536,9 @@ func TestFindPrimaryKeyFields_AllPriorities(t *testing.T) {
 
 	t.Run("unexported fields are skipped", func(t *testing.T) {
 		type HasUnexported struct {
-			ID       int64  `db:"id"`
-			secret   string //nolint:unused
-			Name     string `db:"name"`
+			ID     int64  `db:"id"`
+			secret string //nolint:unused
+			Name   string `db:"name"`
 		}
 		h := HasUnexported{ID: 21}
 		info, err := FindPrimaryKeyFields(reflect.ValueOf(h))

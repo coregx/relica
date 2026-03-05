@@ -402,12 +402,12 @@ func TestFindTableStart(t *testing.T) {
 		idx   int
 		ok    bool
 	}{
-		{"select with from", "SELECT * FROM USERS", 13, true},  // "FROM" at 9, +4=13
+		{"select with from", "SELECT * FROM USERS", 13, true}, // "FROM" at 9, +4=13
 		{"select no from", "SELECT 1", 0, false},
-		{"insert into", "INSERT INTO USERS", 11, true},  // "INTO" at 7, +4=11
+		{"insert into", "INSERT INTO USERS", 11, true}, // "INTO" at 7, +4=11
 		{"insert no into", "INSERT USERS", 0, false},
-		{"update", "UPDATE USERS SET", 6, true},  // len("UPDATE")=6
-		{"delete from", "DELETE FROM USERS", 11, true},  // "FROM" at 7, +4=11
+		{"update", "UPDATE USERS SET", 6, true},        // len("UPDATE")=6
+		{"delete from", "DELETE FROM USERS", 11, true}, // "FROM" at 7, +4=11
 		{"delete no from", "DELETE USERS", 0, false},
 		{"unknown", "TRUNCATE USERS", 0, false},
 	}
