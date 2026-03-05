@@ -216,8 +216,8 @@ git commit -m "test(core): add integration tests for transactions"
 
 1. **Create feature branch**:
    ```bash
-   git checkout develop
-   git pull upstream develop
+   git checkout main
+   git pull upstream main
    git checkout -b feature/my-feature
    ```
 
@@ -238,7 +238,7 @@ git commit -m "test(core): add integration tests for transactions"
 
 4. **Create PR on GitHub**:
    - Go to: https://github.com/coregx/relica/compare
-   - Select `develop` as base branch
+   - Select `main` as base branch
    - Select your feature branch
    - Fill in PR template
    - Request review
@@ -288,7 +288,7 @@ None - backward compatible addition.
 ### Before Reporting
 
 1. Check [existing issues](https://github.com/coregx/relica/issues)
-2. Verify it's not already fixed in `develop`
+2. Verify it's not already fixed in `main`
 3. Try with latest version
 
 ### Bug Report Template
@@ -453,14 +453,12 @@ See [docs/reports/INTERNAL_VS_NO_INTERNAL_2025.md](docs/reports/INTERNAL_VS_NO_I
 See [RELEASE_GUIDE.md](RELEASE_GUIDE.md) for detailed release process.
 
 **Summary:**
-1. Features merged to `develop`
-2. Release branch created: `release/v0.2.0`
-3. CI passes on release branch
-4. Merge to `main` (--no-ff)
-5. CI passes on `main`
-6. Create tag: `git tag -a v0.2.0`
-7. Push tag: `git push origin v0.2.0`
-8. Merge back to `develop`
+1. Feature branches created from `main`
+2. PRs merged to `main`
+3. CI passes on `main`
+4. Triple-check: branch, tag order, CHANGELOG
+5. Create tag: `git tag -a v0.X.X`
+6. Push tag: `git push origin v0.X.X`
 
 **Only maintainers can create releases.**
 
