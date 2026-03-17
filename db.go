@@ -1208,6 +1208,54 @@ func (mq *ModelQuery) Delete() error {
 	return mq.mq.Delete()
 }
 
+// Upsert performs an INSERT ... ON CONFLICT DO UPDATE for the model.
+//
+// Auto-detects the conflict column from the primary key.
+// If fields are specified, only those fields are updated on conflict.
+// If no fields are specified, all non-PK fields are updated on conflict.
+//
+// For PostgreSQL, the primary key is auto-populated after upsert (using RETURNING).
+// For MySQL/SQLite, LastInsertId() is used when the PK is zero.
+//
+// Example:
+//
+//	user := User{ID: 1, Name: "Alice", Email: "alice@example.com"}
+//	err := db.Model(&user).Upsert()
+//	// INSERT INTO users (email, id, name) VALUES (?, ?, ?)
+//	// ON CONFLICT (id) DO UPDATE SET email=EXCLUDED.email, name=EXCLUDED.name
+//
+//	// Update only specific fields on conflict:
+//	err = db.Model(&user).Upsert("name")
+//	// ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name
+func (mq *ModelQuery) Upsert(fields ...string) error {
+	return mq.mq.Upsert(fields...)
+}
+
+// UpdateChanged updates only the fields that differ between the current model
+// and the original snapshot.
+//
+// It compares each field of the current model against original.
+// Only changed fields are included in the UPDATE SET clause.
+// Primary key fields are never included in the SET clause.
+//
+// If nothing has changed, no query is executed and nil is returned.
+// The original parameter must be the same type as the model struct.
+//
+// Example:
+//
+//	var user User
+//	db.Select().From("users").Where(relica.Eq("id", 1)).One(&user)
+//
+//	original := user
+//	user.Name = "Alice Updated"
+//	user.Status = "inactive"
+//
+//	err := db.Model(&user).UpdateChanged(&original)
+//	// UPDATE users SET name=?, status=? WHERE id=?
+func (mq *ModelQuery) UpdateChanged(original interface{}) error {
+	return mq.mq.UpdateChanged(original)
+}
+
 // Exclude excludes the specified fields from the operation.
 //
 // This is useful for auto-managed fields like timestamps.
@@ -1836,6 +1884,35 @@ func (sq *SelectQuery) Column(slice interface{}) error {
 	return sq.sq.Column(slice)
 }
 
+// Count executes a COUNT(*) query and returns the number of matching rows.
+// Any columns specified in Select() are ignored; COUNT(*) is always used.
+//
+// Example:
+//
+//	count, err := db.Select().From("users").Where(relica.Eq("status", 1)).Count()
+func (sq *SelectQuery) Count() (int64, error) {
+	return sq.sq.Count()
+}
+
+// Exists executes the query wrapped in SELECT EXISTS(...) and returns true if any rows match.
+//
+// Example:
+//
+//	exists, err := db.Select().From("users").Where(relica.Eq("email", email)).Exists()
+func (sq *SelectQuery) Exists() (bool, error) {
+	return sq.sq.Exists()
+}
+
+// ToSQL returns the SQL string and parameters without executing the query.
+// This is useful for debugging, logging, or passing the query to another layer.
+//
+// Example:
+//
+//	sql, params := db.Select().From("users").Where(relica.Eq("id", 1)).ToSQL()
+func (sq *SelectQuery) ToSQL() (string, []interface{}) {
+	return sq.sq.ToSQL()
+}
+
 // AsExpression converts a SelectQuery to an Expression for subquery use.
 //
 // Example:
@@ -1934,6 +2011,19 @@ func (uq *UpdateQuery) Execute() (sql.Result, error) {
 	return uq.Build().Execute()
 }
 
+// ToSQL returns the SQL string and parameters without executing the query.
+// This is useful for debugging, logging, or passing the query to another layer.
+//
+// Example:
+//
+//	sql, params := db.Update("users").Set(map[string]interface{}{"status": 1}).Where(relica.Eq("id", 1)).ToSQL()
+func (uq *UpdateQuery) ToSQL() (string, []interface{}) {
+	if uq.err != nil {
+		return "", nil
+	}
+	return uq.uq.ToSQL()
+}
+
 // ============================================================================
 // DeleteQuery Methods
 // ============================================================================
@@ -1992,6 +2082,16 @@ func (dq *DeleteQuery) Build() *Query {
 // Execute executes the DELETE query.
 func (dq *DeleteQuery) Execute() (sql.Result, error) {
 	return dq.Build().Execute()
+}
+
+// ToSQL returns the SQL string and parameters without executing the query.
+// This is useful for debugging, logging, or passing the query to another layer.
+//
+// Example:
+//
+//	sql, params := db.Delete("users").Where(relica.Eq("id", 1)).ToSQL()
+func (dq *DeleteQuery) ToSQL() (string, []interface{}) {
+	return dq.dq.ToSQL()
 }
 
 // ============================================================================
@@ -2280,6 +2380,67 @@ func (q *Query) QueryParams() []interface{} {
 	}
 	return q.q.Params()
 }
+
+// ============================================================================
+// Re-export errors and error classification helpers
+// ============================================================================
+
+// ErrNotFound is returned by One() when no rows match the query.
+// It wraps sql.ErrNoRows so both errors.Is(err, relica.ErrNotFound)
+// and errors.Is(err, sql.ErrNoRows) return true.
+//
+// Example:
+//
+//	var user User
+//	err := db.Select().From("users").Where(relica.Eq("id", 999)).One(&user)
+//	if errors.Is(err, relica.ErrNotFound) {
+//	    // handle not found
+//	}
+var ErrNotFound = core.ErrNotFound
+
+// IsUniqueViolation reports whether err represents a unique constraint violation.
+// Works with PostgreSQL, MySQL, and SQLite. Returns false for nil errors.
+//
+// Example:
+//
+//	_, err := db.Model(&user).Insert()
+//	if relica.IsUniqueViolation(err) {
+//	    // handle duplicate key
+//	}
+var IsUniqueViolation = core.IsUniqueViolation
+
+// IsForeignKeyViolation reports whether err represents a foreign key constraint violation.
+// Works with PostgreSQL, MySQL, and SQLite. Returns false for nil errors.
+//
+// Example:
+//
+//	_, err := db.Model(&order).Insert()
+//	if relica.IsForeignKeyViolation(err) {
+//	    // handle missing referenced row
+//	}
+var IsForeignKeyViolation = core.IsForeignKeyViolation
+
+// IsNotNullViolation reports whether err represents a NOT NULL constraint violation.
+// Works with PostgreSQL, MySQL, and SQLite. Returns false for nil errors.
+//
+// Example:
+//
+//	_, err := db.Model(&user).Insert()
+//	if relica.IsNotNullViolation(err) {
+//	    // handle missing required field
+//	}
+var IsNotNullViolation = core.IsNotNullViolation
+
+// IsCheckViolation reports whether err represents a CHECK constraint violation.
+// Works with PostgreSQL, MySQL, and SQLite. Returns false for nil errors.
+//
+// Example:
+//
+//	_, err := db.Model(&product).Insert()
+//	if relica.IsCheckViolation(err) {
+//	    // handle check constraint failure
+//	}
+var IsCheckViolation = core.IsCheckViolation
 
 // ============================================================================
 // Re-export configuration options
