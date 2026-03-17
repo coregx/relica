@@ -6,6 +6,61 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.11.0] - 2026-03-17
+
+### Added
+
+**Query Convenience Methods**
+
+- `Exists()` on SelectQuery — wraps query in `SELECT EXISTS(...)`, returns `(bool, error)`
+- `Count()` on SelectQuery — generates `SELECT COUNT(*)`, returns `(int64, error)`
+- `ToSQL()` on SelectQuery, UpdateQuery, DeleteQuery — returns generated SQL and params without executing
+
+**Error Handling**
+
+- `relica.ErrNotFound` — sentinel error wrapping `sql.ErrNoRows` (returned by `One()` only)
+- `relica.IsUniqueViolation(err)` — detects duplicate key errors (PostgreSQL, MySQL, SQLite)
+- `relica.IsForeignKeyViolation(err)` — detects FK constraint violations
+- `relica.IsNotNullViolation(err)` — detects NOT NULL constraint violations
+- `relica.IsCheckViolation(err)` — detects CHECK constraint violations
+
+**Model API Extensions**
+
+- `db.Model(&user).Upsert(fields...)` — struct-based INSERT ON CONFLICT with auto PK detection
+- `db.Model(&user).UpdateChanged(&original)` — UPDATE only fields that differ from original struct
+
+### Example
+
+```go
+// Exists
+exists, _ := db.Select().From("users").Where(relica.Eq("email", email)).Exists()
+
+// Count
+count, _ := db.Select().From("users").Where(relica.Eq("status", 1)).Count()
+
+// ToSQL (preview without execution)
+sql, params := db.Select().From("users").Where(relica.Eq("id", 1)).ToSQL()
+
+// ErrNotFound
+err := db.Select().From("users").Where(relica.Eq("id", 999)).One(&user)
+if errors.Is(err, relica.ErrNotFound) { /* not found */ }
+
+// Error classification
+_, err = db.Model(&user).Insert()
+if relica.IsUniqueViolation(err) { /* duplicate */ }
+
+// Model Upsert
+err = db.Model(&user).Upsert()           // all fields
+err = db.Model(&user).Upsert("name")     // selective
+
+// UpdateChanged
+original := user
+user.Name = "Updated"
+err = db.Model(&user).UpdateChanged(&original) // only changed fields
+```
+
+---
+
 ## [0.10.1] - 2026-03-05
 
 ### Fixed

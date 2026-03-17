@@ -44,7 +44,7 @@
 
 | Priority | API | When to Use |
 |----------|-----|-------------|
-| **PREFERRED** | `db.Model(&struct).Insert/Update/Delete()` | All CRUD operations with structs |
+| **PREFERRED** | `db.Model(&struct).Insert/Update/Delete/Upsert()` | All CRUD operations with structs |
 | **PREFERRED** | `relica.Eq()`, `relica.And()`, `relica.In()`, etc. | WHERE conditions |
 | **PREFERRED** | `relica.HashExp{"col": val}` | Simple equality conditions |
 | **ACCEPTABLE** | `Where("col = {:col}", relica.Params{"col": val})` | Named placeholders |
@@ -509,6 +509,38 @@ user := User{ID: 999, Name: "System"}
 db.Model(&user).Insert() // ID stays 999
 ```
 
+#### Upsert (INSERT or UPDATE)
+
+```go
+// INSERT ... ON CONFLICT (id) DO UPDATE SET all non-PK fields
+user := User{ID: 1, Name: "Alice", Email: "alice@example.com"}
+err := db.Model(&user).Upsert()
+
+// Selective: only update specific fields on conflict
+err = db.Model(&user).Upsert("name", "email")
+```
+
+Works with PostgreSQL (`ON CONFLICT DO UPDATE`), MySQL (`ON DUPLICATE KEY UPDATE`), SQLite (`ON CONFLICT DO UPDATE`).
+
+#### UpdateChanged (Dirty Field Detection)
+
+```go
+// Load user
+var user User
+db.Select().From("users").Where(relica.Eq("id", 1)).One(&user)
+
+// Save original, modify fields
+original := user
+user.Name = "Alice Updated"
+user.Status = 2
+
+// UPDATE only changed fields (name, status) — not all fields
+err := db.Model(&user).UpdateChanged(&original)
+// Generates: UPDATE users SET name=?, status=? WHERE id=?
+
+// If nothing changed — returns nil, no query executed
+```
+
 ### JOIN Operations
 
 **Solve N+1 query problems with JOIN support** - reduces 101 queries to 1 query (100x improvement).
@@ -633,6 +665,86 @@ db.Select("user_id", "COUNT(*) as message_count").
 **Performance**: 2,500,000x memory reduction (database aggregation vs fetching all rows), 20x faster.
 
 See the [Advanced Patterns Guide](docs/guides/ADVANCED_PATTERNS.md) for comprehensive aggregate examples and patterns.
+
+### Query Helpers
+
+#### Exists
+
+```go
+exists, err := db.Select().From("users").
+    Where(relica.Eq("email", "alice@example.com")).
+    Exists()
+// SELECT EXISTS(SELECT 1 FROM "users" WHERE "email" = $1)
+```
+
+#### Count
+
+```go
+count, err := db.Select().From("users").
+    Where(relica.Eq("status", "active")).
+    Count()
+// SELECT COUNT(*) FROM "users" WHERE "status" = $1
+```
+
+#### ToSQL (Query Preview)
+
+```go
+// Preview SQL without executing
+sql, params := db.Select().From("users").
+    Where(relica.Eq("id", 1)).
+    ToSQL()
+// sql = `SELECT * FROM "users" WHERE "id" = $1`
+// params = []interface{}{1}
+
+// Works on Update and Delete too
+sql, params = db.Update("users").
+    Set(map[string]interface{}{"status": "active"}).
+    Where(relica.Eq("id", 1)).
+    ToSQL()
+```
+
+### Error Handling
+
+#### ErrNotFound
+
+`One()` returns `relica.ErrNotFound` instead of raw `sql.ErrNoRows`:
+
+```go
+var user User
+err := db.Select().From("users").Where(relica.Eq("id", 999)).One(&user)
+
+if errors.Is(err, relica.ErrNotFound) {
+    // record not found — clean, library-level error
+}
+
+// sql.ErrNoRows still works too (wrapped inside)
+if errors.Is(err, sql.ErrNoRows) {
+    // also true
+}
+```
+
+Note: `All()` returns empty slice for no results, not an error.
+
+#### Error Classification
+
+Database-agnostic error helpers — work with PostgreSQL, MySQL, and SQLite:
+
+```go
+_, err := db.Model(&user).Insert()
+
+if relica.IsUniqueViolation(err) {
+    // duplicate key (e.g., email already exists)
+}
+if relica.IsForeignKeyViolation(err) {
+    // referenced record doesn't exist
+}
+if relica.IsNotNullViolation(err) {
+    // required field is missing
+}
+if relica.IsCheckViolation(err) {
+    // CHECK constraint failed
+}
+```
 
 ### Advanced SQL Features
 

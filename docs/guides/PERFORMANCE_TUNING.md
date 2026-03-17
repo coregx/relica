@@ -170,6 +170,34 @@ func monitorConnectionPool(db *relica.DB) {
 
 ## Query Performance Patterns
 
+### Exists() vs Count() for Presence Checks
+
+```go
+// ❌ SLOWER: Count fetches all matching rows count
+count, _ := db.Select().From("users").
+    Where(relica.Eq("email", email)).Count()
+exists := count > 0
+
+// ✅ FASTER: Exists() stops at first match
+exists, _ := db.Select().From("users").
+    Where(relica.Eq("email", email)).Exists()
+```
+
+`Exists()` wraps the query in `SELECT EXISTS(...)` which lets the database short-circuit at the first matching row.
+
+### Use COUNT() Instead of Loading Rows
+
+```go
+// ❌ SLOW: Loads all users into memory just to count
+var users []User
+db.Select().From("users").Where(relica.Eq("status", "active")).All(&users)
+total := len(users)
+
+// ✅ FAST: COUNT(*) at the database level
+total, err := db.Select().From("users").
+    Where(relica.Eq("status", "active")).Count()
+```
+
 ### Use WHERE with Indexed Columns
 
 ```go

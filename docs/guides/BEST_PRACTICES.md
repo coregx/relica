@@ -2,7 +2,7 @@
 
 > **Production-Ready Patterns for Relica**
 >
-> **Last Updated**: 2025-12-23
+> **Last Updated**: 2026-03-17
 
 > **🤖 AI Agents**: See [AGENTS.md](../../AGENTS.md) for correct API patterns. Prefer `Model()` API over `map[string]interface{}`.
 
@@ -133,53 +133,38 @@ func (r *UserRepository) FindByID(ctx context.Context, id int) (*models.User, er
     var user models.User
     err := r.db.Select().
         From("users").
-        Where("id = ?", id).
+        Where(relica.Eq("id", id)).
         WithContext(ctx).
         One(&user)
 
+    if errors.Is(err, relica.ErrNotFound) {
+        return nil, fmt.Errorf("user %d not found", id)
+    }
     if err != nil {
-        return nil, fmt.Errorf("user not found: %w", err)
+        return nil, fmt.Errorf("find user: %w", err)
     }
 
     return &user, nil
 }
 
 func (r *UserRepository) Create(ctx context.Context, user *models.User) error {
-    var id int
-    err := r.db.QueryRowContext(ctx,
-        `INSERT INTO users (name, email) VALUES ($1, $2) RETURNING id`,
-        user.Name, user.Email,
-    ).Scan(&id)
-
-    if err != nil {
-        return fmt.Errorf("failed to create user: %w", err)
+    // Model API auto-populates user.ID after insert
+    if err := r.db.Model(user).Insert(); err != nil {
+        if relica.IsUniqueViolation(err) {
+            return fmt.Errorf("email already exists")
+        }
+        return fmt.Errorf("create user: %w", err)
     }
-
-    user.ID = id
     return nil
 }
 
 func (r *UserRepository) Update(ctx context.Context, user *models.User) error {
-    _, err := r.db.Update("users").
-        Set(map[string]interface{}{
-            "name":       user.Name,
-            "email":      user.Email,
-            "updated_at": "NOW()",
-        }).
-        Where("id = ?", user.ID).
-        WithContext(ctx).
-        Execute()
-
-    return err
+    return r.db.Model(user).Update()
 }
 
 func (r *UserRepository) Delete(ctx context.Context, id int) error {
-    _, err := r.db.Delete("users").
-        Where("id = ?", id).
-        WithContext(ctx).
-        Execute()
-
-    return err
+    user := &models.User{ID: id}
+    return r.db.Model(user).Delete()
 }
 ```
 
@@ -337,31 +322,40 @@ func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*User, 
     var user User
     err := r.db.Select().
         From("users").
-        Where("email = ?", email).
+        Where(relica.Eq("email", email)).
         WithContext(ctx).
         One(&user)
 
+    if errors.Is(err, relica.ErrNotFound) {
+        return nil, fmt.Errorf("user with email %s not found", email)
+    }
     if err != nil {
-        return nil, fmt.Errorf("failed to find user by email %s: %w", email, err)
+        return nil, fmt.Errorf("find user by email: %w", err)
     }
 
     return &user, nil
 }
 ```
 
-### Pattern 2: Handle sql.ErrNoRows
+### Pattern 2: Handle ErrNotFound (v0.11.0+)
+
+`One()` returns `relica.ErrNotFound` (wrapping `sql.ErrNoRows`). Use `errors.Is` — it matches both:
 
 ```go
-import "database/sql"
+import (
+    "errors"
+    "github.com/coregx/relica"
+)
 
 func (r *UserRepository) FindByID(ctx context.Context, id int) (*User, error) {
     var user User
     err := r.db.Select().
         From("users").
-        Where("id = ?", id).
+        Where(relica.Eq("id", id)).
+        WithContext(ctx).
         One(&user)
 
-    if err == sql.ErrNoRows {
+    if errors.Is(err, relica.ErrNotFound) {
         return nil, fmt.Errorf("user %d not found", id)
     }
 
@@ -371,6 +365,51 @@ func (r *UserRepository) FindByID(ctx context.Context, id int) (*User, error) {
 
     return &user, nil
 }
+```
+
+### Pattern 3: Classify Constraint Errors
+
+Use error classification functions to return meaningful errors without exposing database details:
+
+```go
+func (r *UserRepository) Create(ctx context.Context, user *models.User) error {
+    if err := r.db.Model(user).Insert(); err != nil {
+        switch {
+        case relica.IsUniqueViolation(err):
+            return ErrEmailAlreadyExists
+        case relica.IsNotNullViolation(err):
+            return ErrMissingRequiredField
+        case relica.IsForeignKeyViolation(err):
+            return ErrInvalidReference
+        case relica.IsCheckViolation(err):
+            return ErrInvalidFieldValue
+        default:
+            return fmt.Errorf("create user: %w", err)
+        }
+    }
+    return nil
+}
+```
+
+Error classification works across PostgreSQL, MySQL, and SQLite.
+
+### Pattern 4: Existence Check Without Loading Data
+
+Prefer `Exists()` over loading a full row when you only need a boolean:
+
+```go
+func (r *UserRepository) EmailTaken(ctx context.Context, email string) (bool, error) {
+    return r.db.Select().From("users").
+        Where(relica.Eq("email", email)).
+        WithContext(ctx).
+        Exists()
+}
+
+// Prefer Exists() over Count() > 0 for existence checks
+// Prefer Count() when you need the actual number
+count, err := r.db.Select().From("users").
+    Where(relica.Eq("status", "active")).
+    Count()
 ```
 
 ---
@@ -490,6 +529,44 @@ if isDevelopment() {
 
 ---
 
+## 🔄 Model API Patterns
+
+### UpdateChanged — Only Save What Changed
+
+When updating a record, use `UpdateChanged` to generate a minimal UPDATE statement that touches only the fields that actually differ from the original:
+
+```go
+func (r *UserRepository) UpdateProfile(ctx context.Context, id int, req UpdateRequest) error {
+    var user models.User
+    if err := r.db.Select().From("users").
+        Where(relica.Eq("id", id)).One(&user); err != nil {
+        return err
+    }
+
+    original := user // snapshot before changes
+
+    user.Name = req.Name
+    user.Email = req.Email
+
+    // UPDATE users SET name=? WHERE id=? — only changed fields
+    return r.db.Model(&user).UpdateChanged(&original)
+}
+```
+
+This avoids unnecessary column writes and helps prevent lost-update races in high-concurrency scenarios.
+
+### Upsert — Insert or Update on Conflict
+
+```go
+func (r *UserRepository) SaveSettings(ctx context.Context, settings *UserSettings) error {
+    // Insert or update name/value if email conflicts
+    return r.db.Model(settings).Upsert("name", "value")
+    // All non-PK fields: db.Model(settings).Upsert()
+}
+```
+
+---
+
 ## 🚀 Production Checklist
 
 Before deploying to production:
@@ -499,6 +576,8 @@ Before deploying to production:
 - [ ] **Transactions use defer Rollback()**
 - [ ] **Errors wrapped with context** (`fmt.Errorf("context: %w", err)`)
 - [ ] **Sensitive data masked** in logs
+- [ ] **errors.Is(err, relica.ErrNotFound)** used for not-found checks (not sql.ErrNoRows comparison)
+- [ ] **Constraint errors classified** (IsUniqueViolation, IsForeignKeyViolation, etc.)
 - [ ] **Migrations tested** on staging environment
 - [ ] **Indexes created** for frequently queried columns
 - [ ] **Query performance tested** under load

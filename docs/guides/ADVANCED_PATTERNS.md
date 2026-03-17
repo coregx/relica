@@ -107,6 +107,21 @@ db.Select().
 
 ## UPSERT Patterns
 
+### Model Upsert (PREFERRED)
+
+```go
+// Insert or update all non-PK fields on conflict
+user := User{Email: "alice@example.com", Name: "Alice", Status: "active"}
+err := db.Model(&user).Upsert()
+
+// Selective fields — only update name and status on conflict
+err = db.Model(&user).Upsert("name", "status")
+```
+
+Works across PostgreSQL (`ON CONFLICT`), MySQL (`ON DUPLICATE KEY UPDATE`), and SQLite (`ON CONFLICT`). Dialect is detected automatically.
+
+### Low-Level Upsert (map-based)
+
 ```go
 // PostgreSQL/SQLite: ON CONFLICT
 db.Upsert("users", map[string]interface{}{
@@ -117,10 +132,92 @@ db.Upsert("users", map[string]interface{}{
     OnConflict("id").
     DoUpdate("name", "email").
     Execute()
-
-// MySQL: ON DUPLICATE KEY UPDATE
-// (automatically detected by dialect)
 ```
+
+---
+
+## UpdateChanged — Dirty Field Detection
+
+Update only the fields that actually differ from the original struct. Generates a minimal `UPDATE` statement.
+
+```go
+// Load original
+var user User
+db.Select().From("users").Where(relica.Eq("id", 1)).One(&user)
+
+// Snapshot before modifications
+original := user
+
+// Apply changes
+user.Name = "New Name"
+// user.Email unchanged
+
+// UPDATE users SET name=? WHERE id=? — only name is updated
+err := db.Model(&user).UpdateChanged(&original)
+```
+
+If nothing changed, `UpdateChanged` returns immediately without executing any query.
+
+---
+
+## ToSQL — Inspect Generated SQL
+
+Preview the SQL and parameters without executing the query. Useful for debugging, logging, and testing:
+
+```go
+// Preview SELECT
+sql, params := db.Select("id", "name").
+    From("users").
+    Where(relica.And(
+        relica.Eq("status", "active"),
+        relica.GreaterThan("age", 18),
+    )).
+    OrderBy("name").
+    ToSQL()
+// sql:    SELECT "id", "name" FROM "users" WHERE (status = $1 AND age > $2) ORDER BY "name"
+// params: ["active", 18]
+
+// Preview UPDATE
+sql, params = db.Update("users").
+    Set(map[string]interface{}{"status": "inactive"}).
+    Where(relica.Eq("id", 1)).
+    ToSQL()
+
+// Preview DELETE
+sql, params = db.Delete("users").
+    Where(relica.LessThan("created_at", cutoff)).
+    ToSQL()
+```
+
+`ToSQL()` is available on `SelectQuery`, `UpdateQuery`, and `DeleteQuery`.
+
+---
+
+## Exists and Count
+
+```go
+// Boolean existence check — no row fetching
+exists, err := db.Select().From("users").
+    Where(relica.Eq("email", email)).
+    Exists()
+
+// Row count
+count, err := db.Select().From("users").
+    Where(relica.Eq("status", "active")).
+    Count()
+
+// Count with JOIN
+count, err = db.Select().
+    From("orders o").
+    InnerJoin("users u", "u.id = o.user_id").
+    Where(relica.And(
+        relica.Eq("u.status", "active"),
+        relica.GreaterThan("o.total", 100),
+    )).
+    Count()
+```
+
+Prefer `Exists()` over `Count() > 0` — the database can stop at the first matching row.
 
 ---
 

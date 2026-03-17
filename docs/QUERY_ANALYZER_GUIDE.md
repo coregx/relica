@@ -48,6 +48,22 @@ func main() {
 
 ---
 
+## Quick SQL Preview with ToSQL()
+
+Before running `Explain()`, you can inspect the generated SQL string without touching the database using `ToSQL()` (v0.11.0+):
+
+```go
+sql, params := db.Select().
+    From("users").
+    Where(relica.Eq("email", "alice@example.com")).
+    ToSQL()
+fmt.Printf("SQL: %s\nParams: %v\n", sql, params)
+```
+
+`ToSQL()` is available on `SelectQuery`, `UpdateQuery`, and `DeleteQuery`. It's useful for logging, debugging, and test assertions.
+
+---
+
 ## API Methods
 
 ### Explain() - Analyze Without Execution

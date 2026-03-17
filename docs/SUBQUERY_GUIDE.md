@@ -21,6 +21,13 @@
 
 Subqueries are SELECT queries nested within another SQL statement. Relica provides full subquery support for PostgreSQL, MySQL 8.0+, and SQLite 3.25+.
 
+> **Note**: `relica.Exists(subquery)` in WHERE (covered in this guide) is a SQL construct for filtering rows.
+> For checking whether *any* rows match at the application level, use `SelectQuery.Exists()` → `(bool, error)`:
+> ```go
+> found, err := db.Select().From("users").Where(relica.Eq("email", email)).Exists()
+> ```
+> See [Advanced Patterns Guide](guides/ADVANCED_PATTERNS.md) for details.
+
 **Key Benefits**:
 - Write complex queries step-by-step
 - Filter data based on related tables
@@ -988,20 +995,19 @@ db.Select().FromSelect(subquery, "stats")
 ### Issue: Parameter Order Confusion
 
 **Problem**: Parameters in wrong order with multiple subqueries
-```go
-// Complex query with multiple subqueries
-```
 
-**Solution**: Build step-by-step and test SQL output
+**Solution**: Use `ToSQL()` to inspect generated SQL and parameters before executing:
+
 ```go
-query := db.Select().
+sql, params := db.Select().
+    From("users").
     Where(relica.In("id", subquery1)).
     Where(relica.Exists(subquery2)).
-    Build()
+    ToSQL()
 
-// Print SQL to verify parameter order
-fmt.Println(query.SQL())
-fmt.Println(query.Params())
+// Verify parameter order
+fmt.Println(sql)
+fmt.Println(params)
 ```
 
 ## Examples Repository

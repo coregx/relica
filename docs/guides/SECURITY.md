@@ -557,6 +557,26 @@ logger := slog.New(slog.NewJSONHandler(alertingHandler, &slog.HandlerOptions{
 // AuditAll adds overhead for utility commands (PRAGMA, SHOW, etc.)
 ```
 
+✅ **Use error classification to avoid leaking database details**
+
+Raw database errors often contain table names, column names, and constraint names. Use `relica.IsUniqueViolation` and friends to convert constraint errors into safe application-level errors before exposing them to callers or logging them at INFO level:
+
+```go
+if err := db.Model(&record).Insert(); err != nil {
+    switch {
+    case relica.IsUniqueViolation(err):
+        // Return generic message — don't expose constraint name
+        return ErrAlreadyExists
+    case relica.IsForeignKeyViolation(err):
+        return ErrInvalidReference
+    default:
+        // Log full error internally, return generic error externally
+        logger.Error("unexpected db error", "err", err)
+        return ErrInternal
+    }
+}
+```
+
 ---
 
 ## 📚 Additional Resources
