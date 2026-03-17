@@ -1146,6 +1146,91 @@ func (sq *SelectQuery) Column(slice interface{}) error {
 	return sq.Build().Column(slice)
 }
 
+// Count executes a COUNT(*) query and returns the number of matching rows.
+// Any columns specified in Select() are ignored; COUNT(*) is always used.
+//
+// Example:
+//
+//	count, err := db.Select().From("users").Where(relica.Eq("status", 1)).Count()
+func (sq *SelectQuery) Count() (int64, error) {
+	// Build a copy of this query that uses COUNT(*) instead of the specified columns.
+	// We create a new SelectQuery with the same conditions but with columns replaced.
+	countQuery := &SelectQuery{
+		builder:       sq.builder,
+		columns:       []string{"COUNT(*)"},
+		fromSrc:       sq.fromSrc,
+		table:         sq.table,
+		joins:         sq.joins,
+		where:         sq.where,
+		params:        sq.params,
+		groupBy:       sq.groupBy,
+		havingClauses: sq.havingClauses,
+		ctx:           sq.ctx,
+	}
+
+	var count int64
+	if err := countQuery.Build().Row(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// Exists executes the query wrapped in SELECT EXISTS(...) and returns true if any rows match.
+//
+// Example:
+//
+//	exists, err := db.Select().From("users").Where(relica.Eq("email", email)).Exists()
+func (sq *SelectQuery) Exists() (bool, error) {
+	// Build the inner query as SELECT 1 FROM ... WHERE ...
+	// Use selectExprs to emit raw "1" without quoting.
+	innerQuery := &SelectQuery{
+		builder:     sq.builder,
+		selectExprs: []RawExp{{SQL: "1"}},
+		fromSrc:     sq.fromSrc,
+		table:       sq.table,
+		joins:       sq.joins,
+		where:       sq.where,
+		params:      sq.params,
+		ctx:         sq.ctx,
+	}
+
+	innerSQL, innerParams := innerQuery.buildSQL(sq.builder.db.dialect)
+
+	// Wrap in SELECT EXISTS(...)
+	existsSQL := "SELECT EXISTS(" + innerSQL + ")"
+
+	// Renumber placeholders for PostgreSQL: inner query uses $1, $2... but the outer
+	// query has no preceding params, so numbering is already correct.
+	ctx := sq.ctx
+	if ctx == nil {
+		ctx = sq.builder.ctx
+	}
+
+	q := &Query{
+		sql:    existsSQL,
+		params: innerParams,
+		db:     sq.builder.db,
+		tx:     sq.builder.tx,
+		ctx:    ctx,
+	}
+
+	var exists bool
+	if err := q.Row(&exists); err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
+// ToSQL returns the SQL string and parameters without executing the query.
+// This is useful for debugging, logging, or passing the query to another layer.
+//
+// Example:
+//
+//	sql, params := db.Select().From("users").Where(relica.Eq("id", 1)).ToSQL()
+func (sq *SelectQuery) ToSQL() (string, []interface{}) {
+	return sq.buildSQL(sq.builder.db.dialect)
+}
+
 // Explain analyzes the query execution plan without executing the query.
 // Returns QueryPlan with estimated metrics (cost, rows, index usage).
 // Currently only supported for PostgreSQL databases.
@@ -1588,6 +1673,17 @@ func (uq *UpdateQuery) Execute() (interface{}, error) {
 	return uq.Build().Execute()
 }
 
+// ToSQL returns the SQL string and parameters without executing the query.
+// This is useful for debugging, logging, or passing the query to another layer.
+//
+// Example:
+//
+//	sql, params := db.Update("users").Set(map[string]interface{}{"status": 1}).Where(relica.Eq("id", 1)).ToSQL()
+func (uq *UpdateQuery) ToSQL() (string, []interface{}) {
+	q := uq.Build()
+	return q.sql, q.params
+}
+
 // DeleteQuery represents a DELETE query being built.
 type DeleteQuery struct {
 	builder *QueryBuilder
@@ -1745,6 +1841,17 @@ func (dq *DeleteQuery) Build() *Query {
 // Execute executes the DELETE query and returns the result.
 func (dq *DeleteQuery) Execute() (interface{}, error) {
 	return dq.Build().Execute()
+}
+
+// ToSQL returns the SQL string and parameters without executing the query.
+// This is useful for debugging, logging, or passing the query to another layer.
+//
+// Example:
+//
+//	sql, params := db.Delete("users").Where(relica.Eq("id", 1)).ToSQL()
+func (dq *DeleteQuery) ToSQL() (string, []interface{}) {
+	q := dq.Build()
+	return q.sql, q.params
 }
 
 // BatchInsertQuery represents a batch INSERT query being built.

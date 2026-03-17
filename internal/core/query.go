@@ -256,7 +256,7 @@ func (q *Query) One(dest interface{}) error {
 
 	// Check if row exists
 	if !rows.Next() {
-		err := sql.ErrNoRows
+		err := wrapErrNotFound()
 		elapsed := time.Since(start)
 		if q.db.logger != nil {
 			q.db.logger.Warn("query returned no rows",
