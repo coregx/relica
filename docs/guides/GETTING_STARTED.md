@@ -506,24 +506,29 @@ func getUsers(db *relica.DB, page, pageSize int) ([]User, error) {
 users, err := getUsers(db, 1, 20) // Page 1, 20 users per page
 ```
 
-### Pattern 3: Counting Results
+### Pattern 3: Check Existence
 
 ```go
-func countUsers(db *relica.DB, status string) (int, error) {
-    var count struct {
-        Total int `db:"total"`
-    }
-
-    err := db.Select("COUNT(*) as total").
-        From("users").
-        Where("status = ?", status).
-        One(&count)
-
-    return count.Total, err
+// Check if record exists without fetching data
+func userExists(db *relica.DB, email string) (bool, error) {
+    return db.Select().From("users").
+        Where(relica.Eq("email", email)).
+        Exists()
 }
 ```
 
-### Pattern 4: Bulk Insert
+### Pattern 4: Count Rows
+
+```go
+// Count matching rows — returns int64
+func countActiveUsers(db *relica.DB) (int64, error) {
+    return db.Select().From("users").
+        Where(relica.Eq("status", "active")).
+        Count()
+}
+```
+
+### Pattern 5: Bulk Insert
 
 ```go
 func bulkInsertUsers(db *relica.DB, users []User) error {
@@ -714,7 +719,29 @@ db, err := relica.Open("postgres", dsn)
 defer db.Close()
 ```
 
-### Mistake 3: Not Checking Errors
+### Mistake 3: Using sql.ErrNoRows Directly
+
+Starting with v0.11.0, `One()` returns `relica.ErrNotFound` (which wraps `sql.ErrNoRows`). Use `errors.Is` to check for either:
+
+```go
+import "errors"
+
+var user User
+err := db.Select().From("users").
+    Where(relica.Eq("id", 999)).
+    One(&user)
+
+// ✅ CORRECT: works with both relica.ErrNotFound and sql.ErrNoRows
+if errors.Is(err, relica.ErrNotFound) {
+    // user not found — return 404 or default value
+    return nil, ErrUserNotFound
+}
+if err != nil {
+    return nil, fmt.Errorf("query failed: %w", err)
+}
+```
+
+### Mistake 4: Not Checking Errors
 
 ```go
 // ❌ WRONG: Ignoring errors
@@ -727,7 +754,7 @@ if err != nil {
 }
 ```
 
-### Mistake 4: Using LastInsertId() on PostgreSQL
+### Mistake 5: Using LastInsertId() on PostgreSQL
 
 ```go
 // ❌ WRONG: PostgreSQL doesn't support LastInsertId with lib/pq

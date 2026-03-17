@@ -451,3 +451,123 @@ You've successfully migrated when:
 
 *Migration support provided until v1.0.0 stable release*
 *Last updated: October 26, 2025*
+
+---
+
+# Migration Guide: v0.10.x → v0.11.0
+
+**Date**: 2026-03-17
+**Type**: Additive (no breaking changes)
+**Impact**: Low — all existing code continues to work
+
+---
+
+## What's New in v0.11.0
+
+v0.11.0 adds 10 new features. **No existing code needs to change.** All additions are backwards-compatible.
+
+### New Methods
+
+| Feature | Signature | Returns |
+|---------|-----------|---------|
+| `Exists()` | `SelectQuery.Exists()` | `(bool, error)` |
+| `Count()` | `SelectQuery.Count()` | `(int64, error)` |
+| `ToSQL()` | `SelectQuery/UpdateQuery/DeleteQuery.ToSQL()` | `(string, []interface{})` |
+| `Model.Upsert()` | `ModelQuery.Upsert(fields...)` | `error` |
+| `Model.UpdateChanged()` | `ModelQuery.UpdateChanged(original)` | `error` |
+
+### New Errors and Functions
+
+| Symbol | Purpose |
+|--------|---------|
+| `relica.ErrNotFound` | Returned by `One()` when no row matches |
+| `relica.IsUniqueViolation(err)` | Detect duplicate key constraint |
+| `relica.IsForeignKeyViolation(err)` | Detect FK constraint violation |
+| `relica.IsNotNullViolation(err)` | Detect NOT NULL constraint violation |
+| `relica.IsCheckViolation(err)` | Detect CHECK constraint violation |
+
+---
+
+## Upgrade Steps
+
+### Step 1: Update Dependency
+
+```bash
+go get github.com/coregx/relica@v0.11.0
+go mod tidy
+```
+
+### Step 2: Build and Test
+
+```bash
+go build ./...
+go test ./...
+```
+
+Both should pass without changes.
+
+---
+
+## Recommended Code Updates
+
+These are optional improvements — your existing code still works.
+
+### Replace sql.ErrNoRows with relica.ErrNotFound
+
+```go
+// Before (still works — errors.Is handles both)
+if err == sql.ErrNoRows { }
+
+// After (preferred — clear intent)
+if errors.Is(err, relica.ErrNotFound) { }
+```
+
+### Replace Manual COUNT with Count()
+
+```go
+// Before
+var result struct{ Total int `db:"total"` }
+db.Select("COUNT(*) as total").From("users").One(&result)
+count := result.Total
+
+// After
+count, err := db.Select().From("users").Count()
+```
+
+### Replace Existence Pattern with Exists()
+
+```go
+// Before
+var exists int
+err := db.Select("1").From("users").Where(relica.Eq("email", email)).Row(&exists)
+found := err == nil
+
+// After
+found, err := db.Select().From("users").
+    Where(relica.Eq("email", email)).Exists()
+```
+
+### Classify Constraint Errors
+
+```go
+// Before — manual string parsing
+if strings.Contains(err.Error(), "duplicate") { }
+
+// After — cross-database, reliable
+if relica.IsUniqueViolation(err) { }
+```
+
+---
+
+## No Action Required
+
+The following continue to work exactly as before:
+
+- All SELECT/INSERT/UPDATE/DELETE queries
+- `db.Model().Insert()` / `Update()` / `Delete()`
+- Transactions (`Begin`, `Transactional`)
+- Expression API (`Eq`, `And`, `Or`, `In`, etc.)
+- Named placeholders (`{:name}`)
+- Batch operations
+- Statement cache
+- Connection pool configuration

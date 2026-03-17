@@ -24,8 +24,17 @@ err := db.Model(&user).Update()
 // DELETE - CORRECT
 err := db.Model(&user).Delete()
 
+// UPSERT - CORRECT (INSERT or UPDATE on conflict)
+err := db.Model(&user).Upsert()              // all non-PK fields
+err = db.Model(&user).Upsert("name", "email") // selective fields
+
+// UPDATE CHANGED - CORRECT (only modified fields)
+original := user
+user.Name = "Updated"
+err = db.Model(&user).UpdateChanged(&original)
+
 // SELECTIVE INSERT - CORRECT
-err := db.Model(&user).Insert("name", "email") // Only these fields
+err = db.Model(&user).Insert("name", "email") // Only these fields
 ```
 
 ### 2. RECOMMENDED: Expression API for WHERE
@@ -128,6 +137,44 @@ db.Model(&user).Insert()
 - Dynamic data from external sources (JSON API payloads)
 - Schema-less operations where struct is not available
 - Migration scripts with unknown column sets
+
+---
+
+## Query Helpers
+
+### Exists / Count
+
+```go
+// Check existence — returns bool
+exists, err := db.Select().From("users").
+    Where(relica.Eq("email", email)).Exists()
+
+// Count rows — returns int64
+count, err := db.Select().From("users").
+    Where(relica.Eq("status", 1)).Count()
+```
+
+### ToSQL (Query Preview)
+
+```go
+// Get SQL without executing
+sql, params := db.Select().From("users").Where(relica.Eq("id", 1)).ToSQL()
+// Works on Select, Update, Delete
+```
+
+### Error Handling
+
+```go
+// ErrNotFound — One() wraps sql.ErrNoRows
+err := db.Select().From("users").Where(relica.Eq("id", 999)).One(&user)
+if errors.Is(err, relica.ErrNotFound) { /* not found */ }
+
+// Error classification — works with PostgreSQL, MySQL, SQLite
+if relica.IsUniqueViolation(err) { /* duplicate key */ }
+if relica.IsForeignKeyViolation(err) { /* FK violation */ }
+if relica.IsNotNullViolation(err) { /* NOT NULL violation */ }
+if relica.IsCheckViolation(err) { /* CHECK violation */ }
+```
 
 ---
 

@@ -31,6 +31,57 @@ postgres://user:password@localhost:5432/dbname?sslmode=disable
 
 ---
 
+## Error Handling
+
+### ErrNotFound vs sql.ErrNoRows
+
+**Problem**: `One()` returns an error when no row matches. Before v0.11.0, this was `sql.ErrNoRows`. Since v0.11.0 it is `relica.ErrNotFound`.
+
+**Solution**: Use `errors.Is` — it matches both `relica.ErrNotFound` and the wrapped `sql.ErrNoRows`:
+
+```go
+var user User
+err := db.Select().From("users").Where(relica.Eq("id", id)).One(&user)
+
+if errors.Is(err, relica.ErrNotFound) {
+    // handle not found
+}
+```
+
+Do NOT compare with `==`:
+```go
+// ❌ fragile — breaks if error is wrapped
+if err == sql.ErrNoRows { }
+
+// ✅ correct — works with relica.ErrNotFound and sql.ErrNoRows
+if errors.Is(err, relica.ErrNotFound) { }
+```
+
+### Constraint Violations
+
+**Problem**: INSERT/UPDATE fails with a database constraint error and you need to return a user-friendly message.
+
+**Solution**: Use error classification functions (PostgreSQL, MySQL, SQLite):
+
+```go
+if err := db.Model(&user).Insert(); err != nil {
+    switch {
+    case relica.IsUniqueViolation(err):
+        return errors.New("email already in use")
+    case relica.IsForeignKeyViolation(err):
+        return errors.New("referenced record does not exist")
+    case relica.IsNotNullViolation(err):
+        return errors.New("required field is missing")
+    case relica.IsCheckViolation(err):
+        return errors.New("field value is out of allowed range")
+    default:
+        return fmt.Errorf("database error: %w", err)
+    }
+}
+```
+
+---
+
 ## Query Errors
 
 ### Error: "sql: Scan error on column index X"

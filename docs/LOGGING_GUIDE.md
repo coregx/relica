@@ -373,7 +373,29 @@ func (h *TraceIDHandler) Handle(ctx context.Context, r slog.Record) error {
 }
 ```
 
-### 5. Disable in Performance-Critical Paths
+### 5. Log Error Classification, Not Raw DB Errors
+
+Avoid logging raw database errors directly to end users or external APIs. Use error classification to convert constraint errors into safe, descriptive messages:
+
+```go
+if err := db.Model(&user).Insert(); err != nil {
+    switch {
+    case relica.IsUniqueViolation(err):
+        logger.Info("duplicate user rejected", "email", user.Email)
+        return ErrEmailTaken
+    case relica.IsForeignKeyViolation(err):
+        logger.Warn("FK violation", "err", err)
+        return ErrInvalidReference
+    default:
+        logger.Error("unexpected db error", "err", err)
+        return ErrInternal
+    }
+}
+```
+
+This keeps database internals out of application responses and makes logs actionable.
+
+### 6. Disable in Performance-Critical Paths
 
 ```go
 // For ultra-high-throughput services

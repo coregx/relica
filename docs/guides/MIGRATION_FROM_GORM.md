@@ -2,7 +2,7 @@
 
 > **Migrating from GORM to Relica** - A Practical Guide
 >
-> **Last Updated**: 2025-11-13
+> **Last Updated**: 2026-03-17
 
 ---
 
@@ -174,17 +174,10 @@ db.Create(&user)
 
 **Relica:**
 ```go
-result, err := db.Insert("users", map[string]interface{}{
-    "name":  "Alice",
-    "email": "alice@example.com",
-}).Execute()
-
-// Get ID (PostgreSQL - use RETURNING)
-var id int
-err := db.QueryRowContext(ctx,
-    `INSERT INTO users (name, email) VALUES ($1, $2) RETURNING id`,
-    "Alice", "alice@example.com",
-).Scan(&id)
+// Model() API — closest equivalent to GORM Create
+user := User{Name: "Alice", Email: "alice@example.com"}
+err := db.Model(&user).Insert()
+// user.ID is auto-populated (PostgreSQL/MySQL/SQLite)
 ```
 
 #### UPDATE
@@ -199,28 +192,25 @@ db.Model(&user).Updates(map[string]interface{}{
     "email": "alice.new@example.com",
 })
 
-// Update with conditions
-db.Model(&User{}).Where("id = ?", 1).Updates(map[string]interface{}{
-    "name": "Alice Updated",
-})
+// Update only changed fields
+db.Model(&user).Updates(&updatedUser)
 ```
 
 **Relica:**
 ```go
-// Single field
-db.Update("users").
-    Set(map[string]interface{}{"name": "Alice Updated"}).
-    Where("id = ?", 1).
-    Execute()
+// Model() API — full update of all fields
+user.Name = "Alice Updated"
+user.Email = "alice.new@example.com"
+err := db.Model(&user).Update()
 
-// Multiple fields
-db.Update("users").
-    Set(map[string]interface{}{
-        "name":  "Alice Updated",
-        "email": "alice.new@example.com",
-    }).
-    Where("id = ?", 1).
-    Execute()
+// Selective fields
+err = db.Model(&user).Update("name", "email")
+
+// UpdateChanged — only fields that differ from original (v0.11.0+)
+original := user
+user.Name = "Alice Updated"
+err = db.Model(&user).UpdateChanged(&original)
+// UPDATE users SET name=? WHERE id=? — email not touched
 ```
 
 #### DELETE
@@ -235,10 +225,68 @@ db.Where("age < ?", 18).Delete(&User{})
 
 **Relica:**
 ```go
-db.Delete("users").Where("id = ?", 1).Execute()
+// Model() API — auto WHERE by primary key
+user := User{ID: 1}
+err := db.Model(&user).Delete()
 
 // Delete with conditions
-db.Delete("users").Where("age < ?", 18).Execute()
+db.Delete("users").Where(relica.LessThan("age", 18)).Execute()
+```
+
+---
+
+### 1b. Error Handling
+
+#### Not Found Errors
+
+**GORM:**
+```go
+result := db.First(&user, id)
+if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+    // not found
+}
+```
+
+**Relica:**
+```go
+err := db.Select().From("users").Where(relica.Eq("id", id)).One(&user)
+if errors.Is(err, relica.ErrNotFound) {
+    // not found (also matches sql.ErrNoRows)
+}
+```
+
+#### Constraint Errors
+
+**GORM:**
+```go
+if err := db.Create(&user).Error; err != nil {
+    // manually parse error string
+}
+```
+
+**Relica (v0.11.0+):**
+```go
+if err := db.Model(&user).Insert(); err != nil {
+    if relica.IsUniqueViolation(err) {
+        return ErrEmailTaken
+    }
+    return err
+}
+```
+
+#### Existence Check
+
+**GORM:**
+```go
+var count int64
+db.Model(&User{}).Where("email = ?", email).Count(&count)
+exists := count > 0
+```
+
+**Relica:**
+```go
+exists, err := db.Select().From("users").
+    Where(relica.Eq("email", email)).Exists()
 ```
 
 ---
@@ -277,11 +325,16 @@ db.Model(&User{}).Select("AVG(age)").Scan(&avg)
 
 **Relica:**
 ```go
-var count struct{ Total int `db:"total"` }
-db.Select("COUNT(*) as total").From("users").One(&count)
+// Count() — direct int64 result (v0.11.0+)
+count, err := db.Select().From("users").Count()
 
-var avg struct{ Avg float64 `db:"avg"` }
-db.Select("AVG(age) as avg").From("users").One(&avg)
+// Count with filter
+activeCount, err := db.Select().From("users").
+    Where(relica.Eq("status", "active")).Count()
+
+// AVG — use Row() for scalar values
+var avg float64
+db.Select("AVG(age)").From("users").Row(&avg)
 ```
 
 #### GROUP BY and HAVING
@@ -677,6 +730,27 @@ db.Select().From("users").Where("id = ?", 1).One(&user)
 
 // Subsequent calls: uses cached statement (<60ns)
 db.Select().From("users").Where("id = ?", 2).One(&user)
+```
+
+### Tip 5: Use ToSQL() for Debugging
+
+```go
+// See what SQL Relica generates without running it
+sql, params := db.Select().From("users").
+    Where(relica.Eq("status", "active")).
+    OrderBy("name").
+    ToSQL()
+log.Printf("SQL: %s | Params: %v", sql, params)
+```
+
+### Tip 6: Replace GORM dirty-fields with UpdateChanged
+
+GORM tracks dirty fields transparently. In Relica, snapshot the struct before modifying it:
+
+```go
+original := user          // snapshot
+user.Name = "New Name"    // modify
+db.Model(&user).UpdateChanged(&original) // UPDATE only name
 ```
 
 ---

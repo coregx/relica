@@ -2,7 +2,7 @@
 
 > **Migrating from sqlx to Relica** - A Practical Guide
 >
-> **Last Updated**: 2025-11-13
+> **Last Updated**: 2026-03-17
 
 ---
 
@@ -229,23 +229,65 @@ _, err := db.NamedExec(query, &user)
 
 **Relica:**
 ```go
-// Use builder (no named params needed)
-_, err := db.Insert("users", map[string]interface{}{
-    "name":  "Alice",
-    "email": "alice@example.com",
-}).Execute()
+// Model() API — struct-based, no named params needed
+user := User{Name: "Alice", Email: "alice@example.com"}
+err := db.Model(&user).Insert()
+// user.ID is auto-populated
 
-// Or use standard placeholders
-_, err := db.ExecContext(ctx,
-    "INSERT INTO users (name, email) VALUES (?, ?)",
-    "Alice", "alice@example.com",
-)
+// Or named placeholders in WHERE (v0.10+)
+db.Select().From("users").
+    Where("id = {:id} AND status = {:status}", relica.Params{
+        "id":     userID,
+        "status": "active",
+    }).All(&users)
 ```
 
 **Migration:**
-- Relica doesn't support named params (`:name`, `:email`)
-- Use builder API instead (cleaner and type-safe)
-- Or convert to positional params (`?`)
+- For INSERT/UPDATE: use `Model()` API — cleaner and type-safe
+- For SELECT WHERE: use `relica.Params{}` with `{:name}` syntax
+- `:name` params (colon-prefix) are not supported; use `{:name}` or positional `?`
+
+---
+
+### 4b. Error Handling
+
+#### Not Found
+
+**sqlx:**
+```go
+err := db.Get(&user, "SELECT * FROM users WHERE id = $1", id)
+if err == sql.ErrNoRows {
+    // not found
+}
+```
+
+**Relica:**
+```go
+err := db.Select().From("users").Where(relica.Eq("id", id)).One(&user)
+if errors.Is(err, relica.ErrNotFound) {
+    // not found — matches both relica.ErrNotFound and sql.ErrNoRows
+}
+```
+
+#### Constraint Violations
+
+**sqlx:**
+```go
+// Manually parse error string or check error codes
+if strings.Contains(err.Error(), "duplicate key") { }
+```
+
+**Relica (v0.11.0+):**
+```go
+if relica.IsUniqueViolation(err) {
+    return ErrEmailTaken
+}
+if relica.IsForeignKeyViolation(err) {
+    return ErrInvalidReference
+}
+```
+
+Works across PostgreSQL, MySQL, and SQLite.
 
 ---
 
@@ -486,6 +528,31 @@ err := db.Select().
 - **Zero production dependencies** (only database/sql from stdlib)
 - No external packages in production
 - Smaller binary, fewer security risks
+
+### Advantage 6: Query Helpers (v0.11.0+)
+
+**sqlx:**
+```go
+// Existence check — extra struct + One()
+var exists struct{ C int `db:"c"` }
+err := db.Get(&exists, "SELECT 1 FROM users WHERE email = $1 LIMIT 1", email)
+found := err == nil
+```
+
+**Relica:**
+```go
+// Direct boolean result
+found, err := db.Select().From("users").
+    Where(relica.Eq("email", email)).Exists()
+
+// Direct int64 count
+count, err := db.Select().From("users").
+    Where(relica.Eq("status", "active")).Count()
+
+// Preview SQL without executing
+sql, params := db.Select().From("users").
+    Where(relica.Eq("id", 1)).ToSQL()
+```
 
 ---
 
