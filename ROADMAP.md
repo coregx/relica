@@ -1,7 +1,7 @@
 # Relica Roadmap
 
-> **Current Version**: v0.9.1 (Released: December 23, 2025)
-> **Previous Release**: v0.9.0 (Released: December 16, 2025)
+> **Current Version**: v0.11.1 (Released: June 19, 2026)
+> **Previous Release**: v0.11.0 (Released: March 17, 2026)
 > **Production Ready**: v1.0.0 (Target: Q3-Q4 2026)
 
 ---
@@ -14,7 +14,7 @@
 
 ---
 
-## 📍 Current State (v0.9.1 - AI Agent Documentation)
+## 📍 Current State (v0.11.1)
 
 ### ✅ Completed Features
 
@@ -32,6 +32,15 @@
 - **Composite PK** (v0.9.0): `db:"col,pk"` syntax for composite primary keys
 - **Functional Expressions** (v0.9.0): CASE, COALESCE, NULLIF, GREATEST, LEAST, CONCAT
 - **AI Agent Documentation** (v0.9.1): AGENTS.md, llms.txt for AI coding assistants
+- **BatchInsert/BatchUpdate/Upsert Shortcuts** (v0.10.0): Direct methods on DB
+- **Named Placeholders in Fluent Builder** (v0.10.1): `{:name}` in Where/AndWhere/OrWhere
+- **Exists() / Count()** (v0.11.0): Query convenience methods on SelectQuery
+- **ToSQL()** (v0.11.0): Query preview without execution on Select/Update/Delete
+- **ErrNotFound** (v0.11.0): Sentinel error wrapping sql.ErrNoRows
+- **Error Classification** (v0.11.0): IsUniqueViolation, IsForeignKeyViolation, IsNotNullViolation, IsCheckViolation
+- **Model().Upsert()** (v0.11.0): Struct-based INSERT ON CONFLICT
+- **Model().UpdateChanged()** (v0.11.0): Dirty field detection via reflect
+- **Expression Table Alias Quoting** (v0.11.1): Correct `"table"."column"` quoting in all expression types
 - **Type-Safe Scanning**: Struct tags, reflection-based
 - **Transactions**: All isolation levels, context support
 - **Batch Operations**: 3.3x faster INSERT, 2.5x faster UPDATE
@@ -53,8 +62,9 @@
 
 ### 📊 Metrics
 
-- **Test Coverage**: 86%+ (650+ tests)
+- **Test Coverage**: 88%+ (1600+ tests)
 - **Dependencies**: 0 (production), 2 (tests only)
+- **Lint**: 0 issues (golangci-lint)
 - **Performance**:
   - Batch operations: 3.3x faster INSERT, 2.5x UPDATE
   - N+1 queries: 3-18x faster (SQLite 6.6x, PostgreSQL 18x, MySQL 3x)
@@ -62,41 +72,41 @@
   - Subqueries: EXISTS 5x faster than IN (109ns vs 516ns)
   - Set operations: UNION ALL 2-3x faster than UNION
   - Wrapper calls: Zero overhead (0ns)
-- **Go Version**: 1.25+
+- **Go Version**: 1.21+
 
 ---
 
 ## 🚀 Upcoming Releases
 
-### v0.10.0 (Q1 2026)
+### v0.12.0 — Developer Experience & Community Growth
 
-**Goal**: Documentation Excellence & Developer Experience
+**Goal**: Make Relica the obvious choice for Go developers evaluating query builders.
 
-**Planned Features**:
-- Comprehensive API documentation (TASK-400)
-- Benchmark suite vs competitors (TASK-501)
-- Production-ready examples repository (TASK-502)
-- Developer experience improvements (TASK-101)
+**Planned**:
+- **Benchmark Suite vs Competitors** — Head-to-head comparison with GORM, sqlx, sqlc, Squirrel on real-world queries (TASK-501)
+- **Production-Ready Examples** — Complete application examples: REST API, CLI tool, background worker with Relica (TASK-502)
+- **SEO-Optimized Dev.to Article** — Technical deep-dive targeting "Go query builder" search traffic (TASK-600)
 
-**Focus**: World-class documentation and developer onboarding
+**Why this matters**: Relica has the features. Now it needs discoverability and proof points. Benchmarks validate the "lightweight & fast" claim. Examples lower the barrier to adoption.
 
----
+### v1.0.0 (Q3-Q4 2026) — Stability Release
 
-### v1.0.0 (Q3-Q4 2026)
-
-**Goal**: Production-ready stable release
+**Goal**: Production-ready stable release with long-term compatibility guarantee.
 
 **Criteria**:
-- ✅ API freeze (no breaking changes after v1.0.0)
-- ✅ Test coverage > 90%
-- ✅ Performance benchmarks validated
-- ✅ Production use by 5+ companies
-- ✅ Full documentation
-- ✅ Security audit complete
-- ✅ LTS support commitment
+- API freeze (no breaking changes after v1.0.0)
+- Test coverage > 90%
+- Performance benchmarks validated and published
+- Full documentation with migration guides
+- Security audit complete
+- 5-year backward compatibility commitment
 
-**Timeline**: 2-4 weeks stabilization
-**Dependencies**: v0.4.0-beta + community validation
+**What v1.0.0 means for users**:
+- Safe to use in production without fear of breaking upgrades
+- `go get -u` will never break your code
+- Deprecation-first policy: old methods stay for 2+ years before removal
+
+**Prerequisites**: v0.12.0 benchmarks + community feedback cycle
 
 ---
 
@@ -120,7 +130,7 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 
 ## 📊 Feature Comparison
 
-| Feature | v0.9.1 | v1.0.0 | GORM | sqlc |
+| Feature | v0.11.1 | v1.0.0 | GORM | sqlc |
 |---------|--------|--------|------|------|
 | **CRUD** | ✅ | ✅ | ✅ | ✅ |
 | **Expression API** | ✅ | ✅ | ✅ | ❌ |
@@ -152,8 +162,8 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 
 ## 📈 Performance Goals
 
-| Metric | v0.9.1 Actual | v1.0.0 Target |
-|--------|---------------|---------------|
+| Metric | v0.11.1 Actual | v1.0.0 Target |
+|--------|----------------|---------------|
 | **Statement Cache Hit** | <60ns ✅ | <50ns |
 | **Batch INSERT (100 rows)** | 327ms ✅ | <200ms |
 | **N+1 Query Reduction** | 3-18x ✅ | Maintained |
@@ -161,7 +171,8 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 | **Aggregate Memory** | 2,500,000x reduction ✅ | Maintained |
 | **EXISTS vs IN** | 5x faster ✅ | Maintained |
 | **UNION ALL vs UNION** | 2-3x faster ✅ | Maintained |
-| **Test Coverage** | 85%+ ✅ | >90% |
+| **Test Coverage** | 88%+ ✅ | >90% |
+| **Lint Issues** | 0 ✅ | 0 |
 | **Dependencies** | 0 ✅ | 0 |
 
 ---
@@ -208,6 +219,10 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 - **v0.8.0** (2025-12-16) - Named placeholders, quoting, Row/Column, Transactional, Distinct, AndWhere/OrWhere
 - **v0.9.0** (2025-12-16) - NullStringMap, Prepare/Close, Composite PK, Functional Expressions
 - **v0.9.1** (2025-12-23) - AI Agent Documentation (AGENTS.md, llms.txt, README updates)
+- **v0.10.0** (2026-03-05) - BatchInsert/BatchUpdate/Upsert shortcuts, 1500+ tests, 88%+ coverage, GitHub Flow
+- **v0.10.1** (2026-03-05) - Named placeholders `{:name}` in fluent builder Where
+- **v0.11.0** (2026-03-17) - Exists, Count, ToSQL, ErrNotFound, error classification, Model Upsert, UpdateChanged
+- **v0.11.1** (2026-06-19) - Expression table alias quoting fix, golangci-lint zero issues
 - **v1.0.0** (Target: Q3-Q4 2026) - Production stable release
 
 ---
@@ -221,5 +236,5 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 
 ---
 
-*Last Updated: 2025-12-23*
+*Last Updated: 2026-06-19*
 *Maintained by: Andrey Kolkov and CoreGX contributors*

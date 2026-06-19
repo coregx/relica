@@ -57,7 +57,7 @@ func inferTableName(model interface{}) string {
 
 	// Fallback: struct name lowercased + 's'.
 	t := reflect.TypeOf(model)
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 
@@ -79,7 +79,7 @@ func inferTableName(model interface{}) string {
 //   - error: if no primary key found
 func (mq *ModelQuery) getPrimaryKeys() ([]string, []interface{}, error) {
 	v := reflect.ValueOf(mq.model)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
 
@@ -155,7 +155,7 @@ func (mq *ModelQuery) Insert(attrs ...string) error {
 
 	// Get primary key info.
 	v := reflect.ValueOf(mq.model)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
 
@@ -211,7 +211,7 @@ func (mq *ModelQuery) Insert(attrs ...string) error {
 func (mq *ModelQuery) populatePrimaryKey(result sql.Result) error {
 	// 1. Find primary key fields.
 	v := reflect.ValueOf(mq.model)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
 
@@ -253,7 +253,7 @@ func (mq *ModelQuery) populatePrimaryKey(result sql.Result) error {
 // isPKNumeric checks if primary key is numeric type (int/uint).
 func isPKNumeric(pkValue reflect.Value) bool {
 	kind := pkValue.Kind()
-	if kind == reflect.Ptr {
+	if kind == reflect.Pointer {
 		if pkValue.IsNil() {
 			kind = pkValue.Type().Elem().Kind()
 		} else {
@@ -278,7 +278,7 @@ func (mq *ModelQuery) needsPostgresReturning() (bool, string) {
 
 	// Find primary key fields.
 	v := reflect.ValueOf(mq.model)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
 
@@ -318,7 +318,7 @@ func (mq *ModelQuery) insertWithReturning(query *Query, pkCol string) error {
 
 	// Find primary key field to populate.
 	v := reflect.ValueOf(mq.model)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
 
@@ -498,7 +498,7 @@ func (mq *ModelQuery) buildUpsertUpdateCols(dataMap map[string]interface{}, pkCo
 // Used for PostgreSQL upsert with auto-increment PK.
 func (mq *ModelQuery) scanReturningID(q *Query, _ string) error {
 	v := reflect.ValueOf(mq.model)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
 
@@ -592,12 +592,12 @@ func (mq *ModelQuery) diffFields(original interface{}) (map[string]interface{}, 
 
 	// Dereference pointers.
 	currentVal := reflect.ValueOf(current)
-	if currentVal.Kind() == reflect.Ptr {
+	if currentVal.Kind() == reflect.Pointer {
 		currentVal = currentVal.Elem()
 	}
 
 	origVal := reflect.ValueOf(original)
-	if origVal.Kind() == reflect.Ptr {
+	if origVal.Kind() == reflect.Pointer {
 		origVal = origVal.Elem()
 	}
 

@@ -25,7 +25,7 @@ func GetTableName(model interface{}) string {
 	}
 
 	t := reflect.TypeOf(model)
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 

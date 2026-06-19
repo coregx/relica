@@ -11,6 +11,9 @@ import (
 	"time"
 )
 
+// auditOpInsert is the SQL INSERT operation identifier for audit logging.
+const auditOpInsert = "INSERT"
+
 // AuditLevel defines the level of audit logging.
 type AuditLevel int
 
@@ -151,7 +154,7 @@ func (a *Auditor) shouldLog(operation string) bool {
 	switch a.level {
 	case AuditWrites:
 		// Log only write operations
-		return operation == "INSERT" || operation == "UPDATE" || operation == "DELETE" || operation == "UPSERT"
+		return operation == auditOpInsert || operation == "UPDATE" || operation == "DELETE" || operation == "UPSERT"
 	case AuditReads:
 		// Log reads and writes
 		return true
@@ -240,7 +243,7 @@ func findTableStart(upper string) (int, bool) {
 		if idx := strings.Index(upper, "FROM"); idx >= 0 {
 			return idx + 4, true
 		}
-	case strings.HasPrefix(upper, "INSERT"):
+	case strings.HasPrefix(upper, auditOpInsert):
 		if idx := strings.Index(upper, "INTO"); idx >= 0 {
 			return idx + 4, true
 		}

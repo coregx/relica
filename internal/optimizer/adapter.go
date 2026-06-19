@@ -9,17 +9,36 @@ import (
 	"github.com/coregx/relica/internal/analyzer"
 )
 
+// Database dialect constants used across the optimizer package.
+const (
+	dialectPostgres = "postgres"
+	dialectMySQL    = "mysql"
+	dialectSQLite   = "sqlite"
+)
+
+// Index type constants.
+const indexTypeBTree = "btree"
+
+// Index recommendation reason constants.
+const (
+	reasonCompositeIndex = "Composite index for multiple AND conditions"
+	reasonJoinForeignKey = "JOIN condition - index on foreign key"
+)
+
+// Operator constants for normalized WHERE clause operators.
+const operatorNotIn = "NOT_IN"
+
 // NewOptimizerForDB creates a BasicOptimizer for the given database connection.
 // It automatically detects the database driver and creates the appropriate analyzer.
 func NewOptimizerForDB(db *sql.DB, driverName string, threshold time.Duration) (*BasicOptimizer, error) {
 	var queryAnalyzer analyzer.Analyzer
 
 	switch driverName {
-	case "postgres", "postgresql":
+	case dialectPostgres, "postgresql":
 		queryAnalyzer = analyzer.NewPostgresAnalyzer(db)
-	case "mysql":
+	case dialectMySQL:
 		queryAnalyzer = analyzer.NewMySQLAnalyzer(db)
-	case "sqlite", "sqlite3":
+	case dialectSQLite, "sqlite3":
 		queryAnalyzer = analyzer.NewSQLiteAnalyzer(db)
 	default:
 		return nil, fmt.Errorf("optimizer not supported for driver: %s", driverName)

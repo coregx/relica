@@ -75,7 +75,7 @@ func (s *scanner) getStructInfo(typ reflect.Type) (*structInfo, error) {
 
 // buildStructInfo analyzes struct type and extracts field information.
 func (s *scanner) buildStructInfo(typ reflect.Type, index []int) (*structInfo, error) {
-	if typ.Kind() == reflect.Ptr {
+	if typ.Kind() == reflect.Pointer {
 		typ = typ.Elem()
 	}
 
@@ -131,7 +131,7 @@ func (s *scanner) buildStructInfo(typ reflect.Type, index []int) (*structInfo, e
 // scanRow scans a single SQL row into dest struct.
 func (s *scanner) scanRow(rows *sql.Rows, dest interface{}) error {
 	destValue := reflect.ValueOf(dest)
-	if destValue.Kind() != reflect.Ptr {
+	if destValue.Kind() != reflect.Pointer {
 		return fmt.Errorf("scanner: dest must be pointer to struct, got %T", dest)
 	}
 
@@ -190,7 +190,7 @@ func (s *scanner) scanRow(rows *sql.Rows, dest interface{}) error {
 // scanRows scans multiple SQL rows into dest slice.
 func (s *scanner) scanRows(rows *sql.Rows, dest interface{}) error {
 	destValue := reflect.ValueOf(dest)
-	if destValue.Kind() != reflect.Ptr {
+	if destValue.Kind() != reflect.Pointer {
 		return fmt.Errorf("scanner: dest must be pointer to slice, got %T", dest)
 	}
 
@@ -202,7 +202,7 @@ func (s *scanner) scanRows(rows *sql.Rows, dest interface{}) error {
 	elemType := sliceValue.Type().Elem()
 
 	// Determine if slice element is pointer or value
-	isPtr := elemType.Kind() == reflect.Ptr
+	isPtr := elemType.Kind() == reflect.Pointer
 	if isPtr {
 		elemType = elemType.Elem()
 	}

@@ -482,7 +482,7 @@ func (q *Query) Column(slice interface{}) error {
 
 	// Validate slice parameter
 	sliceVal := reflect.ValueOf(slice)
-	if sliceVal.Kind() != reflect.Ptr || sliceVal.IsNil() {
+	if sliceVal.Kind() != reflect.Pointer || sliceVal.IsNil() {
 		return fmt.Errorf("relica: Column() requires a non-nil pointer to a slice, got %T", slice)
 	}
 

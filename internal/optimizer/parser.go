@@ -193,7 +193,7 @@ func normalizeOperator(op string) string {
 	case "<>":
 		return "!="
 	case "NOT IN":
-		return "NOT_IN"
+		return operatorNotIn
 	default:
 		return op
 	}

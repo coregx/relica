@@ -176,11 +176,11 @@ func (h *DatabaseHints) SuggestSQLiteHints(analysis *Analysis) []Suggestion {
 // This is the primary method to call from the optimizer.
 func (h *DatabaseHints) GetAllHints(analysis *Analysis) []Suggestion {
 	switch h.database {
-	case "postgres":
+	case dialectPostgres:
 		return h.SuggestPostgreSQLHints(analysis)
-	case "mysql":
+	case dialectMySQL:
 		return h.SuggestMySQLHints(analysis)
-	case "sqlite":
+	case dialectSQLite:
 		return h.SuggestSQLiteHints(analysis)
 	default:
 		return nil // Unknown database

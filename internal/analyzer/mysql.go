@@ -46,7 +46,7 @@ func (ma *MySQLAnalyzer) executeExplain(ctx context.Context, explainQuery string
 	}
 
 	plan.RawOutput = rawJSON
-	plan.Database = "mysql"
+	plan.Database = dbMySQL
 	return plan, nil
 }
 
@@ -122,7 +122,7 @@ func parseMySQLExplain(rawJSON string, _ bool) (*QueryPlan, error) {
 		EstimatedRows: 0,
 		UsesIndex:     false,
 		FullScan:      false,
-		Database:      "mysql",
+		Database:      dbMySQL,
 	}
 
 	// Extract cost from query_block
@@ -201,7 +201,7 @@ func updateMySQLTableMetrics(table *mysqlTableAccess, plan *QueryPlan) {
 	}
 
 	// Detect full table scan (access_type = "ALL")
-	if table.AccessType == "ALL" {
+	if table.AccessType == mysqlAccessTypeAll {
 		plan.FullScan = true
 	}
 

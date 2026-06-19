@@ -45,7 +45,7 @@ func (pa *PostgresAnalyzer) executeExplain(ctx context.Context, explainQuery str
 	}
 
 	plan.RawOutput = rawJSON
-	plan.Database = "postgres"
+	plan.Database = dbPostgres
 	return plan, nil
 }
 
@@ -98,7 +98,7 @@ func parsePostgresExplain(rawJSON string, withAnalyze bool) (*QueryPlan, error) 
 		EstimatedRows: root.Plan.PlanRows,
 		UsesIndex:     false,
 		FullScan:      false,
-		Database:      "postgres",
+		Database:      dbPostgres,
 	}
 
 	// Extract metrics from plan tree
@@ -143,7 +143,7 @@ func updateIndexInfo(node *postgresExplainPlan, plan *QueryPlan) {
 	}
 
 	// Check for sequential scan
-	if node.NodeType == "Seq Scan" {
+	if node.NodeType == postgresSeqScan {
 		plan.FullScan = true
 	}
 }

@@ -66,7 +66,7 @@ func parseDBTag(tag string) (column string, isPK bool) {
 //nolint:cyclop,gocognit,gocyclo,funlen // Acceptable complexity for PK field search with multiple priorities.
 func FindPrimaryKeyFields(v reflect.Value) (*PrimaryKeyInfo, error) {
 	// Handle pointer
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			return nil, errors.New("FindPrimaryKeyFields: nil pointer")
 		}
@@ -219,7 +219,7 @@ func FindPrimaryKeyFields(v reflect.Value) (*PrimaryKeyInfo, error) {
 // Handles composite PK syntax: db:"column_name,pk" -> column_name.
 func ModelToColumns(model interface{}) map[string]string {
 	t := reflect.TypeOf(model)
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 
@@ -251,7 +251,7 @@ func ModelToColumns(model interface{}) map[string]string {
 //   - data is nil pointer.
 func StructToMap(data interface{}) (map[string]interface{}, error) {
 	v := reflect.ValueOf(data)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			return nil, errors.New("StructToMap: nil pointer")
 		}
@@ -344,7 +344,7 @@ func IsPrimaryKeyZero(v reflect.Value) bool {
 		return v.Int() == 0
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		return v.Uint() == 0
-	case reflect.Ptr:
+	case reflect.Pointer:
 		if v.IsNil() {
 			return true
 		}
@@ -379,7 +379,7 @@ func SetPrimaryKeyValue(field reflect.Value, id int64) error {
 	}
 
 	// Handle pointers.
-	if field.Kind() == reflect.Ptr {
+	if field.Kind() == reflect.Pointer {
 		// Allocate if nil.
 		if field.IsNil() {
 			field.Set(reflect.New(field.Type().Elem()))

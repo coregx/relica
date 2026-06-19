@@ -7,6 +7,15 @@ import (
 	"time"
 )
 
+// SQL operation type constants used by DetectOperation and detectOperation.
+const (
+	opSelect  = "SELECT"
+	opInsert  = "INSERT"
+	opUpdate  = "UPDATE"
+	opDelete  = "DELETE"
+	opUnknown = "UNKNOWN"
+)
+
 // QueryEvent contains information about an executed query.
 // This is passed to QueryHook callbacks for logging, metrics, or tracing.
 type QueryEvent struct {
@@ -39,19 +48,19 @@ type QueryHook func(ctx context.Context, event QueryEvent)
 // Returns one of: SELECT, INSERT, UPDATE, DELETE, or UNKNOWN.
 func DetectOperation(sql string) string {
 	sql = strings.TrimSpace(strings.ToUpper(sql))
-	if strings.HasPrefix(sql, "SELECT") || strings.HasPrefix(sql, "WITH") {
-		return "SELECT"
+	if strings.HasPrefix(sql, opSelect) || strings.HasPrefix(sql, "WITH") {
+		return opSelect
 	}
-	if strings.HasPrefix(sql, "INSERT") {
-		return "INSERT"
+	if strings.HasPrefix(sql, opInsert) {
+		return opInsert
 	}
-	if strings.HasPrefix(sql, "UPDATE") {
-		return "UPDATE"
+	if strings.HasPrefix(sql, opUpdate) {
+		return opUpdate
 	}
-	if strings.HasPrefix(sql, "DELETE") {
-		return "DELETE"
+	if strings.HasPrefix(sql, opDelete) {
+		return opDelete
 	}
-	return "UNKNOWN"
+	return opUnknown
 }
 
 // invokeHook calls the query hook if set.
