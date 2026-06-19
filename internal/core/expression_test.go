@@ -636,6 +636,360 @@ func TestCompareExp_WithExpressionValue(t *testing.T) {
 	assert.Equal(t, []interface{}{123}, args)
 }
 
+// TestQuoteColumn tests the shared quoteColumn helper directly
+func TestQuoteColumn(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		col     string
+		want    string
+	}{
+		{"simple column postgres", "postgres", "name", `"name"`},
+		{"simple column mysql", "mysql", "name", "`name`"},
+		{"simple column sqlite", "sqlite", "name", `"name"`},
+		{"table.column postgres", "postgres", "u.name", `"u"."name"`},
+		{"table.column mysql", "mysql", "u.name", "`u`.`name`"},
+		{"table.column sqlite", "sqlite", "u.name", `"u"."name"`},
+		{"schema.table postgres", "postgres", "public.users", `"public"."users"`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := dialects.GetDialect(tt.dialect)
+			got := quoteColumn(tt.col, d)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// TestCompareExp_TableAlias tests Eq/NotEq/GreaterThan/etc. with table-aliased columns
+func TestCompareExp_TableAlias(t *testing.T) {
+	tests := []struct {
+		name     string
+		dialect  string
+		exp      Expression
+		wantSQL  string
+		wantArgs []interface{}
+	}{
+		{
+			name:     "Eq table.column postgres",
+			dialect:  "postgres",
+			exp:      Eq("c.deleted_at", nil),
+			wantSQL:  `"c"."deleted_at" IS NULL`,
+			wantArgs: nil,
+		},
+		{
+			name:     "Eq table.column mysql",
+			dialect:  "mysql",
+			exp:      Eq("c.deleted_at", nil),
+			wantSQL:  "`c`.`deleted_at` IS NULL",
+			wantArgs: nil,
+		},
+		{
+			name:     "Eq table.column with value",
+			dialect:  "postgres",
+			exp:      Eq("u.status", 1),
+			wantSQL:  `"u"."status"=?`,
+			wantArgs: []interface{}{1},
+		},
+		{
+			name:     "NotEq table.column IS NOT NULL",
+			dialect:  "postgres",
+			exp:      NotEq("u.deleted_at", nil),
+			wantSQL:  `"u"."deleted_at" IS NOT NULL`,
+			wantArgs: nil,
+		},
+		{
+			name:     "GreaterThan table.column",
+			dialect:  "postgres",
+			exp:      GreaterThan("u.age", 18),
+			wantSQL:  `"u"."age">?`,
+			wantArgs: []interface{}{18},
+		},
+		{
+			name:     "LessThan table.column",
+			dialect:  "mysql",
+			exp:      LessThan("o.amount", 100),
+			wantSQL:  "`o`.`amount`<?",
+			wantArgs: []interface{}{100},
+		},
+		{
+			name:     "GreaterOrEqual table.column",
+			dialect:  "postgres",
+			exp:      GreaterOrEqual("p.price", 9.99),
+			wantSQL:  `"p"."price">=?`,
+			wantArgs: []interface{}{9.99},
+		},
+		{
+			name:     "LessOrEqual table.column",
+			dialect:  "sqlite",
+			exp:      LessOrEqual("t.score", 50),
+			wantSQL:  `"t"."score"<=?`,
+			wantArgs: []interface{}{50},
+		},
+		{
+			name:     "Eq with Expression value and table alias",
+			dialect:  "postgres",
+			exp:      Eq("m.user_id", NewExp("u.id")),
+			wantSQL:  `"m"."user_id"=(u.id)`,
+			wantArgs: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := dialects.GetDialect(tt.dialect)
+			sql, args := tt.exp.Build(d)
+			assert.Equal(t, tt.wantSQL, sql)
+			assert.Equal(t, tt.wantArgs, args)
+		})
+	}
+}
+
+// TestInExp_TableAlias tests In/NotIn with table-aliased columns
+func TestInExp_TableAlias(t *testing.T) {
+	tests := []struct {
+		name     string
+		dialect  string
+		exp      Expression
+		wantSQL  string
+		wantArgs []interface{}
+	}{
+		{
+			name:     "In table.column postgres",
+			dialect:  "postgres",
+			exp:      In("u.role", "admin", "editor"),
+			wantSQL:  `"u"."role" IN (?, ?)`,
+			wantArgs: []interface{}{"admin", "editor"},
+		},
+		{
+			name:     "In table.column mysql",
+			dialect:  "mysql",
+			exp:      In("o.status", 1, 2, 3),
+			wantSQL:  "`o`.`status` IN (?, ?, ?)",
+			wantArgs: []interface{}{1, 2, 3},
+		},
+		{
+			name:     "NotIn table.column",
+			dialect:  "postgres",
+			exp:      NotIn("u.id", 5, 10),
+			wantSQL:  `"u"."id" NOT IN (?, ?)`,
+			wantArgs: []interface{}{5, 10},
+		},
+		{
+			name:     "In table.column single value optimization",
+			dialect:  "postgres",
+			exp:      In("u.id", 42),
+			wantSQL:  `"u"."id"=?`,
+			wantArgs: []interface{}{42},
+		},
+		{
+			name:     "In table.column single nil",
+			dialect:  "postgres",
+			exp:      In("u.deleted_at", nil),
+			wantSQL:  `"u"."deleted_at" IS NULL`,
+			wantArgs: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := dialects.GetDialect(tt.dialect)
+			sql, args := tt.exp.Build(d)
+			assert.Equal(t, tt.wantSQL, sql)
+			assert.Equal(t, tt.wantArgs, args)
+		})
+	}
+}
+
+// TestBetweenExp_TableAlias tests Between/NotBetween with table-aliased columns
+func TestBetweenExp_TableAlias(t *testing.T) {
+	tests := []struct {
+		name     string
+		dialect  string
+		exp      Expression
+		wantSQL  string
+		wantArgs []interface{}
+	}{
+		{
+			name:     "Between table.column postgres",
+			dialect:  "postgres",
+			exp:      Between("o.created_at", "2026-01-01", "2026-12-31"),
+			wantSQL:  `"o"."created_at" BETWEEN ? AND ?`,
+			wantArgs: []interface{}{"2026-01-01", "2026-12-31"},
+		},
+		{
+			name:     "Between table.column mysql",
+			dialect:  "mysql",
+			exp:      Between("p.price", 10, 100),
+			wantSQL:  "`p`.`price` BETWEEN ? AND ?",
+			wantArgs: []interface{}{10, 100},
+		},
+		{
+			name:     "NotBetween table.column",
+			dialect:  "postgres",
+			exp:      NotBetween("u.age", 0, 17),
+			wantSQL:  `"u"."age" NOT BETWEEN ? AND ?`,
+			wantArgs: []interface{}{0, 17},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := dialects.GetDialect(tt.dialect)
+			sql, args := tt.exp.Build(d)
+			assert.Equal(t, tt.wantSQL, sql)
+			assert.Equal(t, tt.wantArgs, args)
+		})
+	}
+}
+
+// TestLikeExp_TableAlias tests Like/NotLike with table-aliased columns
+func TestLikeExp_TableAlias(t *testing.T) {
+	tests := []struct {
+		name     string
+		dialect  string
+		exp      Expression
+		wantSQL  string
+		wantArgs []interface{}
+	}{
+		{
+			name:     "Like table.column postgres",
+			dialect:  "postgres",
+			exp:      Like("u.name", "john"),
+			wantSQL:  `"u"."name" LIKE ?`,
+			wantArgs: []interface{}{"%john%"},
+		},
+		{
+			name:     "Like table.column mysql",
+			dialect:  "mysql",
+			exp:      Like("c.title", "report"),
+			wantSQL:  "`c`.`title` LIKE ?",
+			wantArgs: []interface{}{"%report%"},
+		},
+		{
+			name:     "NotLike table.column",
+			dialect:  "postgres",
+			exp:      NotLike("p.description", "draft"),
+			wantSQL:  `"p"."description" NOT LIKE ?`,
+			wantArgs: []interface{}{"%draft%"},
+		},
+		{
+			name:     "OrLike table.column multiple values",
+			dialect:  "postgres",
+			exp:      OrLike("u.email", "gmail", "yahoo"),
+			wantSQL:  `"u"."email" LIKE ? OR "u"."email" LIKE ?`,
+			wantArgs: []interface{}{"%gmail%", "%yahoo%"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := dialects.GetDialect(tt.dialect)
+			sql, args := tt.exp.Build(d)
+			assert.Equal(t, tt.wantSQL, sql)
+			assert.Equal(t, tt.wantArgs, args)
+		})
+	}
+}
+
+// TestHashExp_TableAlias tests HashExp with table-aliased column names
+func TestHashExp_TableAlias(t *testing.T) {
+	tests := []struct {
+		name     string
+		dialect  string
+		hash     HashExp
+		wantSQL  string
+		wantArgs []interface{}
+	}{
+		{
+			name:     "single table.column nil postgres",
+			dialect:  "postgres",
+			hash:     HashExp{"c.deleted_at": nil},
+			wantSQL:  `"c"."deleted_at" IS NULL`,
+			wantArgs: nil,
+		},
+		{
+			name:     "single table.column value mysql",
+			dialect:  "mysql",
+			hash:     HashExp{"u.status": 1},
+			wantSQL:  "`u`.`status`=?",
+			wantArgs: []interface{}{1},
+		},
+		{
+			name:    "multiple table.column keys",
+			dialect: "postgres",
+			hash: HashExp{
+				"c.deleted_at": nil,
+				"c.status":     "active",
+			},
+			wantSQL:  `"c"."deleted_at" IS NULL AND "c"."status"=?`,
+			wantArgs: []interface{}{"active"},
+		},
+		{
+			name:     "table.column with IN values",
+			dialect:  "postgres",
+			hash:     HashExp{"u.role": []interface{}{"admin", "editor"}},
+			wantSQL:  `"u"."role" IN (?, ?)`,
+			wantArgs: []interface{}{"admin", "editor"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := dialects.GetDialect(tt.dialect)
+			sql, args := tt.hash.Build(d)
+			assert.Equal(t, tt.wantSQL, sql)
+			assert.Equal(t, tt.wantArgs, args)
+		})
+	}
+}
+
+// TestTableAlias_ComposedExpressions tests And/Or/Not with table-aliased inner expressions
+func TestTableAlias_ComposedExpressions(t *testing.T) {
+	d := dialects.GetDialect("postgres")
+
+	t.Run("And with table aliases", func(t *testing.T) {
+		exp := And(
+			Eq("c.deleted_at", nil),
+			GreaterThan("c.revenue", 1000),
+		)
+		sql, args := exp.Build(d)
+		assert.Equal(t, `("c"."deleted_at" IS NULL) AND ("c"."revenue">?)`, sql)
+		assert.Equal(t, []interface{}{1000}, args)
+	})
+
+	t.Run("Or with table aliases", func(t *testing.T) {
+		exp := Or(
+			Eq("u.role", "admin"),
+			Eq("u.role", "superadmin"),
+		)
+		sql, args := exp.Build(d)
+		assert.Equal(t, `("u"."role"=?) OR ("u"."role"=?)`, sql)
+		assert.Equal(t, []interface{}{"admin", "superadmin"}, args)
+	})
+
+	t.Run("Not with table alias", func(t *testing.T) {
+		exp := Not(In("u.status", "banned", "suspended"))
+		sql, args := exp.Build(d)
+		assert.Equal(t, `NOT ("u"."status" IN (?, ?))`, sql)
+		assert.Equal(t, []interface{}{"banned", "suspended"}, args)
+	})
+
+	t.Run("complex nested with mixed aliases", func(t *testing.T) {
+		exp := And(
+			Eq("c.deleted_at", nil),
+			Or(
+				GreaterThan("o.total", 500),
+				In("o.status", "vip", "premium"),
+			),
+		)
+		sql, args := exp.Build(d)
+		assert.Equal(t, `("c"."deleted_at" IS NULL) AND (("o"."total">?) OR ("o"."status" IN (?, ?)))`, sql)
+		assert.Equal(t, []interface{}{500, "vip", "premium"}, args)
+	})
+}
+
 // TestHashExp_AllDialects tests HashExp across all three dialects
 func TestHashExp_AllDialects(t *testing.T) {
 	hash := HashExp{

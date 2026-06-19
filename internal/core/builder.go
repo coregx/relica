@@ -728,12 +728,7 @@ func (sq *SelectQuery) buildOrderBy(dialect dialects.Dialect) string {
 // quoteColumnName quotes a column name, handling table prefixes.
 // Examples: "age" → "age", "users.age" → "users"."age"
 func (sq *SelectQuery) quoteColumnName(col string, dialect dialects.Dialect) string {
-	// Check for table.column format
-	if strings.Contains(col, ".") {
-		parts := strings.SplitN(col, ".", 2)
-		return dialect.QuoteIdentifier(parts[0]) + "." + dialect.QuoteIdentifier(parts[1])
-	}
-	return dialect.QuoteIdentifier(col)
+	return quoteColumn(col, dialect)
 }
 
 // buildLimitOffset constructs the LIMIT and OFFSET clauses.

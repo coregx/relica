@@ -21,6 +21,15 @@ const (
 	sqlIn = "IN"
 )
 
+// quoteColumn quotes a column name, splitting "table.column" into "table"."column".
+func quoteColumn(col string, dialect dialects.Dialect) string {
+	if strings.Contains(col, ".") {
+		parts := strings.SplitN(col, ".", 2)
+		return dialect.QuoteIdentifier(parts[0]) + "." + dialect.QuoteIdentifier(parts[1])
+	}
+	return dialect.QuoteIdentifier(col)
+}
+
 // Expression represents a database expression that can be embedded in a SQL statement.
 // Expressions are used to build complex WHERE clauses in a type-safe, fluent manner.
 //
@@ -90,7 +99,7 @@ type HashExp map[string]interface{}
 
 // buildHashExpValue processes a single key-value pair from HashExp.
 func buildHashExpValue(key string, value interface{}, dialect dialects.Dialect) (sql string, args []interface{}) {
-	col := dialect.QuoteIdentifier(key)
+	col := quoteColumn(key, dialect)
 
 	switch v := value.(type) {
 	case nil:
@@ -193,7 +202,7 @@ func LessOrEqual(col string, value interface{}) Expression {
 
 // Build converts a comparison expression into a SQL fragment.
 func (e *CompareExp) Build(dialect dialects.Dialect) (string, []interface{}) {
-	col := dialect.QuoteIdentifier(e.Col)
+	col := quoteColumn(e.Col, dialect)
 
 	// Handle NULL comparison
 	if e.Value == nil {
@@ -304,7 +313,7 @@ func (e *InExp) Build(dialect dialects.Dialect) (string, []interface{}) {
 		return alwaysFalse, nil // IN () → always false
 	}
 
-	col := dialect.QuoteIdentifier(e.Col)
+	col := quoteColumn(e.Col, dialect)
 
 	// Single value optimization (including subquery support)
 	if len(e.Values) == 1 {
@@ -353,7 +362,7 @@ func NotBetween(col string, from, to interface{}) Expression {
 
 // Build converts a BETWEEN expression into a SQL fragment.
 func (e *BetweenExp) Build(dialect dialects.Dialect) (string, []interface{}) {
-	col := dialect.QuoteIdentifier(e.Col)
+	col := quoteColumn(e.Col, dialect)
 
 	op := "BETWEEN"
 	if e.Not {
@@ -444,7 +453,7 @@ func (e *LikeExp) Build(dialect dialects.Dialect) (string, []interface{}) {
 		return "", nil
 	}
 
-	col := dialect.QuoteIdentifier(e.Col)
+	col := quoteColumn(e.Col, dialect)
 	parts := make([]string, 0, len(e.Values))
 	args := make([]interface{}, 0, len(e.Values))
 

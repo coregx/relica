@@ -43,8 +43,8 @@ func TestSelectQuery_LeftJoin_Expression(t *testing.T) {
 	assert.Contains(t, q.sql, `SELECT * FROM "messages" AS "m"`)
 	assert.Contains(t, q.sql, `LEFT JOIN "attachments" AS "a"`)
 	assert.Contains(t, q.sql, `ON`)
-	// Expression Eq() generates: "m.id"=(expression)
-	assert.Contains(t, q.sql, `"m.id"`)
+	// Expression Eq() now correctly splits table alias: "m"."id"=(expression)
+	assert.Contains(t, q.sql, `"m"."id"`)
 }
 
 // TestSelectQuery_RightJoin_WithAlias tests RIGHT JOIN with table alias parsing
