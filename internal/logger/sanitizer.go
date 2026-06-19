@@ -6,6 +6,12 @@ import (
 	"strings"
 )
 
+// defaultMaskValue is the replacement string for sensitive parameter values.
+const defaultMaskValue = "***REDACTED***"
+
+// sensitiveFieldSecret is a common sensitive field name used in default lists.
+const sensitiveFieldSecret = "secret"
+
 // Sanitizer masks sensitive data in query parameters to prevent accidental logging of secrets.
 // It detects sensitive fields based on SQL column names and parameter patterns.
 type Sanitizer struct {
@@ -23,7 +29,7 @@ func NewSanitizer(sensitiveFields []string) *Sanitizer {
 		sensitiveFields = []string{
 			"password", "passwd", "pwd",
 			"token", "api_key", "apikey", "api_token",
-			"secret", "auth", "authorization",
+			sensitiveFieldSecret, "auth", "authorization",
 			"credit_card", "card_number", "cvv", "cvc",
 			"ssn", "social_security",
 			"private_key", "priv_key",
@@ -40,7 +46,7 @@ func NewSanitizer(sensitiveFields []string) *Sanitizer {
 
 	return &Sanitizer{
 		sensitiveFields: sensitiveFields,
-		maskValue:       "***REDACTED***",
+		maskValue:       defaultMaskValue,
 		patterns:        patterns,
 	}
 }

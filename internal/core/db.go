@@ -578,17 +578,17 @@ func detectOperation(query string) string {
 	upper := strings.ToUpper(strings.TrimSpace(query))
 
 	// Match common operations
-	if strings.HasPrefix(upper, "INSERT") {
-		return "INSERT"
+	if strings.HasPrefix(upper, opInsert) {
+		return opInsert
 	}
-	if strings.HasPrefix(upper, "UPDATE") {
-		return "UPDATE"
+	if strings.HasPrefix(upper, opUpdate) {
+		return opUpdate
 	}
-	if strings.HasPrefix(upper, "DELETE") {
-		return "DELETE"
+	if strings.HasPrefix(upper, opDelete) {
+		return opDelete
 	}
-	if strings.HasPrefix(upper, "SELECT") {
-		return "SELECT"
+	if strings.HasPrefix(upper, opSelect) {
+		return opSelect
 	}
 	if strings.HasPrefix(upper, "CREATE") {
 		return "CREATE"
@@ -604,5 +604,5 @@ func detectOperation(query string) string {
 	}
 
 	// Unknown operation
-	return "UNKNOWN"
+	return opUnknown
 }

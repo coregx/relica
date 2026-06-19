@@ -8,6 +8,19 @@ import (
 	"time"
 )
 
+// Database type constants used in QueryPlan.Database and analyzer implementations.
+const (
+	dbPostgres = "postgres"
+	dbMySQL    = "mysql"
+	dbSQLite   = "sqlite"
+)
+
+// mysqlAccessTypeAll is the MySQL access_type value indicating a full table scan.
+const mysqlAccessTypeAll = "ALL"
+
+// postgresSeqScan is the PostgreSQL node type for sequential table scans.
+const postgresSeqScan = "Seq Scan"
+
 // QueryPlan represents a unified query execution plan across different databases.
 // It provides performance metrics, index usage analysis, and database-specific details.
 type QueryPlan struct {

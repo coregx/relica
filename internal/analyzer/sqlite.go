@@ -63,7 +63,7 @@ func (sa *SQLiteAnalyzer) executeExplain(ctx context.Context, explainQuery strin
 	// Parse the plan lines
 	plan := parseSQLiteExplain(planLines)
 	plan.RawOutput = strings.Join(planLines, "\n")
-	plan.Database = "sqlite"
+	plan.Database = dbSQLite
 
 	return plan, nil
 }
@@ -79,7 +79,7 @@ func parseSQLiteExplain(planLines []string) *QueryPlan {
 		EstimatedRows: 0, // SQLite doesn't provide row estimates
 		UsesIndex:     false,
 		FullScan:      false,
-		Database:      "sqlite",
+		Database:      dbSQLite,
 	}
 
 	for _, line := range planLines {

@@ -208,7 +208,7 @@ func (o *BasicOptimizer) detectMissingIndexes(query string, _ *analyzer.QueryPla
 		recommendations = append(recommendations, IndexRecommendation{
 			Table:   table,
 			Columns: coveringAnalysis.Columns,
-			Type:    "btree",
+			Type:    indexTypeBTree,
 			Reason:  fmt.Sprintf("Covering index: %s", coveringAnalysis.Benefit),
 		})
 	}
@@ -309,7 +309,7 @@ func (o *BasicOptimizer) analyzeConditions(conditions []Condition, table string,
 			*recommendations = append(*recommendations, IndexRecommendation{
 				Table:   table,
 				Columns: []string{cond.Column},
-				Type:    "btree",
+				Type:    indexTypeBTree,
 				Reason:  fmt.Sprintf("Function %s() in WHERE prevents index use - consider function-based index", cond.Function),
 			})
 			continue
@@ -331,13 +331,13 @@ func (o *BasicOptimizer) buildCompositeRecommendation(logic LogicType, columns [
 
 	reason := "Single column index for WHERE filtering"
 	if len(columns) >= 2 {
-		reason = "Composite index for multiple AND conditions"
+		reason = reasonCompositeIndex
 	}
 
 	return []IndexRecommendation{{
 		Table:   table,
 		Columns: columns,
-		Type:    "btree",
+		Type:    indexTypeBTree,
 		Reason:  reason,
 	}}
 }
@@ -362,8 +362,8 @@ func (o *BasicOptimizer) analyzeJoinIndexes(join string) []IndexRecommendation {
 		recommendations = append(recommendations, IndexRecommendation{
 			Table:   rightTable,
 			Columns: []string{rightColumn},
-			Type:    "btree",
-			Reason:  "JOIN condition - index on foreign key",
+			Type:    indexTypeBTree,
+			Reason:  reasonJoinForeignKey,
 		})
 	}
 
