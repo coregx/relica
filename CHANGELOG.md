@@ -6,6 +6,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.11.1] - 2026-06-19
+
+### Fixed
+
+- **Expression API: table-aliased column quoting** — `relica.Eq("c.deleted_at", nil)` now correctly generates `"c"."deleted_at" IS NULL` instead of `"c.deleted_at" IS NULL` ([#21](https://github.com/coregx/relica/issues/21))
+- Affected expressions: `Eq`, `NotEq`, `GreaterThan`, `LessThan`, `GreaterOrEqual`, `LessOrEqual`, `In`, `NotIn`, `Between`, `NotBetween`, `Like`, `NotLike`, `HashExp`
+- All three dialects fixed: PostgreSQL (`"t"."col"`), MySQL (`` `t`.`col` ``), SQLite (`"t"."col"`)
+
+### Improved
+
+- Extracted shared `quoteColumn()` helper to eliminate quoting logic duplication between query builder and expressions
+- Replaced deprecated `reflect.Ptr` with `reflect.Pointer` across the codebase
+- Extracted repeated string literals into package-level constants (`golangci-lint`: 49 → 0 issues)
+
+### Example
+
+```go
+// Before v0.11.1 (broken): generates "c.deleted_at" IS NULL → PostgreSQL error
+db.Select("c.id", "c.name").
+    From("companies c").
+    Where(relica.Eq("c.deleted_at", nil)).
+    All(&rows)
+
+// After v0.11.1 (fixed): generates "c"."deleted_at" IS NULL
+db.Select("c.id", "c.name").
+    From("companies c").
+    Where(relica.Eq("c.deleted_at", nil)).  // ✓ works correctly
+    All(&rows)
+
+// All expression types now handle table aliases:
+relica.In("u.role", "admin", "editor")           // "u"."role" IN (?, ?)
+relica.Between("o.created_at", from, to)          // "o"."created_at" BETWEEN ? AND ?
+relica.Like("p.name", "widget")                   // "p"."name" LIKE ?
+relica.HashExp{"c.status": "active"}              // "c"."status"=?
+```
+
+---
+
 ## [0.11.0] - 2026-03-17
 
 ### Added
