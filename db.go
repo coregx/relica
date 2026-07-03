@@ -22,29 +22,27 @@
 //	defer db.Close()
 //
 //	var users []User
-//	err = db.Builder().Select("*").From("users").All(&users)
+//	err = db.Select("id", "name").From("users").All(&users)
 //
 // # Features
 //
 // CRUD Operations:
 //
-//	// SELECT
-//	db.Builder().Select("*").From("users").Where("id = ?", 123).One(&user)
+//	// SELECT with Expression API
+//	db.Select().From("users").Where(relica.Eq("id", 123)).One(&user)
 //
-//	// INSERT
-//	db.Builder().Insert("users", map[string]interface{}{
-//	    "name": "Alice",
-//	    "email": "alice@example.com",
-//	}).Execute()
+//	// INSERT via Model API (recommended)
+//	user := User{Name: "Alice", Email: "alice@example.com"}
+//	db.Model(&user).Insert()
 //
 //	// UPDATE
-//	db.Builder().Update("users").
+//	db.Update("users").
 //	    Set(map[string]interface{}{"status": "active"}).
-//	    Where("id = ?", 123).
+//	    Where(relica.Eq("id", 123)).
 //	    Execute()
 //
 //	// DELETE
-//	db.Builder().Delete("users").Where("id = ?", 123).Execute()
+//	db.Delete("users").Where(relica.Eq("id", 123)).Execute()
 package relica
 
 import (
@@ -302,9 +300,9 @@ func Open(driverName, dsn string, opts ...Option) (*DB, error) {
 	return &DB{db: coreDB}, nil
 }
 
-// NewDB creates a database connection (deprecated: use Open).
+// NewDB creates a database connection.
 //
-// This function exists for backward compatibility. New code should use Open.
+// Deprecated: Use Open instead. NewDB will be removed in a future version.
 //
 // Example:
 //

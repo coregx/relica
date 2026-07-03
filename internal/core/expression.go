@@ -125,7 +125,7 @@ func buildHashExpValue(key string, value interface{}, dialect dialects.Dialect) 
 		return in.Build(dialect)
 
 	default:
-		return col + "=?", []interface{}{value}
+		return col + " = ?", []interface{}{value}
 	}
 }
 
@@ -222,11 +222,11 @@ func (e *CompareExp) Build(dialect dialects.Dialect) (string, []interface{}) {
 	// Handle Expression values
 	if expr, ok := e.Value.(Expression); ok {
 		sql, args := expr.Build(dialect)
-		return col + e.Operator + "(" + sql + ")", args
+		return col + " " + e.Operator + " (" + sql + ")", args
 	}
 
 	// Simple comparison
-	return col + e.Operator + "?", []interface{}{e.Value}
+	return col + " " + e.Operator + " ?", []interface{}{e.Value}
 }
 
 // InExp represents an IN or NOT IN expression.
@@ -298,9 +298,9 @@ func buildInExpSingleValue(col string, val interface{}, not bool, dialect dialec
 	}
 	// Non-NULL single value
 	if not {
-		return col + "<>?", []interface{}{val}, true
+		return col + " <> ?", []interface{}{val}, true
 	}
-	return col + "=?", []interface{}{val}, true
+	return col + " = ?", []interface{}{val}, true
 }
 
 // Build converts an IN expression into a SQL fragment.

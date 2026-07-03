@@ -210,7 +210,7 @@ func TestSelectQuery_Having_Expression(t *testing.T) {
 	require.NotNil(t, q)
 
 	// Verify HAVING clause with column expression
-	assert.Contains(t, q.sql, `HAVING "user_id">$1`)
+	assert.Contains(t, q.sql, `HAVING "user_id" > $1`)
 	assert.Equal(t, []interface{}{100}, q.params)
 }
 

@@ -64,13 +64,13 @@ func TestSelectQuery_ToSQL_WithWhere(t *testing.T) {
 		{
 			name:       "postgres: WHERE with positional placeholder",
 			dialect:    "postgres",
-			wantSQL:    `SELECT * FROM "users" WHERE "id"=$1`,
+			wantSQL:    `SELECT * FROM "users" WHERE "id" = $1`,
 			wantParams: []interface{}{1},
 		},
 		{
 			name:       "mysql: WHERE with positional placeholder",
 			dialect:    "mysql",
-			wantSQL:    "SELECT * FROM `users` WHERE `id`=?",
+			wantSQL:    "SELECT * FROM `users` WHERE `id` = ?",
 			wantParams: []interface{}{1},
 		},
 	}
@@ -100,7 +100,7 @@ func TestSelectQuery_ToSQL_WithMultipleConditions(t *testing.T) {
 		ToSQL()
 
 	assert.Contains(t, sql, `SELECT "id", "name" FROM "users"`)
-	assert.Contains(t, sql, `WHERE "status"=$1 AND "age">$2`)
+	assert.Contains(t, sql, `WHERE "status" = $1 AND "age" > $2`)
 	assert.Contains(t, sql, `ORDER BY "name" ASC`)
 	assert.Contains(t, sql, `LIMIT 10`)
 	assert.Equal(t, []interface{}{1, 18}, params)
@@ -153,7 +153,7 @@ func TestUpdateQuery_ToSQL_Postgres(t *testing.T) {
 
 	assert.Contains(t, sql, `UPDATE "users" SET`)
 	assert.Contains(t, sql, `"status" = $1`)
-	assert.Contains(t, sql, `WHERE "id"=$2`)
+	assert.Contains(t, sql, `WHERE "id" = $2`)
 	assert.Equal(t, []interface{}{2, 1}, params)
 }
 
@@ -168,7 +168,7 @@ func TestUpdateQuery_ToSQL_MySQL(t *testing.T) {
 
 	assert.Contains(t, sql, "UPDATE `users` SET")
 	assert.Contains(t, sql, "`name` = ?")
-	assert.Contains(t, sql, "WHERE `id`=?")
+	assert.Contains(t, sql, "WHERE `id` = ?")
 	assert.Equal(t, []interface{}{"Alice", 5}, params)
 }
 
@@ -196,7 +196,7 @@ func TestUpdateQuery_ToSQL_SQLite(t *testing.T) {
 
 	assert.Contains(t, sql, `UPDATE "products" SET`)
 	assert.Contains(t, sql, `"price" = ?`)
-	assert.Contains(t, sql, `WHERE "id"=?`)
+	assert.Contains(t, sql, `WHERE "id" = ?`)
 	assert.Equal(t, []interface{}{99, 10}, params)
 }
 
@@ -210,7 +210,7 @@ func TestDeleteQuery_ToSQL_Postgres(t *testing.T) {
 
 	sql, params := qb.Delete("users").Where(Eq("id", 1)).ToSQL()
 
-	assert.Equal(t, `DELETE FROM "users" WHERE "id"=$1`, sql)
+	assert.Equal(t, `DELETE FROM "users" WHERE "id" = $1`, sql)
 	assert.Equal(t, []interface{}{1}, params)
 }
 
@@ -220,7 +220,7 @@ func TestDeleteQuery_ToSQL_MySQL(t *testing.T) {
 
 	sql, params := qb.Delete("sessions").Where(Eq("user_id", 99)).ToSQL()
 
-	assert.Equal(t, "DELETE FROM `sessions` WHERE `user_id`=?", sql)
+	assert.Equal(t, "DELETE FROM `sessions` WHERE `user_id` = ?", sql)
 	assert.Equal(t, []interface{}{99}, params)
 }
 
@@ -254,8 +254,8 @@ func TestDeleteQuery_ToSQL_MultipleConditions(t *testing.T) {
 		ToSQL()
 
 	assert.Contains(t, sql, `DELETE FROM "events" WHERE`)
-	assert.Contains(t, sql, `"status"=$1`)
-	assert.Contains(t, sql, `"created_at"<$2`)
+	assert.Contains(t, sql, `"status" = $1`)
+	assert.Contains(t, sql, `"created_at" < $2`)
 	assert.Equal(t, []interface{}{"archived", "2020-01-01"}, params)
 }
 
@@ -374,7 +374,7 @@ func TestSelectQuery_Exists_SQL_Postgres(t *testing.T) {
 	innerSQL, innerParams := innerQuery.buildSQL(db.dialect)
 	existsSQL := "SELECT EXISTS(" + innerSQL + ")"
 
-	assert.Equal(t, `SELECT EXISTS(SELECT 1 FROM "users" WHERE "email"=$1)`, existsSQL)
+	assert.Equal(t, `SELECT EXISTS(SELECT 1 FROM "users" WHERE "email" = $1)`, existsSQL)
 	assert.Equal(t, []interface{}{"alice@example.com"}, innerParams)
 }
 
@@ -396,7 +396,7 @@ func TestSelectQuery_Exists_SQL_MySQL(t *testing.T) {
 	innerSQL, innerParams := innerQuery.buildSQL(db.dialect)
 	existsSQL := "SELECT EXISTS(" + innerSQL + ")"
 
-	assert.Equal(t, "SELECT EXISTS(SELECT 1 FROM `users` WHERE `id`=?)", existsSQL)
+	assert.Equal(t, "SELECT EXISTS(SELECT 1 FROM `users` WHERE `id` = ?)", existsSQL)
 	assert.Equal(t, []interface{}{7}, innerParams)
 }
 
@@ -424,7 +424,7 @@ func TestSelectQuery_Exists_SQL_WithJoin(t *testing.T) {
 
 	assert.Contains(t, existsSQL, "SELECT EXISTS(")
 	assert.Contains(t, existsSQL, "INNER JOIN")
-	assert.Contains(t, existsSQL, `"status"=$1`)
+	assert.Contains(t, existsSQL, `"status" = $1`)
 }
 
 func TestSelectQuery_Exists_SQL_SQLite(t *testing.T) {
@@ -445,7 +445,7 @@ func TestSelectQuery_Exists_SQL_SQLite(t *testing.T) {
 	innerSQL, innerParams := innerQuery.buildSQL(db.dialect)
 	existsSQL := "SELECT EXISTS(" + innerSQL + ")"
 
-	assert.Equal(t, `SELECT EXISTS(SELECT 1 FROM "products" WHERE "sku"=?)`, existsSQL)
+	assert.Equal(t, `SELECT EXISTS(SELECT 1 FROM "products" WHERE "sku" = ?)`, existsSQL)
 	assert.Equal(t, []interface{}{"ABC-123"}, innerParams)
 }
 

@@ -56,7 +56,7 @@ func TestSelectQuery_AndWhere(t *testing.T) {
 					Where("status = ?", 1).
 					AndWhere(GreaterThan("age", 18))
 			},
-			expectedSQL: `SELECT * FROM "users" WHERE status = $1 AND "age">$2`,
+			expectedSQL: `SELECT * FROM "users" WHERE status = $1 AND "age" > $2`,
 			expectedLen: 2,
 		},
 		{
@@ -146,7 +146,7 @@ func TestSelectQuery_OrWhere(t *testing.T) {
 					Where("status = ?", 1).
 					OrWhere(Eq("role", "admin"))
 			},
-			expectedSQL: `SELECT * FROM "users" WHERE (status = $1) OR ("role"=$2)`,
+			expectedSQL: `SELECT * FROM "users" WHERE (status = $1) OR ("role" = $2)`,
 			expectedLen: 2,
 		},
 		{
@@ -247,7 +247,7 @@ func TestUpdateQuery_AndWhere(t *testing.T) {
 					Where("id > ?", 100).
 					AndWhere(Eq("active", true))
 			},
-			expectedSQL: `UPDATE "users" SET "status" = $1 WHERE id > $2 AND "active"=$3`,
+			expectedSQL: `UPDATE "users" SET "status" = $1 WHERE id > $2 AND "active" = $3`,
 			expectedLen: 3,
 		},
 	}
@@ -307,7 +307,7 @@ func TestUpdateQuery_OrWhere(t *testing.T) {
 					Where("banned = ?", true).
 					OrWhere(Eq("deleted", true))
 			},
-			expectedSQL: `UPDATE "users" SET "status" = $1 WHERE (banned = $2) OR ("deleted"=$3)`,
+			expectedSQL: `UPDATE "users" SET "status" = $1 WHERE (banned = $2) OR ("deleted" = $3)`,
 			expectedLen: 3,
 		},
 	}
@@ -363,7 +363,7 @@ func TestDeleteQuery_AndWhere(t *testing.T) {
 					Where("status = ?", 0).
 					AndWhere(LessThan("created_at", "2020-01-01"))
 			},
-			expectedSQL: `DELETE FROM "users" WHERE status = $1 AND "created_at"<$2`,
+			expectedSQL: `DELETE FROM "users" WHERE status = $1 AND "created_at" < $2`,
 			expectedLen: 2,
 		},
 	}
@@ -419,7 +419,7 @@ func TestDeleteQuery_OrWhere(t *testing.T) {
 					Where("banned = ?", true).
 					OrWhere(Eq("deleted", true))
 			},
-			expectedSQL: `DELETE FROM "users" WHERE (banned = $1) OR ("deleted"=$2)`,
+			expectedSQL: `DELETE FROM "users" WHERE (banned = $1) OR ("deleted" = $2)`,
 			expectedLen: 2,
 		},
 	}
@@ -549,9 +549,9 @@ func TestAndWhere_OrWhere_HashExp(t *testing.T) {
 	// After sorting: WHERE status=1 AND (age=18 AND city=NYC) OR (role=admin)
 	// With parentheses: (status=1 AND age=18 AND city=NYC) OR (role=admin)
 	assert.Contains(t, q.sql, `WHERE (`)
-	assert.Contains(t, q.sql, `"status"=$1`)
-	assert.Contains(t, q.sql, `"age"=$2`)
-	assert.Contains(t, q.sql, `"city"=$3`)
-	assert.Contains(t, q.sql, `OR ("role"=$4)`)
+	assert.Contains(t, q.sql, `"status" = $1`)
+	assert.Contains(t, q.sql, `"age" = $2`)
+	assert.Contains(t, q.sql, `"city" = $3`)
+	assert.Contains(t, q.sql, `OR ("role" = $4)`)
 	assert.Len(t, q.params, 4)
 }

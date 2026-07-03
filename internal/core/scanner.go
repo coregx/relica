@@ -134,6 +134,9 @@ func (s *scanner) scanRow(rows *sql.Rows, dest interface{}) error {
 	if destValue.Kind() != reflect.Pointer {
 		return fmt.Errorf("scanner: dest must be pointer to struct, got %T", dest)
 	}
+	if destValue.IsNil() {
+		return fmt.Errorf("scanner: dest is a nil pointer, pass a non-nil *%s", destValue.Type().Elem())
+	}
 
 	destValue = destValue.Elem()
 	if destValue.Kind() != reflect.Struct {
