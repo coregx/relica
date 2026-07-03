@@ -651,6 +651,8 @@ func TestQuoteColumn(t *testing.T) {
 		{"table.column mysql", "mysql", "u.name", "`u`.`name`"},
 		{"table.column sqlite", "sqlite", "u.name", `"u"."name"`},
 		{"schema.table postgres", "postgres", "public.users", `"public"."users"`},
+		{"schema.table.column postgres", "postgres", "public.users.id", `"public"."users"."id"`},
+		{"schema.table.column mysql", "mysql", "mydb.users.id", "`mydb`.`users`.`id`"},
 	}
 
 	for _, tt := range tests {

@@ -152,7 +152,7 @@ func TestUpdateQuery_ToSQL_Postgres(t *testing.T) {
 		ToSQL()
 
 	assert.Contains(t, sql, `UPDATE "users" SET`)
-	assert.Contains(t, sql, `status = $1`)
+	assert.Contains(t, sql, `"status" = $1`)
 	assert.Contains(t, sql, `WHERE "id"=$2`)
 	assert.Equal(t, []interface{}{2, 1}, params)
 }
@@ -167,7 +167,7 @@ func TestUpdateQuery_ToSQL_MySQL(t *testing.T) {
 		ToSQL()
 
 	assert.Contains(t, sql, "UPDATE `users` SET")
-	assert.Contains(t, sql, "name = ?")
+	assert.Contains(t, sql, "`name` = ?")
 	assert.Contains(t, sql, "WHERE `id`=?")
 	assert.Equal(t, []interface{}{"Alice", 5}, params)
 }
@@ -195,7 +195,7 @@ func TestUpdateQuery_ToSQL_SQLite(t *testing.T) {
 		ToSQL()
 
 	assert.Contains(t, sql, `UPDATE "products" SET`)
-	assert.Contains(t, sql, "price = ?")
+	assert.Contains(t, sql, `"price" = ?`)
 	assert.Contains(t, sql, `WHERE "id"=?`)
 	assert.Equal(t, []interface{}{99, 10}, params)
 }

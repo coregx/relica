@@ -10,6 +10,7 @@ type MySQLDialect struct{}
 
 // QuoteIdentifier quotes a MySQL identifier using backticks.
 func (d *MySQLDialect) QuoteIdentifier(s string) string {
+	s = strings.ReplaceAll(s, "\x00", "")
 	return "`" + strings.ReplaceAll(s, "`", "``") + "`"
 }
 

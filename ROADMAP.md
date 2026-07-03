@@ -1,7 +1,7 @@
 # Relica Roadmap
 
-> **Current Version**: v0.11.1 (Released: June 19, 2026)
-> **Previous Release**: v0.11.0 (Released: March 17, 2026)
+> **Current Version**: v0.11.2 (Unreleased)
+> **Previous Release**: v0.11.1 (Released: June 19, 2026)
 > **Production Ready**: v1.0.0 (Target: Q3-Q4 2026)
 
 ---
@@ -14,7 +14,7 @@
 
 ---
 
-## 📍 Current State (v0.11.1)
+## 📍 Current State (v0.11.2)
 
 ### ✅ Completed Features
 
@@ -41,6 +41,7 @@
 - **Model().Upsert()** (v0.11.0): Struct-based INSERT ON CONFLICT
 - **Model().UpdateChanged()** (v0.11.0): Dirty field detection via reflect
 - **Expression Table Alias Quoting** (v0.11.1): Correct `"table"."column"` quoting in all expression types
+- **Security: Full Identifier Quoting** (v0.11.2): All column names in INSERT/UPDATE/UPSERT/Model API properly quoted, null-byte defense
 - **Type-Safe Scanning**: Struct tags, reflection-based
 - **Transactions**: All isolation levels, context support
 - **Batch Operations**: 3.3x faster INSERT, 2.5x faster UPDATE
@@ -130,7 +131,7 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 
 ## 📊 Feature Comparison
 
-| Feature | v0.11.1 | v1.0.0 | GORM | sqlc |
+| Feature | v0.11.2 | v1.0.0 | GORM | sqlc |
 |---------|--------|--------|------|------|
 | **CRUD** | ✅ | ✅ | ✅ | ✅ |
 | **Expression API** | ✅ | ✅ | ✅ | ❌ |
@@ -162,7 +163,7 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 
 ## 📈 Performance Goals
 
-| Metric | v0.11.1 Actual | v1.0.0 Target |
+| Metric | v0.11.2 Actual | v1.0.0 Target |
 |--------|----------------|---------------|
 | **Statement Cache Hit** | <60ns ✅ | <50ns |
 | **Batch INSERT (100 rows)** | 327ms ✅ | <200ms |
@@ -223,6 +224,7 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 - **v0.10.1** (2026-03-05) - Named placeholders `{:name}` in fluent builder Where
 - **v0.11.0** (2026-03-17) - Exists, Count, ToSQL, ErrNotFound, error classification, Model Upsert, UpdateChanged
 - **v0.11.1** (2026-06-19) - Expression table alias quoting fix, golangci-lint zero issues
+- **v0.11.2** (Unreleased) - Security: full identifier quoting, null-byte defense, func expression table aliases
 - **v1.0.0** (Target: Q3-Q4 2026) - Production stable release
 
 ---

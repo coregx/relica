@@ -6,6 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.11.2] - Unreleased
+
+### Security
+
+- **INSERT column names now quoted** — column names from `map[string]interface{}` keys are now properly quoted in INSERT statements, preventing SQL injection via map keys and syntax errors with reserved word columns (`order`, `select`, `group`, etc.)
+- **UPDATE SET column names now quoted** — same fix applied to UPDATE SET clause
+- **UPSERT conflict/update columns now quoted** — ON CONFLICT and DO UPDATE SET columns are quoted at the call site before passing to dialect
+- **Model API WHERE clause** — `Update()`, `UpdateChanged()`, `Delete()` now use `Eq()` expressions for PK columns instead of raw string interpolation
+- **Null-byte defense** — `QuoteIdentifier()` in all three dialects now strips `\x00` bytes before quoting
+
+### Fixed
+
+- **Functional expressions with table aliases** — `Case("u.status")`, `Coalesce("t.name", ...)`, `NullIf("u.score", 0)`, `Greatest("p.price", ...)`, `Least(...)`, `Concat("u.first_name", ...)` now correctly split table-aliased column names
+- **N-part identifier support** — `quoteColumn()` upgraded from `SplitN` (2-part) to `Split` (N-part) for `schema.table.column` support
+- **DRY: unified quoting** — `DB.quoteIdentifier()` in params.go now delegates to shared `quoteColumn()` helper
+
+### Example
+
+```go
+// Before v0.11.2: reserved word columns caused syntax errors
+db.Insert("events", map[string]interface{}{
+    "order":  1,        // ← SQL keyword, was unquoted → syntax error
+    "select": "vip",    // ← SQL keyword, was unquoted → syntax error
+}).Execute()
+
+// After v0.11.2: all column names properly quoted
+// PostgreSQL: INSERT INTO "events" ("order", "select") VALUES ($1, $2)
+// MySQL:      INSERT INTO `events` (`order`, `select`) VALUES (?, ?)
+```
+
+---
+
 ## [0.11.1] - 2026-06-19
 
 ### Fixed
