@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.12.0] - Unreleased
+
+### Breaking Changes (pre-v1.0 API cleanup)
+
+- **`var` → `func`** — All 32 exported expression builders and error helpers are now proper functions (`func Eq(col string, value interface{}) Expression` instead of `var Eq = core.Eq`). Improves godoc, prevents accidental reassignment. `ErrNotFound` remains `var` (sentinel error value).
+- **`Distinct(bool)` → `Distinct()`** — No parameter, always enables DISTINCT. Remove `Distinct(false)` calls (omit the method instead).
+- **`QueryParams()` deprecated** — Use `Params()` instead. `QueryParams()` still works but marked deprecated.
+
+### Added
+
+- **`Tx.BatchInsert()`** — Batch insert operations now available in transactions
+- **`Tx.BatchUpdate()`** — Batch update operations now available in transactions
+- **`Tx.Upsert()`** — Upsert operations now available in transactions
+- **`Tx.NewQuery()`** — Raw SQL queries now available in transactions
+- **`ToSQL()`** on `UpsertQuery`, `BatchInsertQuery`, `BatchUpdateQuery` — All 6 query types now support SQL preview for debugging
+- **`ModelQuery.WithContext(ctx)`** — Per-operation context support on Model API
+- **`Query.Params()`** — Canonical method for retrieving query parameters
+
+---
+
 ## [0.11.2] - Unreleased
 
 ### Security
