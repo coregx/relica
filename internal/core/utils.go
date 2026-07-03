@@ -2,7 +2,6 @@ package core
 
 import (
 	"reflect"
-	"strconv"
 	"strings"
 )
 
@@ -46,19 +45,21 @@ func QuoteIdentifier(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
-// QuoteTableName quotes a table name for safe SQL usage.
+// QuoteTableName quotes a table name using the dialect's identifier quoting style.
+// For PostgreSQL: double-quotes. For MySQL: backticks.
 func (db *DB) QuoteTableName(s string) string {
-	// Simplified implementation.
-	return `"` + s + `"`
+	return db.dialect.QuoteIdentifier(s)
 }
 
-// QuoteColumnName quotes a column name for safe SQL usage.
+// QuoteColumnName quotes a column name using the dialect's identifier quoting style.
+// Handles dotted identifiers (e.g., "table.column") by quoting each part separately.
+// For PostgreSQL: "table"."column". For MySQL: `table`.`column`.
 func (db *DB) QuoteColumnName(s string) string {
-	// Simplified implementation.
-	return `"` + s + `"`
+	return quoteColumn(s, db.dialect)
 }
 
-// GenerateParamName generates a unique parameter placeholder name.
-func (db *DB) GenerateParamName() string {
-	return "p" + strconv.Itoa(len(db.params)+1)
+// GenerateParamName generates a dialect-specific parameter placeholder for the given index.
+// For PostgreSQL: "$1", "$2", etc. For MySQL/SQLite: "?".
+func (db *DB) GenerateParamName(index int) string {
+	return db.dialect.Placeholder(index)
 }

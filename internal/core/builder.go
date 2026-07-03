@@ -14,31 +14,39 @@ import (
 // resolveNamedParams checks if the SQL condition contains named placeholders {:name}
 // and resolves them to positional ? placeholders using the provided Params map.
 // If the condition has no named placeholders, returns it unchanged with original params.
+// Returns an error if any named placeholder has no corresponding key in the Params map.
 //
 // Usage in Where:
 //
 //	Where("id = {:id} AND status = {:status}", relica.Params{"id": 1, "status": "active"})
 //	Where("status = ?", 1)  // also works (positional)
-func resolveNamedParams(condition string, params []interface{}) (string, []interface{}) {
+func resolveNamedParams(condition string, params []interface{}) (string, []interface{}, error) {
 	if !namedPlaceholderRegex.MatchString(condition) {
-		return condition, params
+		return condition, params, nil
 	}
 	if len(params) != 1 {
-		return condition, params
+		return condition, params, nil
 	}
 	p, ok := params[0].(Params)
 	if !ok {
-		return condition, params
+		return condition, params, nil
 	}
 	var orderedArgs []interface{}
+	var missing []string
 	resolved := namedPlaceholderRegex.ReplaceAllStringFunc(condition, func(match string) string {
 		name := match[2 : len(match)-1]
 		if val, exists := p[name]; exists {
 			orderedArgs = append(orderedArgs, val)
+		} else {
+			missing = append(missing, ":"+name)
+			orderedArgs = append(orderedArgs, nil) // placeholder to keep arg count aligned
 		}
 		return "?"
 	})
-	return resolved, orderedArgs
+	if len(missing) > 0 {
+		return resolved, orderedArgs, fmt.Errorf("relica: missing named parameter(s): %s", strings.Join(missing, ", "))
+	}
+	return resolved, orderedArgs, nil
 }
 
 // QueryPlan represents a unified query execution plan from database EXPLAIN.
@@ -223,7 +231,11 @@ func (sq *SelectQuery) SelectExpr(expr string, args ...interface{}) *SelectQuery
 func (sq *SelectQuery) Where(condition interface{}, params ...interface{}) *SelectQuery {
 	switch cond := condition.(type) {
 	case string:
-		resolved, resolvedArgs := resolveNamedParams(cond, params)
+		resolved, resolvedArgs, err := resolveNamedParams(cond, params)
+		if err != nil {
+			sq.buildErr = err
+			return sq
+		}
 		sq.where = append(sq.where, resolved)
 		sq.params = append(sq.params, resolvedArgs...)
 
@@ -269,6 +281,8 @@ func (sq *SelectQuery) AndWhere(condition interface{}, params ...interface{}) *S
 // Expression example:
 //
 //	OrWhere(relica.Eq("status", "admin"))
+//
+//nolint:dupl // OrWhere on SelectQuery/UpdateQuery/DeleteQuery share structure but operate on different receiver types; a generic helper would require interface{} gymnastics.
 func (sq *SelectQuery) OrWhere(condition interface{}, params ...interface{}) *SelectQuery {
 	if len(sq.where) == 0 {
 		// No existing WHERE clause - just add it.
@@ -281,7 +295,12 @@ func (sq *SelectQuery) OrWhere(condition interface{}, params ...interface{}) *Se
 
 	switch cond := condition.(type) {
 	case string:
-		newSQL, newArgs = resolveNamedParams(cond, params)
+		var err error
+		newSQL, newArgs, err = resolveNamedParams(cond, params)
+		if err != nil {
+			sq.buildErr = err
+			return sq
+		}
 
 	case Expression:
 		newSQL, newArgs = cond.Build(sq.builder.db.dialect)
@@ -612,17 +631,22 @@ func (sq *SelectQuery) Distinct() *SelectQuery {
 
 // buildTableWithAlias builds a table reference with optional alias.
 // Input: "users u" → Output: "users" AS "u" (quoted)
+// Input: "public.users u" → Output: "public"."users" AS "u" (schema-qualified, quoted)
 // Input: "users" → Output: "users" (quoted)
+// Input: "public.users" → Output: "public"."users" (schema-qualified, quoted)
+//
+// Uses quoteColumn for the table part so schema.table identifiers are quoted per-part
+// rather than as a single string (which would produce "public.users" instead of "public"."users").
 func (sq *SelectQuery) buildTableWithAlias(table string, dialect dialects.Dialect) string {
 	tableParts := strings.Fields(table)
 	if len(tableParts) == 2 {
-		// Table with alias
-		quotedTable := dialect.QuoteIdentifier(tableParts[0])
+		// Table (possibly schema-qualified) with alias
+		quotedTable := quoteColumn(tableParts[0], dialect)
 		quotedAlias := dialect.QuoteIdentifier(tableParts[1])
 		return quotedTable + " AS " + quotedAlias
 	}
-	// Simple table name
-	return dialect.QuoteIdentifier(table)
+	// Simple table name or schema-qualified (no alias)
+	return quoteColumn(table, dialect)
 }
 
 // buildFrom constructs the FROM clause, handling both tables and subqueries.
@@ -888,8 +912,14 @@ func (sq *SelectQuery) renumberHavingPlaceholders(havingClause string, totalPara
 		return havingClause
 	}
 
-	// Count current params (JOIN + WHERE)
-	currentParamCount := totalParams - len(sq.havingClauses)
+	// Count HAVING arg count to determine starting placeholder index.
+	// totalParams already includes HAVING args (appended by buildHaving via pointer),
+	// so subtract the total number of HAVING args to get the pre-HAVING param count.
+	havingArgCount := 0
+	for _, c := range sq.havingClauses {
+		havingArgCount += len(c.args)
+	}
+	currentParamCount := totalParams - havingArgCount
 	for i := 0; i < len(sq.havingClauses); i++ {
 		for range sq.havingClauses[i].args {
 			currentParamCount++
@@ -1359,7 +1389,18 @@ func (qb *QueryBuilder) Select(cols ...string) *SelectQuery {
 }
 
 // Insert builds an INSERT query.
+// Returns a Query with a prepErr if values is nil or empty — INSERT with no columns
+// produces invalid SQL, so the error is surfaced at execution time without panicking.
 func (qb *QueryBuilder) Insert(table string, values map[string]interface{}) *Query {
+	if len(values) == 0 {
+		return &Query{
+			prepErr: fmt.Errorf("relica: Insert requires a non-empty values map"),
+			db:      qb.db,
+			tx:      qb.tx,
+			ctx:     qb.ctx,
+		}
+	}
+
 	// Get sorted keys for deterministic SQL generation (prevents cache misses)
 	keys := getKeys(values)
 
@@ -1575,7 +1616,11 @@ func (uq *UpdateQuery) Set(values map[string]interface{}) *UpdateQuery {
 func (uq *UpdateQuery) Where(condition interface{}, params ...interface{}) *UpdateQuery {
 	switch cond := condition.(type) {
 	case string:
-		resolved, resolvedArgs := resolveNamedParams(cond, params)
+		resolved, resolvedArgs, err := resolveNamedParams(cond, params)
+		if err != nil {
+			uq.buildErr = err
+			return uq
+		}
 		uq.where = append(uq.where, resolved)
 		uq.params = append(uq.params, resolvedArgs...)
 
@@ -1620,6 +1665,8 @@ func (uq *UpdateQuery) AndWhere(condition interface{}, params ...interface{}) *U
 // Expression example:
 //
 //	OrWhere(relica.Eq("status", "admin"))
+//
+//nolint:dupl // OrWhere on SelectQuery/UpdateQuery/DeleteQuery share structure but operate on different receiver types; a generic helper would require interface{} gymnastics.
 func (uq *UpdateQuery) OrWhere(condition interface{}, params ...interface{}) *UpdateQuery {
 	if len(uq.where) == 0 {
 		// No existing WHERE clause - just add it.
@@ -1632,7 +1679,12 @@ func (uq *UpdateQuery) OrWhere(condition interface{}, params ...interface{}) *Up
 
 	switch cond := condition.(type) {
 	case string:
-		newSQL, newArgs = resolveNamedParams(cond, params)
+		var err error
+		newSQL, newArgs, err = resolveNamedParams(cond, params)
+		if err != nil {
+			uq.buildErr = err
+			return uq
+		}
 
 	case Expression:
 		newSQL, newArgs = cond.Build(uq.builder.db.dialect)
@@ -1670,6 +1722,17 @@ func (uq *UpdateQuery) Build() *Query {
 	if uq.buildErr != nil {
 		return &Query{
 			prepErr: uq.buildErr,
+			db:      uq.builder.db,
+			tx:      uq.builder.tx,
+			ctx:     ctx,
+		}
+	}
+
+	// UPDATE with no values produces invalid SQL ("UPDATE t SET WHERE ...").
+	// Return a clean error rather than a malformed query.
+	if len(uq.values) == 0 {
+		return &Query{
+			prepErr: fmt.Errorf("relica: Update requires values, call Set() before Build()"),
 			db:      uq.builder.db,
 			tx:      uq.builder.tx,
 			ctx:     ctx,
@@ -1775,7 +1838,11 @@ func (qb *QueryBuilder) Delete(table string) *DeleteQuery {
 func (dq *DeleteQuery) Where(condition interface{}, params ...interface{}) *DeleteQuery {
 	switch cond := condition.(type) {
 	case string:
-		resolved, resolvedArgs := resolveNamedParams(cond, params)
+		resolved, resolvedArgs, err := resolveNamedParams(cond, params)
+		if err != nil {
+			dq.buildErr = err
+			return dq
+		}
 		dq.where = append(dq.where, resolved)
 		dq.params = append(dq.params, resolvedArgs...)
 
@@ -1820,6 +1887,8 @@ func (dq *DeleteQuery) AndWhere(condition interface{}, params ...interface{}) *D
 // Expression example:
 //
 //	OrWhere(relica.Eq("status", "admin"))
+//
+//nolint:dupl // OrWhere on SelectQuery/UpdateQuery/DeleteQuery share structure but operate on different receiver types; a generic helper would require interface{} gymnastics.
 func (dq *DeleteQuery) OrWhere(condition interface{}, params ...interface{}) *DeleteQuery {
 	if len(dq.where) == 0 {
 		// No existing WHERE clause - just add it.
@@ -1832,7 +1901,12 @@ func (dq *DeleteQuery) OrWhere(condition interface{}, params ...interface{}) *De
 
 	switch cond := condition.(type) {
 	case string:
-		newSQL, newArgs = resolveNamedParams(cond, params)
+		var err error
+		newSQL, newArgs, err = resolveNamedParams(cond, params)
+		if err != nil {
+			dq.buildErr = err
+			return dq
+		}
 
 	case Expression:
 		newSQL, newArgs = cond.Build(dq.builder.db.dialect)

@@ -143,7 +143,7 @@ func TestDB_Wrapper(t *testing.T) {
 		db, _ := relica.Open("sqlite", ":memory:")
 		defer db.Close()
 
-		param := db.GenerateParamName()
+		param := db.GenerateParamName(1)
 		assert.NotEmpty(t, param)
 	})
 }

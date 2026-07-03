@@ -34,7 +34,6 @@ type DB struct {
 	healthChecker *healthChecker      // Health checker for connection monitoring (nil = disabled)
 	validator     *security.Validator // SQL injection validator (nil = disabled)
 	auditor       *security.Auditor   // Audit logger for security compliance (nil = disabled)
-	params        []string
 	ctx           context.Context
 }
 

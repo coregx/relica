@@ -929,16 +929,18 @@ func (d *DB) QuoteColumnName(column string) string {
 	return d.db.QuoteColumnName(column)
 }
 
-// GenerateParamName generates a unique parameter placeholder name.
+// GenerateParamName generates a dialect-specific parameter placeholder for the given index.
+// For PostgreSQL, returns "$1", "$2", etc. For MySQL/SQLite, returns "?".
 //
-// This is useful when building dynamic SQL queries.
+// This is useful when building dynamic SQL queries where you need
+// the correct placeholder syntax for the active database driver.
 //
 // Example:
 //
-//	ph := db.GenerateParamName()
-//	// Returns: p1, p2, p3, etc.
-func (d *DB) GenerateParamName() string {
-	return d.db.GenerateParamName()
+//	ph1 := db.GenerateParamName(1) // PostgreSQL: "$1", MySQL/SQLite: "?"
+//	ph2 := db.GenerateParamName(2) // PostgreSQL: "$2", MySQL/SQLite: "?"
+func (d *DB) GenerateParamName(index int) string {
+	return d.db.GenerateParamName(index)
 }
 
 // Unwrap returns the underlying core.DB for advanced use cases.

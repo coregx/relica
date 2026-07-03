@@ -137,7 +137,8 @@ func TestResolveNamedParams(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotSQL, gotArgs := resolveNamedParams(tt.condition, tt.params)
+			gotSQL, gotArgs, err := resolveNamedParams(tt.condition, tt.params)
+			assert.NoError(t, err)
 			assert.Equal(t, tt.wantSQL, gotSQL)
 			assert.Equal(t, tt.wantArgs, gotArgs)
 		})
