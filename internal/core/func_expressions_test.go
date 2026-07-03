@@ -306,3 +306,128 @@ func TestCase_MultipleDialects(t *testing.T) {
 		})
 	}
 }
+
+// TestCase_TableAlias tests CASE with table-aliased column names
+func TestCase_TableAlias(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		col     string
+		want    string
+	}{
+		{
+			"postgres table.column",
+			"postgres",
+			"u.status",
+			`CASE "u"."status" WHEN ? THEN ? WHEN ? THEN ? END`,
+		},
+		{
+			"mysql table.column",
+			"mysql",
+			"o.type",
+			"CASE `o`.`type` WHEN ? THEN ? WHEN ? THEN ? END",
+		},
+		{
+			"sqlite table.column",
+			"sqlite",
+			"t.category",
+			`CASE "t"."category" WHEN ? THEN ? WHEN ? THEN ? END`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dialect := dialects.GetDialect(tt.dialect)
+			expr := Case(tt.col).When("a", 1).When("b", 2)
+			sql, _ := expr.Build(dialect)
+			assert.Equal(t, tt.want, sql)
+		})
+	}
+}
+
+// TestCoalesce_TableAlias tests COALESCE with table-aliased column names
+func TestCoalesce_TableAlias(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		want    string
+	}{
+		{
+			"postgres",
+			"postgres",
+			`COALESCE("u"."nickname", "u"."name", ?)`,
+		},
+		{
+			"mysql",
+			"mysql",
+			"COALESCE(`u`.`nickname`, `u`.`name`, ?)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dialect := dialects.GetDialect(tt.dialect)
+			expr := Coalesce("u.nickname", "u.name", 42)
+			sql, args := expr.Build(dialect)
+			assert.Equal(t, tt.want, sql)
+			assert.Equal(t, []interface{}{42}, args)
+		})
+	}
+}
+
+// TestNullIf_TableAlias tests NULLIF with table-aliased column names
+func TestNullIf_TableAlias(t *testing.T) {
+	dialect := dialects.GetDialect("postgres")
+
+	expr := NullIf("u.score", 0)
+	sql, args := expr.Build(dialect)
+	assert.Equal(t, `NULLIF("u"."score", ?)`, sql)
+	assert.Equal(t, []interface{}{0}, args)
+}
+
+// TestGreatest_TableAlias tests GREATEST with table-aliased column names
+func TestGreatest_TableAlias(t *testing.T) {
+	dialect := dialects.GetDialect("postgres")
+
+	expr := Greatest("p.price", "p.sale_price", "p.wholesale_price")
+	sql, _ := expr.Build(dialect)
+	assert.Equal(t, `GREATEST("p"."price", "p"."sale_price", "p"."wholesale_price")`, sql)
+}
+
+// TestLeast_TableAlias tests LEAST with table-aliased column names
+func TestLeast_TableAlias(t *testing.T) {
+	dialect := dialects.GetDialect("mysql")
+
+	expr := Least("o.subtotal", "o.discount_total")
+	sql, _ := expr.Build(dialect)
+	assert.Equal(t, "LEAST(`o`.`subtotal`, `o`.`discount_total`)", sql)
+}
+
+// TestConcat_TableAlias tests CONCAT with table-aliased column names
+func TestConcat_TableAlias(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		want    string
+	}{
+		{
+			"postgres uses ||",
+			"postgres",
+			`"u"."first_name" || "u"."last_name"`,
+		},
+		{
+			"mysql uses CONCAT()",
+			"mysql",
+			"CONCAT(`u`.`first_name`, `u`.`last_name`)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dialect := dialects.GetDialect(tt.dialect)
+			expr := Concat("u.first_name", "u.last_name")
+			sql, _ := expr.Build(dialect)
+			assert.Equal(t, tt.want, sql)
+		})
+	}
+}

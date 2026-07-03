@@ -21,13 +21,18 @@ const (
 	sqlIn = "IN"
 )
 
-// quoteColumn quotes a column name, splitting "table.column" into "table"."column".
+// quoteColumn quotes a dotted identifier, splitting each part separately.
+// "col" → "col", "t.col" → "t"."col", "schema.t.col" → "schema"."t"."col"
 func quoteColumn(col string, dialect dialects.Dialect) string {
-	if strings.Contains(col, ".") {
-		parts := strings.SplitN(col, ".", 2)
-		return dialect.QuoteIdentifier(parts[0]) + "." + dialect.QuoteIdentifier(parts[1])
+	if !strings.Contains(col, ".") {
+		return dialect.QuoteIdentifier(col)
 	}
-	return dialect.QuoteIdentifier(col)
+	parts := strings.Split(col, ".")
+	quoted := make([]string, len(parts))
+	for i, p := range parts {
+		quoted[i] = dialect.QuoteIdentifier(p)
+	}
+	return strings.Join(quoted, ".")
 }
 
 // Expression represents a database expression that can be embedded in a SQL statement.

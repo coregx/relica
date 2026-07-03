@@ -78,19 +78,15 @@ func (db *DB) processSQL(sql string) (string, []string) {
 //	PostgreSQL: "users" → "users", "public.users" → "public"."users"
 //	MySQL: `users` → `users`, `mydb.users` → `mydb`.`users`
 func (db *DB) quoteIdentifier(identifier string) string {
-	// Handle schema-prefixed identifiers (e.g., "schema.table")
-	if strings.Contains(identifier, ".") {
-		parts := strings.Split(identifier, ".")
-		quoted := make([]string, len(parts))
-		for i, part := range parts {
-			// Trim spaces from each part before quoting
-			quoted[i] = db.dialect.QuoteIdentifier(strings.TrimSpace(part))
-		}
-		return strings.Join(quoted, ".")
+	id := strings.TrimSpace(identifier)
+	if !strings.Contains(id, ".") {
+		return db.dialect.QuoteIdentifier(id)
 	}
-
-	// Simple identifier - quote as-is
-	return db.dialect.QuoteIdentifier(strings.TrimSpace(identifier))
+	parts := strings.Split(id, ".")
+	for i, p := range parts {
+		parts[i] = strings.TrimSpace(p)
+	}
+	return quoteColumn(strings.Join(parts, "."), db.dialect)
 }
 
 // bindParams converts named parameters to positional values based on the parameter order.

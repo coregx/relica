@@ -379,13 +379,11 @@ func (mq *ModelQuery) Update(attrs ...string) error {
 	// Build UPDATE query with WHERE clause for all PK columns.
 	updateQuery := qb.Update(mq.table).Set(filtered)
 
-	// Add WHERE conditions for each PK column.
-	// First condition uses Where(), subsequent use AndWhere().
 	for i, col := range pkCols {
 		if i == 0 {
-			updateQuery = updateQuery.Where(col+" = ?", pkValues[i])
+			updateQuery = updateQuery.Where(Eq(col, pkValues[i]))
 		} else {
-			updateQuery = updateQuery.AndWhere(col+" = ?", pkValues[i])
+			updateQuery = updateQuery.AndWhere(Eq(col, pkValues[i]))
 		}
 	}
 
@@ -573,9 +571,9 @@ func (mq *ModelQuery) UpdateChanged(original interface{}) error {
 
 	for i, col := range pkCols {
 		if i == 0 {
-			updateQuery = updateQuery.Where(col+" = ?", pkValues[i])
+			updateQuery = updateQuery.Where(Eq(col, pkValues[i]))
 		} else {
-			updateQuery = updateQuery.AndWhere(col+" = ?", pkValues[i])
+			updateQuery = updateQuery.AndWhere(Eq(col, pkValues[i]))
 		}
 	}
 
@@ -704,13 +702,11 @@ func (mq *ModelQuery) Delete() error {
 	// Build DELETE query with WHERE clause for all PK columns.
 	deleteQuery := qb.Delete(mq.table)
 
-	// Add WHERE conditions for each PK column.
-	// First condition uses Where(), subsequent use AndWhere().
 	for i, col := range pkCols {
 		if i == 0 {
-			deleteQuery = deleteQuery.Where(col+" = ?", pkValues[i])
+			deleteQuery = deleteQuery.Where(Eq(col, pkValues[i]))
 		} else {
-			deleteQuery = deleteQuery.AndWhere(col+" = ?", pkValues[i])
+			deleteQuery = deleteQuery.AndWhere(Eq(col, pkValues[i]))
 		}
 	}
 

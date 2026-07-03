@@ -92,7 +92,7 @@ func (c *CaseExp) Build(dialect dialects.Dialect) (string, []interface{}) {
 	if c.column != "" {
 		// Simple CASE: CASE column
 		sql.WriteString("CASE ")
-		sql.WriteString(dialect.QuoteIdentifier(c.column))
+		sql.WriteString(quoteColumn(c.column, dialect))
 	} else {
 		// Searched CASE: CASE
 		sql.WriteString("CASE")
@@ -178,7 +178,7 @@ func (c *CoalesceExp) Build(dialect dialects.Dialect) (string, []interface{}) {
 				parts = append(parts, v)
 			} else {
 				// Column name - quote it
-				parts = append(parts, dialect.QuoteIdentifier(v))
+				parts = append(parts, quoteColumn(v, dialect))
 			}
 		case Expression:
 			// Nested expression
@@ -240,7 +240,7 @@ func buildExprValue(val interface{}, dialect dialects.Dialect) (string, []interf
 			return v, nil
 		}
 		// Column name - quote it
-		return dialect.QuoteIdentifier(v), nil
+		return quoteColumn(v, dialect), nil
 	case Expression:
 		return v.Build(dialect)
 	default:

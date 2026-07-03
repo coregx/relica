@@ -146,12 +146,12 @@ func TestModelUpsert_SQL_PostgreSQL_AllFields(t *testing.T) {
 
 	require.NotNil(t, q)
 	assert.Contains(t, q.sql, `INSERT INTO "users"`)
-	assert.Contains(t, q.sql, "ON CONFLICT (id)")
+	assert.Contains(t, q.sql, `ON CONFLICT ("id")`)
 	assert.Contains(t, q.sql, "DO UPDATE SET")
-	assert.Contains(t, q.sql, "name = EXCLUDED.name")
-	assert.Contains(t, q.sql, "email = EXCLUDED.email")
-	assert.Contains(t, q.sql, "status = EXCLUDED.status")
-	assert.NotContains(t, q.sql, "id = EXCLUDED.id")
+	assert.Contains(t, q.sql, `"name" = EXCLUDED."name"`)
+	assert.Contains(t, q.sql, `"email" = EXCLUDED."email"`)
+	assert.Contains(t, q.sql, `"status" = EXCLUDED."status"`)
+	assert.NotContains(t, q.sql, `"id" = EXCLUDED."id"`)
 }
 
 func TestModelUpsert_SQL_MySQL_AllFields(t *testing.T) {
@@ -171,9 +171,9 @@ func TestModelUpsert_SQL_MySQL_AllFields(t *testing.T) {
 	require.NotNil(t, q)
 	assert.Contains(t, q.sql, "INSERT INTO `users`")
 	assert.Contains(t, q.sql, "ON DUPLICATE KEY UPDATE")
-	assert.Contains(t, q.sql, "name = VALUES(name)")
-	assert.Contains(t, q.sql, "email = VALUES(email)")
-	assert.Contains(t, q.sql, "status = VALUES(status)")
+	assert.Contains(t, q.sql, "`name` = VALUES(`name`)")
+	assert.Contains(t, q.sql, "`email` = VALUES(`email`)")
+	assert.Contains(t, q.sql, "`status` = VALUES(`status`)")
 }
 
 func TestModelUpsert_SQL_SQLite_AllFields(t *testing.T) {
@@ -192,9 +192,9 @@ func TestModelUpsert_SQL_SQLite_AllFields(t *testing.T) {
 
 	require.NotNil(t, q)
 	assert.Contains(t, q.sql, `INSERT INTO "users"`)
-	assert.Contains(t, q.sql, "ON CONFLICT (id)")
+	assert.Contains(t, q.sql, `ON CONFLICT ("id")`)
 	assert.Contains(t, q.sql, "DO UPDATE SET")
-	assert.Contains(t, q.sql, "name = excluded.name")
+	assert.Contains(t, q.sql, `"name" = excluded."name"`)
 }
 
 func TestModelUpsert_SQL_SelectiveFields(t *testing.T) {
@@ -208,23 +208,23 @@ func TestModelUpsert_SQL_SelectiveFields(t *testing.T) {
 		{
 			name:        "postgres selective",
 			dialectName: "postgres",
-			updateCol:   "name = EXCLUDED.name",
+			updateCol:   `"name" = EXCLUDED."name"`,
 			expectSQL:   "DO UPDATE SET",
-			notExpect:   []string{"email = EXCLUDED.email", "status = EXCLUDED.status"},
+			notExpect:   []string{`"email" = EXCLUDED."email"`, `"status" = EXCLUDED."status"`},
 		},
 		{
 			name:        "mysql selective",
 			dialectName: "mysql",
-			updateCol:   "name = VALUES(name)",
+			updateCol:   "`name` = VALUES(`name`)",
 			expectSQL:   "ON DUPLICATE KEY UPDATE",
-			notExpect:   []string{"email = VALUES(email)", "status = VALUES(status)"},
+			notExpect:   []string{"`email` = VALUES(`email`)", "`status` = VALUES(`status`)"},
 		},
 		{
 			name:        "sqlite selective",
 			dialectName: "sqlite",
-			updateCol:   "name = excluded.name",
+			updateCol:   `"name" = excluded."name"`,
 			expectSQL:   "DO UPDATE SET",
-			notExpect:   []string{"email = excluded.email", "status = excluded.status"},
+			notExpect:   []string{`"email" = excluded."email"`, `"status" = excluded."status"`},
 		},
 	}
 
@@ -269,10 +269,10 @@ func TestModelUpsert_SQL_ExplicitPKTag(t *testing.T) {
 	q := qb.Upsert("posts", dataMap).OnConflict(pkCols...).DoUpdate(updateCols...).Build()
 
 	require.NotNil(t, q)
-	assert.Contains(t, q.sql, "ON CONFLICT (post_id)")
-	assert.Contains(t, q.sql, "content = EXCLUDED.content")
-	assert.Contains(t, q.sql, "views = EXCLUDED.views")
-	assert.NotContains(t, q.sql, "post_id = EXCLUDED.post_id")
+	assert.Contains(t, q.sql, `ON CONFLICT ("post_id")`)
+	assert.Contains(t, q.sql, `"content" = EXCLUDED."content"`)
+	assert.Contains(t, q.sql, `"views" = EXCLUDED."views"`)
+	assert.NotContains(t, q.sql, `"post_id" = EXCLUDED."post_id"`)
 }
 
 // ============================================================================

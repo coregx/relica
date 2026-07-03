@@ -1343,8 +1343,13 @@ func (qb *QueryBuilder) Insert(table string, values map[string]interface{}) *Que
 		params = append(params, values[col])
 	}
 
+	quotedKeys := make([]string, len(keys))
+	for i, k := range keys {
+		quotedKeys[i] = qb.db.dialect.QuoteIdentifier(k)
+	}
+
 	query := `INSERT INTO ` + qb.db.dialect.QuoteIdentifier(table) +
-		` (` + strings.Join(keys, ", ") + `) ` +
+		` (` + strings.Join(quotedKeys, ", ") + `) ` +
 		`VALUES (` + strings.Join(placeholders, ", ") + `)`
 
 	return &Query{
@@ -1429,23 +1434,34 @@ func (uq *UpsertQuery) Build() *Query {
 		params = append(params, uq.values[col])
 	}
 
+	quotedKeys := make([]string, len(keys))
+	for i, k := range keys {
+		quotedKeys[i] = uq.builder.db.dialect.QuoteIdentifier(k)
+	}
+
 	// Build base INSERT statement
 	query := `INSERT INTO ` + uq.builder.db.dialect.QuoteIdentifier(uq.table) +
-		` (` + strings.Join(keys, ", ") + `) ` +
+		` (` + strings.Join(quotedKeys, ", ") + `) ` +
 		`VALUES (` + strings.Join(placeholders, ", ") + `)`
+
+	// Quote conflict/update columns before passing to dialect
+	quoteSlice := func(cols []string) []string {
+		q := make([]string, len(cols))
+		for i, c := range cols {
+			q[i] = uq.builder.db.dialect.QuoteIdentifier(c)
+		}
+		return q
+	}
 
 	// Add conflict resolution if specified
 	if uq.doNothing {
-		// PostgreSQL/SQLite: ON CONFLICT DO NOTHING
-		// MySQL: needs special handling in dialect
-		query += uq.builder.db.dialect.UpsertSQL(uq.table, uq.conflictColumns, nil)
+		query += uq.builder.db.dialect.UpsertSQL(uq.table, quoteSlice(uq.conflictColumns), nil)
 	} else if len(uq.conflictColumns) > 0 || len(uq.updateColumns) > 0 {
-		// If no update columns specified, update all except conflict columns
 		updateCols := uq.updateColumns
 		if len(updateCols) == 0 {
 			updateCols = filterKeys(keys, uq.conflictColumns)
 		}
-		query += uq.builder.db.dialect.UpsertSQL(uq.table, uq.conflictColumns, updateCols)
+		query += uq.builder.db.dialect.UpsertSQL(uq.table, quoteSlice(uq.conflictColumns), quoteSlice(updateCols))
 	}
 
 	// Context priority: query ctx > builder ctx > nil
@@ -1621,7 +1637,7 @@ func (uq *UpdateQuery) Build() *Query {
 	setParams := make([]interface{}, 0, len(keys))
 
 	for i, col := range keys {
-		setClauses = append(setClauses, col+" = "+uq.builder.db.dialect.Placeholder(i+1))
+		setClauses = append(setClauses, uq.builder.db.dialect.QuoteIdentifier(col)+" = "+uq.builder.db.dialect.Placeholder(i+1))
 		setParams = append(setParams, uq.values[col])
 	}
 

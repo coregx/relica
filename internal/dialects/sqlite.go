@@ -15,6 +15,7 @@ func init() {
 
 // QuoteIdentifier quotes a SQLite identifier using double quotes.
 func (d *SQLiteDialect) QuoteIdentifier(s string) string {
+	s = strings.ReplaceAll(s, "\x00", "")
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 

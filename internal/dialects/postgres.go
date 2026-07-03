@@ -15,6 +15,7 @@ func init() {
 
 // QuoteIdentifier quotes a PostgreSQL identifier using double quotes.
 func (d *PostgresDialect) QuoteIdentifier(s string) string {
+	s = strings.ReplaceAll(s, "\x00", "")
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 

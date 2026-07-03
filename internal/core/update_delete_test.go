@@ -24,7 +24,7 @@ func TestUpdateQuery_PostgreSQL(t *testing.T) {
 	require.NotNil(t, q)
 
 	// Verify SQL structure - columns should be in alphabetical order
-	expectedSQL := `UPDATE "users" SET email = $1, name = $2 WHERE id = $3`
+	expectedSQL := `UPDATE "users" SET "email" = $1, "name" = $2 WHERE id = $3`
 	assert.Equal(t, expectedSQL, q.sql)
 
 	// Verify parameters - should be in alphabetical order, then WHERE params
@@ -47,7 +47,7 @@ func TestUpdateQuery_MySQL(t *testing.T) {
 	require.NotNil(t, q)
 
 	// Verify SQL structure
-	expectedSQL := "UPDATE `users` SET email = ?, name = ? WHERE id = ?"
+	expectedSQL := "UPDATE `users` SET `email` = ?, `name` = ? WHERE id = ?"
 	assert.Equal(t, expectedSQL, q.sql)
 
 	// Verify parameters
@@ -70,7 +70,7 @@ func TestUpdateQuery_SQLite(t *testing.T) {
 	require.NotNil(t, q)
 
 	// Verify SQL structure
-	expectedSQL := `UPDATE "users" SET name = ?, status = ? WHERE id = ?`
+	expectedSQL := `UPDATE "users" SET "name" = ?, "status" = ? WHERE id = ?`
 	assert.Equal(t, expectedSQL, q.sql)
 
 	// Verify parameters
@@ -93,7 +93,7 @@ func TestUpdateQuery_MultipleWhere(t *testing.T) {
 	require.NotNil(t, q)
 
 	// Verify SQL structure
-	assert.Contains(t, q.sql, `UPDATE "users" SET status = $1`)
+	assert.Contains(t, q.sql, `UPDATE "users" SET "status" = $1`)
 	assert.Contains(t, q.sql, "WHERE created_at < $2 AND last_login IS NULL")
 
 	// Verify parameters
@@ -114,7 +114,7 @@ func TestUpdateQuery_NoWhere(t *testing.T) {
 	require.NotNil(t, q)
 
 	// Verify SQL structure - no WHERE clause
-	expectedSQL := `UPDATE "users" SET last_check = $1`
+	expectedSQL := `UPDATE "users" SET "last_check" = $1`
 	assert.Equal(t, expectedSQL, q.sql)
 
 	// Verify parameters
@@ -168,7 +168,7 @@ func TestUpdateQuery_ComplexWhere(t *testing.T) {
 	require.NotNil(t, q)
 
 	// Verify SQL structure
-	assert.Contains(t, q.sql, "UPDATE `orders` SET status = ?, updated_at = ?")
+	assert.Contains(t, q.sql, "UPDATE `orders` SET `status` = ?, `updated_at` = ?")
 	assert.Contains(t, q.sql, "WHERE status = ? AND created_at < ? AND amount < ?")
 
 	// Verify parameters (sorted columns, then WHERE params in order)
@@ -303,7 +303,7 @@ func TestUpdateQuery_SingleColumn(t *testing.T) {
 	require.NotNil(t, q)
 
 	// Verify SQL structure
-	expectedSQL := `UPDATE "users" SET last_login = $1 WHERE id = $2`
+	expectedSQL := `UPDATE "users" SET "last_login" = $1 WHERE id = $2`
 	assert.Equal(t, expectedSQL, q.sql)
 
 	// Verify parameters
@@ -348,10 +348,10 @@ func TestUpdateQuery_MultiColumnMultiWhere(t *testing.T) {
 	require.NotNil(t, q)
 
 	// Verify SQL contains all columns (alphabetically sorted)
-	assert.Contains(t, q.sql, "discount = $1")
-	assert.Contains(t, q.sql, "price = $2")
-	assert.Contains(t, q.sql, "stock = $3")
-	assert.Contains(t, q.sql, "updated_at = $4")
+	assert.Contains(t, q.sql, `"discount" = $1`)
+	assert.Contains(t, q.sql, `"price" = $2`)
+	assert.Contains(t, q.sql, `"stock" = $3`)
+	assert.Contains(t, q.sql, `"updated_at" = $4`)
 
 	// Verify WHERE clause
 	assert.Contains(t, q.sql, "WHERE category = $5 AND in_stock = $6 AND price < $7")

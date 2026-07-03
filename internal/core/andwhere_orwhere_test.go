@@ -223,7 +223,7 @@ func TestUpdateQuery_AndWhere(t *testing.T) {
 					Set(map[string]interface{}{"status": 2}).
 					AndWhere("id > ?", 100)
 			},
-			expectedSQL: `UPDATE "users" SET status = $1 WHERE id > $2`,
+			expectedSQL: `UPDATE "users" SET "status" = $1 WHERE id > $2`,
 			expectedLen: 2,
 		},
 		{
@@ -235,7 +235,7 @@ func TestUpdateQuery_AndWhere(t *testing.T) {
 					Where("id > ?", 100).
 					AndWhere("active = ?", true)
 			},
-			expectedSQL: `UPDATE "users" SET status = $1 WHERE id > $2 AND active = $3`,
+			expectedSQL: `UPDATE "users" SET "status" = $1 WHERE id > $2 AND active = $3`,
 			expectedLen: 3,
 		},
 		{
@@ -247,7 +247,7 @@ func TestUpdateQuery_AndWhere(t *testing.T) {
 					Where("id > ?", 100).
 					AndWhere(Eq("active", true))
 			},
-			expectedSQL: `UPDATE "users" SET status = $1 WHERE id > $2 AND "active"=$3`,
+			expectedSQL: `UPDATE "users" SET "status" = $1 WHERE id > $2 AND "active"=$3`,
 			expectedLen: 3,
 		},
 	}
@@ -283,7 +283,7 @@ func TestUpdateQuery_OrWhere(t *testing.T) {
 					Set(map[string]interface{}{"status": 0}).
 					OrWhere("banned = ?", true)
 			},
-			expectedSQL: `UPDATE "users" SET status = $1 WHERE banned = $2`,
+			expectedSQL: `UPDATE "users" SET "status" = $1 WHERE banned = $2`,
 			expectedLen: 2,
 		},
 		{
@@ -295,7 +295,7 @@ func TestUpdateQuery_OrWhere(t *testing.T) {
 					Where("banned = ?", true).
 					OrWhere("deleted = ?", true)
 			},
-			expectedSQL: `UPDATE "users" SET status = $1 WHERE (banned = $2) OR (deleted = $3)`,
+			expectedSQL: `UPDATE "users" SET "status" = $1 WHERE (banned = $2) OR (deleted = $3)`,
 			expectedLen: 3,
 		},
 		{
@@ -307,7 +307,7 @@ func TestUpdateQuery_OrWhere(t *testing.T) {
 					Where("banned = ?", true).
 					OrWhere(Eq("deleted", true))
 			},
-			expectedSQL: `UPDATE "users" SET status = $1 WHERE (banned = $2) OR ("deleted"=$3)`,
+			expectedSQL: `UPDATE "users" SET "status" = $1 WHERE (banned = $2) OR ("deleted"=$3)`,
 			expectedLen: 3,
 		},
 	}

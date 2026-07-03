@@ -32,10 +32,10 @@ func TestUpsertQuery_PostgreSQL_DoUpdate(t *testing.T) {
 	// Verify SQL structure
 	sql := q.sql
 	assert.Contains(t, sql, `INSERT INTO "users"`)
-	assert.Contains(t, sql, "ON CONFLICT (id)")
+	assert.Contains(t, sql, `ON CONFLICT ("id")`)
 	assert.Contains(t, sql, "DO UPDATE SET")
-	assert.Contains(t, sql, "name = EXCLUDED.name")
-	assert.Contains(t, sql, "email = EXCLUDED.email")
+	assert.Contains(t, sql, `"name" = EXCLUDED."name"`)
+	assert.Contains(t, sql, `"email" = EXCLUDED."email"`)
 
 	// Verify parameters
 	assert.Len(t, q.params, 3)
@@ -55,7 +55,7 @@ func TestUpsertQuery_PostgreSQL_DoNothing(t *testing.T) {
 
 	sql := q.sql
 	assert.Contains(t, sql, `INSERT INTO "users"`)
-	assert.Contains(t, sql, "ON CONFLICT (id) DO NOTHING")
+	assert.Contains(t, sql, `ON CONFLICT ("id") DO NOTHING`)
 	assert.NotContains(t, sql, "UPDATE")
 }
 
@@ -75,11 +75,11 @@ func TestUpsertQuery_PostgreSQL_AutoUpdateColumns(t *testing.T) {
 	require.NotNil(t, q)
 
 	sql := q.sql
-	assert.Contains(t, sql, "ON CONFLICT (id) DO UPDATE SET")
+	assert.Contains(t, sql, `ON CONFLICT ("id") DO UPDATE SET`)
 	// Should update email and name, but not id
-	assert.Contains(t, sql, "email = EXCLUDED.email")
-	assert.Contains(t, sql, "name = EXCLUDED.name")
-	assert.NotContains(t, sql, "id = EXCLUDED.id")
+	assert.Contains(t, sql, `"email" = EXCLUDED."email"`)
+	assert.Contains(t, sql, `"name" = EXCLUDED."name"`)
+	assert.NotContains(t, sql, `"id" = EXCLUDED."id"`)
 }
 
 func TestUpsertQuery_MySQL_DoUpdate(t *testing.T) {
@@ -97,7 +97,7 @@ func TestUpsertQuery_MySQL_DoUpdate(t *testing.T) {
 	sql := q.sql
 	assert.Contains(t, sql, "INSERT INTO `users`")
 	assert.Contains(t, sql, "ON DUPLICATE KEY UPDATE")
-	assert.Contains(t, sql, "name = VALUES(name)")
+	assert.Contains(t, sql, "`name` = VALUES(`name`)")
 
 	// Verify placeholders
 	assert.Equal(t, 2, strings.Count(sql, "?"))
@@ -118,8 +118,8 @@ func TestUpsertQuery_MySQL_AutoUpdateColumns(t *testing.T) {
 
 	sql := q.sql
 	assert.Contains(t, sql, "ON DUPLICATE KEY UPDATE")
-	assert.Contains(t, sql, "email = VALUES(email)")
-	assert.Contains(t, sql, "name = VALUES(name)")
+	assert.Contains(t, sql, "`email` = VALUES(`email`)")
+	assert.Contains(t, sql, "`name` = VALUES(`name`)")
 }
 
 func TestUpsertQuery_SQLite_DoUpdate(t *testing.T) {
@@ -137,10 +137,10 @@ func TestUpsertQuery_SQLite_DoUpdate(t *testing.T) {
 
 	sql := q.sql
 	assert.Contains(t, sql, `INSERT INTO "users"`)
-	assert.Contains(t, sql, "ON CONFLICT (id)")
+	assert.Contains(t, sql, `ON CONFLICT ("id")`)
 	assert.Contains(t, sql, "DO UPDATE SET")
-	assert.Contains(t, sql, "name = excluded.name")
-	assert.Contains(t, sql, "email = excluded.email")
+	assert.Contains(t, sql, `"name" = excluded."name"`)
+	assert.Contains(t, sql, `"email" = excluded."email"`)
 }
 
 func TestUpsertQuery_SQLite_DoNothing(t *testing.T) {
@@ -157,7 +157,7 @@ func TestUpsertQuery_SQLite_DoNothing(t *testing.T) {
 
 	sql := q.sql
 	assert.Contains(t, sql, `INSERT INTO "users"`)
-	assert.Contains(t, sql, "ON CONFLICT (id) DO NOTHING")
+	assert.Contains(t, sql, `ON CONFLICT ("id") DO NOTHING`)
 	assert.NotContains(t, sql, "UPDATE")
 }
 
@@ -170,12 +170,12 @@ func TestUpsertQuery_MultipleConflictColumns(t *testing.T) {
 		{
 			name:        "PostgreSQL",
 			dialectName: "postgres",
-			expectSQL:   []string{"ON CONFLICT (email, username)", "DO UPDATE SET", "name = EXCLUDED.name"},
+			expectSQL:   []string{`ON CONFLICT ("email", "username")`, "DO UPDATE SET", `"name" = EXCLUDED."name"`},
 		},
 		{
 			name:        "SQLite",
 			dialectName: "sqlite",
-			expectSQL:   []string{"ON CONFLICT (email, username)", "DO UPDATE SET", "name = excluded.name"},
+			expectSQL:   []string{`ON CONFLICT ("email", "username")`, "DO UPDATE SET", `"name" = excluded."name"`},
 		},
 	}
 
