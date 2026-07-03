@@ -24,6 +24,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`ModelQuery.WithContext(ctx)`** — Per-operation context support on Model API
 - **`Query.Params()`** — Canonical method for retrieving query parameters
 
+### Fixed (Correctness)
+
+- **HAVING placeholder renumber** — Multi-arg HAVING clauses on PostgreSQL now get correct `$N` numbering (was subtracting clause count instead of arg count)
+- **QuoteTableName/QuoteColumnName** — Now delegate to dialect (`"table"` for PostgreSQL, `` `table` `` for MySQL) instead of hardcoding double-quotes
+- **Validator applied to builder queries** — `WithValidator()` now validates all query paths, not just raw SQL
+- **Insert/Update with empty values** — Returns clean error instead of generating broken `() VALUES ()` SQL
+- **Missing named params** — `Where("id = {:id}", Params{})` now returns error about missing `:id` instead of silently producing broken query
+- **Schema-qualified tables** — `From("public.users u")` now generates `"public"."users" AS "u"` instead of `"public.users" AS "u"`
+- **GenerateParamName** — Now dialect-aware (`$1` for PostgreSQL, `?` for MySQL) instead of hardcoded `p1`
+
 ---
 
 ## [0.11.2] - Unreleased

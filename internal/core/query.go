@@ -91,10 +91,21 @@ func (q *Query) IsPrepared() bool {
 // For manually prepared queries (Prepare() called), uses the stored statement.
 // For transactions, bypasses cache to avoid conflicts.
 // For regular queries, uses LRU statement cache for better performance.
+//
+//nolint:cyclop // Validation + manual-prepare + tx + cache paths each require distinct branches; collapsing them would reduce clarity.
 func (q *Query) prepareStatement(ctx context.Context) (*sql.Stmt, bool, error) {
 	// Check for preparation error from Prepare() call
 	if q.prepErr != nil {
 		return nil, false, q.prepErr
+	}
+
+	// Validate query and parameters if a validator is configured.
+	// This covers builder-generated queries (Select/Insert/Update/Delete) which bypass
+	// the raw DB.ExecContext/QueryContext paths where validation already occurs.
+	if q.db != nil && q.db.validator != nil {
+		if err := q.db.validateQueryAndParams(ctx, q.sql, q.params); err != nil {
+			return nil, false, err
+		}
 	}
 
 	// Use manually prepared statement if available
