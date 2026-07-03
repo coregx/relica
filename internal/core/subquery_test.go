@@ -422,7 +422,7 @@ func TestInExp_Single_Regular_Value(t *testing.T) {
 	exp := In("id", 123)
 	sql, args := exp.Build(dialect)
 
-	assert.Equal(t, `"id"=?`, sql)
+	assert.Equal(t, `"id" = ?`, sql)
 	assert.Equal(t, []interface{}{123}, args)
 }
 

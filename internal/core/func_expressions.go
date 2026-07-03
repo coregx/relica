@@ -47,6 +47,9 @@ func Case(column string) *CaseExp {
 
 // CaseWhen creates a searched CASE expression (without column).
 //
+// WARNING: String conditions are interpolated as raw SQL. Never pass user input
+// as the condition argument. Use parameterized values for the result (THEN) only.
+//
 // Example:
 //
 //	relica.CaseWhen().

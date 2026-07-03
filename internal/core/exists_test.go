@@ -86,8 +86,8 @@ func TestExists_WithHashExp(t *testing.T) {
 	sql, args := exp.Build(dialect)
 	// HashExp keys are sorted: status, user_id
 	assert.Contains(t, sql, `EXISTS (`)
-	assert.Contains(t, sql, `"status"=?`)
-	assert.Contains(t, sql, `"user_id"=?`)
+	assert.Contains(t, sql, `"status" = ?`)
+	assert.Contains(t, sql, `"user_id" = ?`)
 	assert.Contains(t, sql, ` AND `)
 	assert.Equal(t, []interface{}{"active", 123}, args)
 }
@@ -104,8 +104,8 @@ func TestExists_WithComplexExpression(t *testing.T) {
 
 	sql, args := exp.Build(dialect)
 	assert.Contains(t, sql, `EXISTS (`)
-	assert.Contains(t, sql, `"user_id"=?`)
-	assert.Contains(t, sql, `"amount">?`)
+	assert.Contains(t, sql, `"user_id" = ?`)
+	assert.Contains(t, sql, `"amount" > ?`)
 	assert.Contains(t, sql, `) AND (`)
 	assert.Equal(t, []interface{}{123, 100}, args)
 }
@@ -121,7 +121,7 @@ func TestNotExists_WithComplexExpression(t *testing.T) {
 
 	sql, args := exp.Build(dialect)
 	assert.Contains(t, sql, `NOT EXISTS (`)
-	assert.Contains(t, sql, `"status"=?`)
+	assert.Contains(t, sql, `"status" = ?`)
 	assert.Contains(t, sql, `) OR (`)
 	assert.Equal(t, []interface{}{"pending", "failed"}, args)
 }

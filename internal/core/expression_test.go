@@ -83,21 +83,21 @@ func TestHashExp_Build(t *testing.T) {
 			name:     "single value postgres",
 			dialect:  "postgres",
 			hash:     HashExp{"status": 1},
-			wantSQL:  `"status"=?`,
+			wantSQL:  `"status" = ?`,
 			wantArgs: []interface{}{1},
 		},
 		{
 			name:     "single value mysql",
 			dialect:  "mysql",
 			hash:     HashExp{"status": 1},
-			wantSQL:  "`status`=?",
+			wantSQL:  "`status` = ?",
 			wantArgs: []interface{}{1},
 		},
 		{
 			name:     "single value sqlite",
 			dialect:  "sqlite",
 			hash:     HashExp{"status": 1},
-			wantSQL:  `"status"=?`,
+			wantSQL:  `"status" = ?`,
 			wantArgs: []interface{}{1},
 		},
 		{
@@ -108,7 +108,7 @@ func TestHashExp_Build(t *testing.T) {
 				"age":    18,
 				"role":   "admin",
 			},
-			wantSQL:  `"age"=? AND "role"=? AND "status"=?`,
+			wantSQL:  `"age" = ? AND "role" = ? AND "status" = ?`,
 			wantArgs: []interface{}{18, "admin", 1}, // sorted by keys
 		},
 		{
@@ -118,7 +118,7 @@ func TestHashExp_Build(t *testing.T) {
 				"deleted_at": nil,
 				"status":     1,
 			},
-			wantSQL:  `"deleted_at" IS NULL AND "status"=?`,
+			wantSQL:  `"deleted_at" IS NULL AND "status" = ?`,
 			wantArgs: []interface{}{1},
 		},
 		{
@@ -128,7 +128,7 @@ func TestHashExp_Build(t *testing.T) {
 				"age":    []interface{}{18, 19, 20},
 				"status": 1,
 			},
-			wantSQL:  `"age" IN (?, ?, ?) AND "status"=?`,
+			wantSQL:  `"age" IN (?, ?, ?) AND "status" = ?`,
 			wantArgs: []interface{}{18, 19, 20, 1},
 		},
 		{
@@ -138,7 +138,7 @@ func TestHashExp_Build(t *testing.T) {
 				"age":    []interface{}{18, 19, 20},
 				"status": 1,
 			},
-			wantSQL:  "`age` IN (?, ?, ?) AND `status`=?",
+			wantSQL:  "`age` IN (?, ?, ?) AND `status` = ?",
 			wantArgs: []interface{}{18, 19, 20, 1},
 		},
 		{
@@ -157,7 +157,7 @@ func TestHashExp_Build(t *testing.T) {
 				"age":    Eq("age", 18),
 				"status": 1,
 			},
-			wantSQL:  `("age"=?) AND "status"=?`,
+			wantSQL:  `("age" = ?) AND "status" = ?`,
 			wantArgs: []interface{}{18, 1},
 		},
 	}
@@ -185,21 +185,21 @@ func TestCompareExp_Build(t *testing.T) {
 			name:     "Eq postgres",
 			dialect:  "postgres",
 			exp:      Eq("status", 1),
-			wantSQL:  `"status"=?`,
+			wantSQL:  `"status" = ?`,
 			wantArgs: []interface{}{1},
 		},
 		{
 			name:     "Eq mysql",
 			dialect:  "mysql",
 			exp:      Eq("status", 1),
-			wantSQL:  "`status`=?",
+			wantSQL:  "`status` = ?",
 			wantArgs: []interface{}{1},
 		},
 		{
 			name:     "Eq sqlite",
 			dialect:  "sqlite",
 			exp:      Eq("status", 1),
-			wantSQL:  `"status"=?`,
+			wantSQL:  `"status" = ?`,
 			wantArgs: []interface{}{1},
 		},
 		{
@@ -213,7 +213,7 @@ func TestCompareExp_Build(t *testing.T) {
 			name:     "NotEq postgres",
 			dialect:  "postgres",
 			exp:      NotEq("status", 0),
-			wantSQL:  `"status"<>?`,
+			wantSQL:  `"status" <> ?`,
 			wantArgs: []interface{}{0},
 		},
 		{
@@ -227,28 +227,28 @@ func TestCompareExp_Build(t *testing.T) {
 			name:     "GreaterThan postgres",
 			dialect:  "postgres",
 			exp:      GreaterThan("age", 18),
-			wantSQL:  `"age">?`,
+			wantSQL:  `"age" > ?`,
 			wantArgs: []interface{}{18},
 		},
 		{
 			name:     "LessThan mysql",
 			dialect:  "mysql",
 			exp:      LessThan("age", 65),
-			wantSQL:  "`age`<?",
+			wantSQL:  "`age` < ?",
 			wantArgs: []interface{}{65},
 		},
 		{
 			name:     "GreaterOrEqual sqlite",
 			dialect:  "sqlite",
 			exp:      GreaterOrEqual("score", 80),
-			wantSQL:  `"score">=?`,
+			wantSQL:  `"score" >= ?`,
 			wantArgs: []interface{}{80},
 		},
 		{
 			name:     "LessOrEqual postgres",
 			dialect:  "postgres",
 			exp:      LessOrEqual("price", 100.50),
-			wantSQL:  `"price"<=?`,
+			wantSQL:  `"price" <= ?`,
 			wantArgs: []interface{}{100.50},
 		},
 	}
@@ -283,7 +283,7 @@ func TestInExp_Build(t *testing.T) {
 			name:     "IN single value postgres",
 			dialect:  "postgres",
 			exp:      In("status", 1),
-			wantSQL:  `"status"=?`,
+			wantSQL:  `"status" = ?`,
 			wantArgs: []interface{}{1},
 		},
 		{
@@ -325,7 +325,7 @@ func TestInExp_Build(t *testing.T) {
 			name:     "NOT IN single value postgres",
 			dialect:  "postgres",
 			exp:      NotIn("status", 0),
-			wantSQL:  `"status"<>?`,
+			wantSQL:  `"status" <> ?`,
 			wantArgs: []interface{}{0},
 		},
 		{
@@ -493,7 +493,7 @@ func TestAndOrExp_Build(t *testing.T) {
 			name:     "AND single expression",
 			dialect:  "postgres",
 			exp:      And(Eq("status", 1)),
-			wantSQL:  `"status"=?`,
+			wantSQL:  `"status" = ?`,
 			wantArgs: []interface{}{1},
 		},
 		{
@@ -504,7 +504,7 @@ func TestAndOrExp_Build(t *testing.T) {
 				GreaterThan("age", 18),
 				Like("name", "john"),
 			),
-			wantSQL:  `("status"=?) AND ("age">?) AND ("name" LIKE ?)`,
+			wantSQL:  `("status" = ?) AND ("age" > ?) AND ("name" LIKE ?)`,
 			wantArgs: []interface{}{1, 18, "%john%"},
 		},
 		{
@@ -514,7 +514,7 @@ func TestAndOrExp_Build(t *testing.T) {
 				Eq("role", "admin"),
 				Eq("role", "moderator"),
 			),
-			wantSQL:  "(`role`=?) OR (`role`=?)",
+			wantSQL:  "(`role` = ?) OR (`role` = ?)",
 			wantArgs: []interface{}{"admin", "moderator"},
 		},
 		{
@@ -525,7 +525,7 @@ func TestAndOrExp_Build(t *testing.T) {
 				nil,
 				GreaterThan("age", 18),
 			),
-			wantSQL:  `("status"=?) AND ("age">?)`,
+			wantSQL:  `("status" = ?) AND ("age" > ?)`,
 			wantArgs: []interface{}{1, 18},
 		},
 		{
@@ -538,7 +538,7 @@ func TestAndOrExp_Build(t *testing.T) {
 					Eq("role", "moderator"),
 				),
 			),
-			wantSQL:  `("active"=?) AND (("role"=?) OR ("role"=?))`,
+			wantSQL:  `("active" = ?) AND (("role" = ?) OR ("role" = ?))`,
 			wantArgs: []interface{}{true, "admin", "moderator"},
 		},
 	}
@@ -573,7 +573,7 @@ func TestNotExp_Build(t *testing.T) {
 			name:     "NOT simple expression postgres",
 			dialect:  "postgres",
 			exp:      Not(Eq("active", true)),
-			wantSQL:  `NOT ("active"=?)`,
+			wantSQL:  `NOT ("active" = ?)`,
 			wantArgs: []interface{}{true},
 		},
 		{
@@ -590,7 +590,7 @@ func TestNotExp_Build(t *testing.T) {
 				Eq("deleted", false),
 				GreaterThan("age", 18),
 			)),
-			wantSQL:  `NOT (("deleted"=?) AND ("age">?))`,
+			wantSQL:  `NOT (("deleted" = ?) AND ("age" > ?))`,
 			wantArgs: []interface{}{false, 18},
 		},
 	}
@@ -638,7 +638,7 @@ func TestCompareExp_WithExpressionValue(t *testing.T) {
 	exp := Eq("total", NewExp("(SELECT SUM(amount) FROM orders WHERE user_id = ?)", 123))
 	sql, args := exp.Build(dialect)
 
-	assert.Equal(t, `"total"=((SELECT SUM(amount) FROM orders WHERE user_id = ?))`, sql)
+	assert.Equal(t, `"total" = ((SELECT SUM(amount) FROM orders WHERE user_id = ?))`, sql)
 	assert.Equal(t, []interface{}{123}, args)
 }
 
@@ -697,7 +697,7 @@ func TestCompareExp_TableAlias(t *testing.T) {
 			name:     "Eq table.column with value",
 			dialect:  "postgres",
 			exp:      Eq("u.status", 1),
-			wantSQL:  `"u"."status"=?`,
+			wantSQL:  `"u"."status" = ?`,
 			wantArgs: []interface{}{1},
 		},
 		{
@@ -711,35 +711,35 @@ func TestCompareExp_TableAlias(t *testing.T) {
 			name:     "GreaterThan table.column",
 			dialect:  "postgres",
 			exp:      GreaterThan("u.age", 18),
-			wantSQL:  `"u"."age">?`,
+			wantSQL:  `"u"."age" > ?`,
 			wantArgs: []interface{}{18},
 		},
 		{
 			name:     "LessThan table.column",
 			dialect:  "mysql",
 			exp:      LessThan("o.amount", 100),
-			wantSQL:  "`o`.`amount`<?",
+			wantSQL:  "`o`.`amount` < ?",
 			wantArgs: []interface{}{100},
 		},
 		{
 			name:     "GreaterOrEqual table.column",
 			dialect:  "postgres",
 			exp:      GreaterOrEqual("p.price", 9.99),
-			wantSQL:  `"p"."price">=?`,
+			wantSQL:  `"p"."price" >= ?`,
 			wantArgs: []interface{}{9.99},
 		},
 		{
 			name:     "LessOrEqual table.column",
 			dialect:  "sqlite",
 			exp:      LessOrEqual("t.score", 50),
-			wantSQL:  `"t"."score"<=?`,
+			wantSQL:  `"t"."score" <= ?`,
 			wantArgs: []interface{}{50},
 		},
 		{
 			name:     "Eq with Expression value and table alias",
 			dialect:  "postgres",
 			exp:      Eq("m.user_id", NewExp("u.id")),
-			wantSQL:  `"m"."user_id"=(u.id)`,
+			wantSQL:  `"m"."user_id" = (u.id)`,
 			wantArgs: nil,
 		},
 	}
@@ -788,7 +788,7 @@ func TestInExp_TableAlias(t *testing.T) {
 			name:     "In table.column single value optimization",
 			dialect:  "postgres",
 			exp:      In("u.id", 42),
-			wantSQL:  `"u"."id"=?`,
+			wantSQL:  `"u"."id" = ?`,
 			wantArgs: []interface{}{42},
 		},
 		{
@@ -921,7 +921,7 @@ func TestHashExp_TableAlias(t *testing.T) {
 			name:     "single table.column value mysql",
 			dialect:  "mysql",
 			hash:     HashExp{"u.status": 1},
-			wantSQL:  "`u`.`status`=?",
+			wantSQL:  "`u`.`status` = ?",
 			wantArgs: []interface{}{1},
 		},
 		{
@@ -931,7 +931,7 @@ func TestHashExp_TableAlias(t *testing.T) {
 				"c.deleted_at": nil,
 				"c.status":     "active",
 			},
-			wantSQL:  `"c"."deleted_at" IS NULL AND "c"."status"=?`,
+			wantSQL:  `"c"."deleted_at" IS NULL AND "c"."status" = ?`,
 			wantArgs: []interface{}{"active"},
 		},
 		{
@@ -963,7 +963,7 @@ func TestTableAlias_ComposedExpressions(t *testing.T) {
 			GreaterThan("c.revenue", 1000),
 		)
 		sql, args := exp.Build(d)
-		assert.Equal(t, `("c"."deleted_at" IS NULL) AND ("c"."revenue">?)`, sql)
+		assert.Equal(t, `("c"."deleted_at" IS NULL) AND ("c"."revenue" > ?)`, sql)
 		assert.Equal(t, []interface{}{1000}, args)
 	})
 
@@ -973,7 +973,7 @@ func TestTableAlias_ComposedExpressions(t *testing.T) {
 			Eq("u.role", "superadmin"),
 		)
 		sql, args := exp.Build(d)
-		assert.Equal(t, `("u"."role"=?) OR ("u"."role"=?)`, sql)
+		assert.Equal(t, `("u"."role" = ?) OR ("u"."role" = ?)`, sql)
 		assert.Equal(t, []interface{}{"admin", "superadmin"}, args)
 	})
 
@@ -993,7 +993,7 @@ func TestTableAlias_ComposedExpressions(t *testing.T) {
 			),
 		)
 		sql, args := exp.Build(d)
-		assert.Equal(t, `("c"."deleted_at" IS NULL) AND (("o"."total">?) OR ("o"."status" IN (?, ?)))`, sql)
+		assert.Equal(t, `("c"."deleted_at" IS NULL) AND (("o"."total" > ?) OR ("o"."status" IN (?, ?)))`, sql)
 		assert.Equal(t, []interface{}{500, "vip", "premium"}, args)
 	})
 }
@@ -1011,15 +1011,15 @@ func TestHashExp_AllDialects(t *testing.T) {
 	}{
 		{
 			dialectName: "postgres",
-			wantSQL:     `"age" IN (?, ?, ?) AND "status"=?`,
+			wantSQL:     `"age" IN (?, ?, ?) AND "status" = ?`,
 		},
 		{
 			dialectName: "mysql",
-			wantSQL:     "`age` IN (?, ?, ?) AND `status`=?",
+			wantSQL:     "`age` IN (?, ?, ?) AND `status` = ?",
 		},
 		{
 			dialectName: "sqlite",
-			wantSQL:     `"age" IN (?, ?, ?) AND "status"=?`,
+			wantSQL:     `"age" IN (?, ?, ?) AND "status" = ?`,
 		},
 	}
 
