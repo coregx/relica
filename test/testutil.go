@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -369,5 +370,52 @@ func InsertTestPosts(t *testing.T, db *relica.DB, userID, count int) {
 			"content": fmt.Sprintf("Content of post %d", i),
 		}).Execute()
 		require.NoError(t, err)
+	}
+}
+
+// LoadTestData reads test/testdata/{dialect}.sql and executes each statement.
+//
+// The SQL file is split on ";" boundaries. Empty statements and lines that
+// consist solely of SQL comments are skipped. This handles the full schema
+// creation and seed data insertion in a single call.
+//
+// Example:
+//
+//	ds := SetupSQLiteTestDB(t)
+//	defer ds.Close()
+//	LoadTestData(t, ds.DB, ds.Dialect)
+func LoadTestData(t *testing.T, db *relica.DB, dialect string) {
+	t.Helper()
+
+	// Resolve path relative to this file's directory so the test works
+	// regardless of the working directory from which `go test` is invoked.
+	dir, err := filepath.Abs("testdata")
+	require.NoError(t, err, "resolving testdata directory")
+
+	sqlFile := filepath.Join(dir, dialect+".sql")
+	raw, err := os.ReadFile(sqlFile)
+	require.NoError(t, err, "reading testdata file %s", sqlFile)
+
+	ctx := context.Background()
+	stmts := strings.Split(string(raw), ";")
+	for _, stmt := range stmts {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" {
+			continue
+		}
+		// Skip comment-only blocks (lines starting with "--").
+		isComment := true
+		for _, line := range strings.Split(stmt, "\n") {
+			trimmed := strings.TrimSpace(line)
+			if trimmed != "" && !strings.HasPrefix(trimmed, "--") {
+				isComment = false
+				break
+			}
+		}
+		if isComment {
+			continue
+		}
+		_, execErr := db.ExecContext(ctx, stmt)
+		require.NoError(t, execErr, "executing SQL statement:\n%s", stmt)
 	}
 }
