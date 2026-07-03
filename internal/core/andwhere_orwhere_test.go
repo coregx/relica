@@ -455,45 +455,59 @@ func TestAndWhere_OrWhere_EmptyExpression(t *testing.T) {
 	assert.Len(t, q.params, 1)
 }
 
-// TestAndWhere_OrWhere_Panic tests that invalid arguments panic.
+// TestAndWhere_OrWhere_ErrorReturn tests that invalid arguments store an error
+// instead of panicking, and that the error propagates through Build/Execute.
 func TestAndWhere_OrWhere_Panic(t *testing.T) {
 	db := mockDB("postgres")
 	qb := &QueryBuilder{db: db}
 
 	t.Run("AndWhere with invalid type", func(t *testing.T) {
-		assert.Panics(t, func() {
-			qb.Select().From("users").AndWhere(123)
-		})
+		sq := qb.Select().From("users").AndWhere(123)
+		assert.NotNil(t, sq)
+		q := sq.Build()
+		assert.NotNil(t, q.prepErr)
+		assert.ErrorContains(t, q.prepErr, "Where()")
 	})
 
 	t.Run("OrWhere with invalid type", func(t *testing.T) {
-		assert.Panics(t, func() {
-			qb.Select().From("users").OrWhere([]string{"bad"})
-		})
+		sq := qb.Select().From("users").Where("id = ?", 1).OrWhere([]string{"bad"})
+		assert.NotNil(t, sq)
+		q := sq.Build()
+		assert.NotNil(t, q.prepErr)
+		assert.ErrorContains(t, q.prepErr, "OrWhere()")
 	})
 
 	t.Run("UpdateQuery AndWhere with invalid type", func(t *testing.T) {
-		assert.Panics(t, func() {
-			qb.Update("users").Set(map[string]interface{}{"x": 1}).AndWhere(123)
-		})
+		uq := qb.Update("users").Set(map[string]interface{}{"x": 1}).AndWhere(123)
+		assert.NotNil(t, uq)
+		q := uq.Build()
+		assert.NotNil(t, q.prepErr)
+		assert.ErrorContains(t, q.prepErr, "Where()")
 	})
 
 	t.Run("UpdateQuery OrWhere with invalid type", func(t *testing.T) {
-		assert.Panics(t, func() {
-			qb.Update("users").Set(map[string]interface{}{"x": 1}).OrWhere(map[string]int{"bad": 1})
-		})
+		uq := qb.Update("users").Set(map[string]interface{}{"x": 1}).
+			Where("id = ?", 1).OrWhere(map[string]int{"bad": 1})
+		assert.NotNil(t, uq)
+		q := uq.Build()
+		assert.NotNil(t, q.prepErr)
+		assert.ErrorContains(t, q.prepErr, "OrWhere()")
 	})
 
 	t.Run("DeleteQuery AndWhere with invalid type", func(t *testing.T) {
-		assert.Panics(t, func() {
-			qb.Delete("users").AndWhere(123)
-		})
+		dq := qb.Delete("users").AndWhere(123)
+		assert.NotNil(t, dq)
+		q := dq.Build()
+		assert.NotNil(t, q.prepErr)
+		assert.ErrorContains(t, q.prepErr, "Where()")
 	})
 
 	t.Run("DeleteQuery OrWhere with invalid type", func(t *testing.T) {
-		assert.Panics(t, func() {
-			qb.Delete("users").OrWhere(map[string]int{"bad": 1})
-		})
+		dq := qb.Delete("users").Where("id = ?", 1).OrWhere(map[string]int{"bad": 1})
+		assert.NotNil(t, dq)
+		q := dq.Build()
+		assert.NotNil(t, q.prepErr)
+		assert.ErrorContains(t, q.prepErr, "OrWhere()")
 	})
 }
 

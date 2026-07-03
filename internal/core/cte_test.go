@@ -130,26 +130,32 @@ func TestWith_CTEReferencedInWhere(t *testing.T) {
 	assert.Equal(t, 10000, query.params[0])
 }
 
-// TestWith_EmptyName_Panics tests panic when CTE name is empty
+// TestWith_EmptyName_Panics tests that an empty CTE name stores an error
+// instead of panicking, and the error propagates through Build.
 func TestWith_EmptyName_Panics(t *testing.T) {
 	db := mockDB("postgres")
 	qb := &QueryBuilder{db: db}
 
 	cte := qb.Select("id").From("users")
 
-	assert.PanicsWithValue(t, "CTE name cannot be empty", func() {
-		qb.Select("*").With("", cte)
-	})
+	sq := qb.Select("*").With("", cte)
+	assert.NotNil(t, sq.buildErr, "empty CTE name must store a build error")
+	assert.ErrorContains(t, sq.buildErr, "With()")
+	q := sq.Build()
+	assert.NotNil(t, q.prepErr, "build error must propagate through Build()")
 }
 
-// TestWith_NilQuery_Panics tests panic when CTE query is nil
+// TestWith_NilQuery_Panics tests that a nil CTE query stores an error
+// instead of panicking, and the error propagates through Build.
 func TestWith_NilQuery_Panics(t *testing.T) {
 	db := mockDB("postgres")
 	qb := &QueryBuilder{db: db}
 
-	assert.PanicsWithValue(t, "CTE query cannot be nil", func() {
-		qb.Select("*").With("my_cte", nil)
-	})
+	sq := qb.Select("*").With("my_cte", nil)
+	assert.NotNil(t, sq.buildErr, "nil CTE query must store a build error")
+	assert.ErrorContains(t, sq.buildErr, "With()")
+	q := sq.Build()
+	assert.NotNil(t, q.prepErr, "build error must propagate through Build()")
 }
 
 // TestWith_AllDialects tests CTE with all three dialects
@@ -246,7 +252,8 @@ func TestWithRecursive_OrganizationHierarchy(t *testing.T) {
 	assert.Contains(t, query.sql, `ORDER BY "level", "name"`)
 }
 
-// TestWithRecursive_WithoutUnion_Panics tests panic when recursive CTE lacks UNION
+// TestWithRecursive_WithoutUnion_Panics tests that a recursive CTE without UNION
+// stores an error instead of panicking, and the error propagates through Build.
 func TestWithRecursive_WithoutUnion_Panics(t *testing.T) {
 	db := mockDB("postgres")
 	qb := &QueryBuilder{db: db}
@@ -254,9 +261,11 @@ func TestWithRecursive_WithoutUnion_Panics(t *testing.T) {
 	// Query without UNION (invalid for recursive CTE)
 	invalidCTE := qb.Select("id", "name").From("employees")
 
-	assert.PanicsWithValue(t, "recursive CTE requires UNION or UNION ALL", func() {
-		qb.Select("*").WithRecursive("hierarchy", invalidCTE)
-	})
+	sq := qb.Select("*").WithRecursive("hierarchy", invalidCTE)
+	assert.NotNil(t, sq.buildErr, "recursive CTE without UNION must store a build error")
+	assert.ErrorContains(t, sq.buildErr, "WithRecursive()")
+	q := sq.Build()
+	assert.NotNil(t, q.prepErr, "build error must propagate through Build()")
 }
 
 // TestWithRecursive_UnionAll tests recursive CTE with UNION ALL

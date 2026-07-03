@@ -11,6 +11,7 @@ type PostgresDialect struct{}
 func init() {
 	RegisterDialect("postgres", &PostgresDialect{})
 	RegisterDialect("postgresql", &PostgresDialect{})
+	RegisterDialect("pgx", &PostgresDialect{})
 }
 
 // QuoteIdentifier quotes a PostgreSQL identifier using double quotes.

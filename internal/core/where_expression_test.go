@@ -219,20 +219,24 @@ func TestOrWhere_NamedParams(t *testing.T) {
 	assert.Equal(t, "admin", q.params[1])
 }
 
-// TestWhere_Panic tests that invalid Where() arguments panic
+// TestWhere_Panic tests that invalid Where() arguments store an error
+// instead of panicking, and that the error propagates through Build.
 func TestWhere_Panic(t *testing.T) {
 	db := mockDB("postgres")
 	qb := &QueryBuilder{db: db}
 
-	assert.Panics(t, func() {
-		qb.Select().From("users").Where(123) // int is not string or Expression
-	})
+	sq := qb.Select().From("users").Where(123) // int is not string or Expression
+	q := sq.Build()
+	assert.NotNil(t, q.prepErr, "invalid Where() type must store build error")
+	assert.ErrorContains(t, q.prepErr, "Where()")
 
-	assert.Panics(t, func() {
-		qb.Update("users").Set(map[string]interface{}{"x": 1}).Where([]string{"bad"})
-	})
+	uq := qb.Update("users").Set(map[string]interface{}{"x": 1}).Where([]string{"bad"})
+	q = uq.Build()
+	assert.NotNil(t, q.prepErr, "invalid Where() type must store build error on UpdateQuery")
+	assert.ErrorContains(t, q.prepErr, "Where()")
 
-	assert.Panics(t, func() {
-		qb.Delete("users").Where(map[string]int{"bad": 1})
-	})
+	dq := qb.Delete("users").Where(map[string]int{"bad": 1})
+	q = dq.Build()
+	assert.NotNil(t, q.prepErr, "invalid Where() type must store build error on DeleteQuery")
+	assert.ErrorContains(t, q.prepErr, "Where()")
 }

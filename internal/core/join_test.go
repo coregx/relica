@@ -219,7 +219,8 @@ func TestSelectQuery_Join_TableWithoutAlias(t *testing.T) {
 	assert.NotContains(t, q.sql, "AS", "Table without alias should not have AS keyword")
 }
 
-// TestSelectQuery_Join_InvalidOnType tests that invalid ON type panics
+// TestSelectQuery_Join_InvalidOnType tests that invalid ON type stores an error
+// instead of panicking, and the error propagates through Build.
 func TestSelectQuery_Join_InvalidOnType(t *testing.T) {
 	db := mockDB("postgres")
 	qb := &QueryBuilder{db: db}
@@ -228,9 +229,9 @@ func TestSelectQuery_Join_InvalidOnType(t *testing.T) {
 		From("messages m").
 		InnerJoin("users u", 123) // Invalid: int instead of string or Expression
 
-	assert.Panics(t, func() {
-		query.Build()
-	}, "Invalid ON type should panic")
+	q := query.Build()
+	assert.NotNil(t, q.prepErr, "Invalid ON type must store a build error")
+	assert.ErrorContains(t, q.prepErr, "JOIN ON")
 }
 
 // Helper functions for tests
