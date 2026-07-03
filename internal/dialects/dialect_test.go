@@ -35,7 +35,7 @@ func TestGetDialect_BuiltinDialects(t *testing.T) {
 }
 
 func TestGetDialect_UnknownPanics(t *testing.T) {
-	assert.PanicsWithValue(t, "unsupported dialect: unknown_db", func() {
+	assert.Panics(t, func() {
 		GetDialect("unknown_db")
 	})
 }

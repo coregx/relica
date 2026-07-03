@@ -617,11 +617,17 @@ func TestLikeExp_EscapeChars(t *testing.T) {
 	assert.Equal(t, []interface{}{"%50\\%%"}, args)
 }
 
-// TestLikeExp_EscapeChars_Panic tests panic on invalid escape chars
+// TestLikeExp_EscapeChars_Panic tests that an odd number of escape chars
+// stores an error instead of panicking, and Build returns empty SQL.
 func TestLikeExp_EscapeChars_Panic(t *testing.T) {
-	assert.Panics(t, func() {
-		Like("name", "test").EscapeChars("%", "\\%", "_") // odd number
-	})
+	exp := Like("name", "test").EscapeChars("%", "\\%", "_") // odd number
+	assert.NotNil(t, exp.Err(), "EscapeChars with odd count must store an error")
+	assert.ErrorContains(t, exp.Err(), "EscapeChars")
+
+	dialect := dialects.GetDialect("postgres")
+	sql, args := exp.Build(dialect)
+	assert.Empty(t, sql, "Build with stored error must return empty SQL")
+	assert.Nil(t, args, "Build with stored error must return nil args")
 }
 
 // TestCompareExp_WithExpressionValue tests comparison with Expression values

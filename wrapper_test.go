@@ -710,8 +710,10 @@ func TestWrapper_ContextPropagation(t *testing.T) {
 // TestWrapper_NilSafety ensures graceful handling of nil values.
 func TestWrapper_NilSafety(t *testing.T) {
 	t.Run("WrapNilDB", func(t *testing.T) {
-		// WrapDB with nil should not panic (it will fail on use, not construction)
-		db := relica.WrapDB(nil, "sqlite")
-		assert.NotNil(t, db)
+		// WrapDB with nil *sql.DB panics immediately with a clear message,
+		// which is the correct behavior: passing nil is a programming error.
+		assert.Panics(t, func() {
+			relica.WrapDB(nil, "sqlite")
+		})
 	})
 }

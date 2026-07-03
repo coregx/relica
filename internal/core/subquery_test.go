@@ -184,10 +184,12 @@ func TestSelectQuery_FromSelect_RequiresAlias(t *testing.T) {
 
 	sub := qb.Select("*").From("users")
 
-	// Should panic without alias
-	assert.Panics(t, func() {
-		qb.Select("*").FromSelect(sub, "")
-	})
+	// Should store an error (not panic) without alias
+	sq := qb.Select("*").FromSelect(sub, "")
+	assert.NotNil(t, sq.buildErr, "FromSelect with empty alias must store a build error")
+	assert.ErrorContains(t, sq.buildErr, "FromSelect")
+	q := sq.Build()
+	assert.NotNil(t, q.prepErr, "build error must propagate through Build()")
 }
 
 func TestSelectQuery_FromSelect_WithWhere(t *testing.T) {

@@ -49,7 +49,13 @@ func (tx *Tx) Model(model interface{}) *ModelQuery {
 }
 
 // inferTableName determines table name from struct.
+// Returns an empty string if model is nil; callers that need the table name
+// must handle the empty-string case (ModelQuery operations return an error).
 func inferTableName(model interface{}) string {
+	if model == nil {
+		return ""
+	}
+
 	// Check for TableName() method.
 	if tn, ok := model.(interface{ TableName() string }); ok {
 		return tn.TableName()

@@ -168,32 +168,34 @@ func TestBatchInsert_ValuesMap_MissingColumn(t *testing.T) {
 	assert.Nil(t, q.params[2]) // Missing age should be nil
 }
 
-// TestBatchInsert_EmptyPanic tests that building without rows panics.
+// TestBatchInsert_EmptyPanic tests that building without rows returns an error
+// instead of panicking.
 func TestBatchInsert_EmptyPanic(t *testing.T) {
 	db := mockDB("postgres")
 	qb := &QueryBuilder{db: db}
 
 	query := qb.BatchInsert("users", []string{"name"})
-
-	assert.Panics(t, func() {
-		query.Build()
-	}, "Should panic when no rows added")
+	q := query.Build()
+	assert.NotNil(t, q.prepErr, "Build with no rows must store an error")
+	assert.ErrorContains(t, q.prepErr, "BatchInsert")
 }
 
-// TestBatchInsert_WrongValueCount tests that wrong value count panics.
+// TestBatchInsert_WrongValueCount tests that wrong value count stores an error
+// instead of panicking.
 func TestBatchInsert_WrongValueCount(t *testing.T) {
 	db := mockDB("postgres")
 	qb := &QueryBuilder{db: db}
 
 	query := qb.BatchInsert("users", []string{"name", "email"})
 
-	assert.Panics(t, func() {
-		query.Values("Alice") // Only 1 value, expected 2
-	}, "Should panic with wrong value count")
+	query.Values("Alice") // Only 1 value, expected 2
+	assert.NotNil(t, query.buildErr, "wrong value count must store build error")
+	assert.ErrorContains(t, query.buildErr, "BatchInsert.Values")
 
-	assert.Panics(t, func() {
-		query.Values("Alice", "alice@example.com", "extra") // 3 values, expected 2
-	}, "Should panic with too many values")
+	query2 := qb.BatchInsert("users", []string{"name", "email"})
+	query2.Values("Alice", "alice@example.com", "extra") // 3 values, expected 2
+	assert.NotNil(t, query2.buildErr, "too many values must store build error")
+	assert.ErrorContains(t, query2.buildErr, "BatchInsert.Values")
 }
 
 // TestBatchUpdate_PostgreSQL tests batch UPDATE SQL generation for PostgreSQL.
@@ -352,16 +354,16 @@ func TestBatchUpdate_DifferentColumns(t *testing.T) {
 	assert.Len(t, q.params, 13)
 }
 
-// TestBatchUpdate_EmptyPanic tests that building without updates panics.
+// TestBatchUpdate_EmptyPanic tests that building without updates returns an error
+// instead of panicking.
 func TestBatchUpdate_EmptyPanic(t *testing.T) {
 	db := mockDB("postgres")
 	qb := &QueryBuilder{db: db}
 
 	query := qb.BatchUpdate("users", "id")
-
-	assert.Panics(t, func() {
-		query.Build()
-	}, "Should panic when no updates added")
+	q := query.Build()
+	assert.NotNil(t, q.prepErr, "Build with no updates must store an error")
+	assert.ErrorContains(t, q.prepErr, "BatchUpdate")
 }
 
 // TestBatchInsert_ChainedCalls tests method chaining for batch insert.

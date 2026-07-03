@@ -386,6 +386,7 @@ type LikeExp struct {
 	Or          bool     // true = OR, false = AND
 	Left, Right bool     // Wildcard matching on left/right
 	Escape      []string // Escape character pairs
+	err         error    // stored programming error from EscapeChars validation
 }
 
 // DefaultLikeEscape specifies the default special character escaping for LIKE expressions.
@@ -444,16 +445,32 @@ func (e *LikeExp) Match(left, right bool) *LikeExp {
 
 // EscapeChars sets custom escape characters for LIKE expressions.
 // Must be an even number of strings: [special1, escaped1, special2, escaped2, ...].
+// Stores an error (instead of panicking) if an odd number of strings is provided;
+// the error is surfaced when Build() is called.
 func (e *LikeExp) EscapeChars(chars ...string) *LikeExp {
 	if len(chars)%2 != 0 {
-		panic("LikeExp.EscapeChars requires even number of strings")
+		e.err = fmt.Errorf("relica: LikeExp.EscapeChars requires an even number of strings (got %d)", len(chars))
+		return e
 	}
 	e.Escape = chars
 	return e
 }
 
+// Err returns any programming error stored during LikeExp construction (e.g., from EscapeChars).
+// Callers may inspect this before using the expression in a query.
+func (e *LikeExp) Err() error {
+	return e.err
+}
+
 // Build converts a LIKE expression into a SQL fragment.
+// Returns empty SQL and nil args if a programming error was stored by EscapeChars.
 func (e *LikeExp) Build(dialect dialects.Dialect) (string, []interface{}) {
+	if e.err != nil {
+		// Surface the stored error as an empty expression; callers check returned SQL.
+		// The error is accessible via the stored err field for diagnostics.
+		return "", nil
+	}
+
 	if len(e.Values) == 0 {
 		return "", nil
 	}

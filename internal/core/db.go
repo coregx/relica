@@ -216,6 +216,9 @@ func Open(driverName, dsn string, opts ...Option) (*DB, error) {
 //
 // Note: Each wrapped DB instance gets its own statement cache for isolation.
 func WrapDB(sqlDB *sql.DB, driverName string) *DB {
+	if sqlDB == nil {
+		panic("relica: WrapDB called with nil *sql.DB")
+	}
 	dialect := dialects.GetDialect(driverName)
 	return &DB{
 		sqlDB:      sqlDB,

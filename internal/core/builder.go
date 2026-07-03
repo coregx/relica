@@ -131,6 +131,7 @@ type SelectQuery struct {
 	ctes        []cteInfo       // Common Table Expressions (CTEs)
 	distinct    bool            // SELECT DISTINCT flag
 	ctx         context.Context // context for this specific query
+	buildErr    error           // stored programming error (replaces panic in fluent chain)
 }
 
 // WithContext sets the context for this SELECT query.
@@ -168,7 +169,8 @@ func (sq *SelectQuery) From(table string) *SelectQuery {
 //	WHERE cnt > 10
 func (sq *SelectQuery) FromSelect(subquery *SelectQuery, alias string) *SelectQuery {
 	if alias == "" {
-		panic("FromSelect: alias is required for subquery")
+		sq.buildErr = fmt.Errorf("relica: FromSelect requires a non-empty alias for the subquery")
+		return sq
 	}
 	sq.fromSrc = &fromSource{
 		isSubquery: true,
@@ -234,7 +236,7 @@ func (sq *SelectQuery) Where(condition interface{}, params ...interface{}) *Sele
 		}
 
 	default:
-		panic("Where() expects string or Expression")
+		sq.buildErr = fmt.Errorf("relica: Where() expects string or Expression, got %T", condition)
 	}
 
 	return sq
@@ -288,7 +290,8 @@ func (sq *SelectQuery) OrWhere(condition interface{}, params ...interface{}) *Se
 		}
 
 	default:
-		panic("OrWhere() expects string or Expression")
+		sq.buildErr = fmt.Errorf("relica: OrWhere() expects string or Expression, got %T", condition)
+		return sq
 	}
 
 	// Combine existing WHERE with new condition using OR.
@@ -525,10 +528,12 @@ func (sq *SelectQuery) Except(other *SelectQuery) *SelectQuery {
 //	SELECT * FROM "order_totals" WHERE total > $1
 func (sq *SelectQuery) With(name string, query *SelectQuery) *SelectQuery {
 	if name == "" {
-		panic("CTE name cannot be empty")
+		sq.buildErr = fmt.Errorf("relica: With() requires a non-empty CTE name")
+		return sq
 	}
 	if query == nil {
-		panic("CTE query cannot be nil")
+		sq.buildErr = fmt.Errorf("relica: With() requires a non-nil CTE query")
+		return sq
 	}
 	sq.ctes = append(sq.ctes, cteInfo{
 		name:      name,
@@ -574,14 +579,17 @@ func (sq *SelectQuery) With(name string, query *SelectQuery) *SelectQuery {
 //   - SQLite 3.25+: ✓ (added in SQLite 3.25.0)
 func (sq *SelectQuery) WithRecursive(name string, query *SelectQuery) *SelectQuery {
 	if name == "" {
-		panic("CTE name cannot be empty")
+		sq.buildErr = fmt.Errorf("relica: WithRecursive() requires a non-empty CTE name")
+		return sq
 	}
 	if query == nil {
-		panic("CTE query cannot be nil")
+		sq.buildErr = fmt.Errorf("relica: WithRecursive() requires a non-nil CTE query")
+		return sq
 	}
 	// Validate that query contains UNION (required for recursive CTE)
 	if len(query.unions) == 0 {
-		panic("recursive CTE requires UNION or UNION ALL")
+		sq.buildErr = fmt.Errorf("relica: WithRecursive() requires a query with UNION or UNION ALL (recursive CTE must have an anchor and recursive part)")
+		return sq
 	}
 	sq.ctes = append(sq.ctes, cteInfo{
 		name:      name,
@@ -649,6 +657,7 @@ func (sq *SelectQuery) buildFrom(dialect dialects.Dialect, params *[]interface{}
 
 // buildJoins constructs the JOIN clause from the joins slice.
 // Returns empty string if no joins are specified.
+// On unsupported ON type, stores the error in sq.buildErr and returns empty string.
 func (sq *SelectQuery) buildJoins(dialect dialects.Dialect, params *[]interface{}) string {
 	if len(sq.joins) == 0 {
 		return ""
@@ -678,7 +687,8 @@ func (sq *SelectQuery) buildJoins(dialect dialects.Dialect, params *[]interface{
 				*params = append(*params, args...)
 
 			default:
-				panic(fmt.Sprintf("JOIN ON must be string, Expression, or nil, got %T", join.On))
+				sq.buildErr = fmt.Errorf("relica: JOIN ON must be string, Expression, or nil, got %T", join.On)
+				return ""
 			}
 		}
 
@@ -852,7 +862,7 @@ func (sq *SelectQuery) Having(condition interface{}, args ...interface{}) *Selec
 		}
 
 	default:
-		panic(fmt.Sprintf("Having() expects string or Expression, got %T", condition))
+		sq.buildErr = fmt.Errorf("relica: Having() expects string or Expression, got %T", condition)
 	}
 
 	return sq
@@ -1090,13 +1100,36 @@ func (sq *SelectQuery) buildSetOperations(mainQuery string, allParams []interfac
 }
 
 // Build constructs the Query object from SelectQuery.
+// If a programming error was stored during query construction (e.g., wrong type
+// passed to Where), the error is propagated through the Query and returned by
+// Execute/All/One/Row at call time instead of panicking.
 func (sq *SelectQuery) Build() *Query {
-	query, allParams := sq.buildSQL(sq.builder.db.dialect)
-
 	// Context priority: query ctx > builder ctx > nil
 	ctx := sq.ctx
 	if ctx == nil {
 		ctx = sq.builder.ctx
+	}
+
+	// Return a Query that carries the build error; all execution methods check prepErr.
+	if sq.buildErr != nil {
+		return &Query{
+			prepErr: sq.buildErr,
+			db:      sq.builder.db,
+			tx:      sq.builder.tx,
+			ctx:     ctx,
+		}
+	}
+
+	query, allParams := sq.buildSQL(sq.builder.db.dialect)
+
+	// buildJoins / buildSQL may set buildErr when encountering bad JOIN ON type.
+	if sq.buildErr != nil {
+		return &Query{
+			prepErr: sq.buildErr,
+			db:      sq.builder.db,
+			tx:      sq.builder.tx,
+			ctx:     ctx,
+		}
 	}
 
 	return &Query{
@@ -1502,12 +1535,13 @@ func filterKeys(keys, exclude []string) []string {
 
 // UpdateQuery represents an UPDATE query being built.
 type UpdateQuery struct {
-	builder *QueryBuilder
-	table   string
-	values  map[string]interface{}
-	where   []string
-	params  []interface{}
-	ctx     context.Context // context for this specific query
+	builder  *QueryBuilder
+	table    string
+	values   map[string]interface{}
+	where    []string
+	params   []interface{}
+	ctx      context.Context // context for this specific query
+	buildErr error           // stored programming error (replaces panic in fluent chain)
 }
 
 // WithContext sets the context for this UPDATE query.
@@ -1558,7 +1592,7 @@ func (uq *UpdateQuery) Where(condition interface{}, params ...interface{}) *Upda
 		}
 
 	default:
-		panic("Where() expects string or Expression")
+		uq.buildErr = fmt.Errorf("relica: Where() expects string or Expression, got %T", condition)
 	}
 
 	return uq
@@ -1612,7 +1646,8 @@ func (uq *UpdateQuery) OrWhere(condition interface{}, params ...interface{}) *Up
 		}
 
 	default:
-		panic("OrWhere() expects string or Expression")
+		uq.buildErr = fmt.Errorf("relica: OrWhere() expects string or Expression, got %T", condition)
+		return uq
 	}
 
 	// Combine existing WHERE with new condition using OR.
@@ -1628,7 +1663,24 @@ func (uq *UpdateQuery) OrWhere(condition interface{}, params ...interface{}) *Up
 }
 
 // Build constructs the Query object from UpdateQuery.
+// If a programming error was stored during query construction, it is propagated
+// through the Query and returned by Execute at call time instead of panicking.
 func (uq *UpdateQuery) Build() *Query {
+	// Context priority: query ctx > builder ctx > nil
+	ctx := uq.ctx
+	if ctx == nil {
+		ctx = uq.builder.ctx
+	}
+
+	if uq.buildErr != nil {
+		return &Query{
+			prepErr: uq.buildErr,
+			db:      uq.builder.db,
+			tx:      uq.builder.tx,
+			ctx:     ctx,
+		}
+	}
+
 	// Get sorted keys for deterministic SQL generation
 	keys := getKeys(uq.values)
 
@@ -1664,12 +1716,6 @@ func (uq *UpdateQuery) Build() *Query {
 	// Combine SET and WHERE parameters
 	setParams = append(setParams, whereParams...)
 
-	// Context priority: query ctx > builder ctx > nil
-	ctx := uq.ctx
-	if ctx == nil {
-		ctx = uq.builder.ctx
-	}
-
 	return &Query{
 		sql:    query,
 		params: setParams,
@@ -1697,11 +1743,12 @@ func (uq *UpdateQuery) ToSQL() (string, []interface{}) {
 
 // DeleteQuery represents a DELETE query being built.
 type DeleteQuery struct {
-	builder *QueryBuilder
-	table   string
-	where   []string
-	params  []interface{}
-	ctx     context.Context // context for this specific query
+	builder  *QueryBuilder
+	table    string
+	where    []string
+	params   []interface{}
+	ctx      context.Context // context for this specific query
+	buildErr error           // stored programming error (replaces panic in fluent chain)
 }
 
 // WithContext sets the context for this DELETE query.
@@ -1745,7 +1792,7 @@ func (dq *DeleteQuery) Where(condition interface{}, params ...interface{}) *Dele
 		}
 
 	default:
-		panic("Where() expects string or Expression")
+		dq.buildErr = fmt.Errorf("relica: Where() expects string or Expression, got %T", condition)
 	}
 
 	return dq
@@ -1799,7 +1846,8 @@ func (dq *DeleteQuery) OrWhere(condition interface{}, params ...interface{}) *De
 		}
 
 	default:
-		panic("OrWhere() expects string or Expression")
+		dq.buildErr = fmt.Errorf("relica: OrWhere() expects string or Expression, got %T", condition)
+		return dq
 	}
 
 	// Combine existing WHERE with new condition using OR.
@@ -1815,7 +1863,24 @@ func (dq *DeleteQuery) OrWhere(condition interface{}, params ...interface{}) *De
 }
 
 // Build constructs the Query object from DeleteQuery.
+// If a programming error was stored during query construction, it is propagated
+// through the Query and returned by Execute at call time instead of panicking.
 func (dq *DeleteQuery) Build() *Query {
+	// Context priority: query ctx > builder ctx > nil
+	ctx := dq.ctx
+	if ctx == nil {
+		ctx = dq.builder.ctx
+	}
+
+	if dq.buildErr != nil {
+		return &Query{
+			prepErr: dq.buildErr,
+			db:      dq.builder.db,
+			tx:      dq.builder.tx,
+			ctx:     ctx,
+		}
+	}
+
 	// Build WHERE clause
 	whereClause := ""
 	whereParams := dq.params
@@ -1833,12 +1898,6 @@ func (dq *DeleteQuery) Build() *Query {
 
 	// Construct SQL
 	query := "DELETE FROM " + dq.builder.db.dialect.QuoteIdentifier(dq.table) + whereClause
-
-	// Context priority: query ctx > builder ctx > nil
-	ctx := dq.ctx
-	if ctx == nil {
-		ctx = dq.builder.ctx
-	}
 
 	return &Query{
 		sql:    query,
@@ -1868,11 +1927,12 @@ func (dq *DeleteQuery) ToSQL() (string, []interface{}) {
 // BatchInsertQuery represents a batch INSERT query being built.
 // It allows inserting multiple rows with a single SQL statement for performance.
 type BatchInsertQuery struct {
-	builder *QueryBuilder
-	table   string
-	columns []string
-	rows    [][]interface{}
-	ctx     context.Context // context for this specific query
+	builder  *QueryBuilder
+	table    string
+	columns  []string
+	rows     [][]interface{}
+	ctx      context.Context // context for this specific query
+	buildErr error           // stored programming error (replaces panic in fluent chain)
 }
 
 // WithContext sets the context for this batch INSERT query.
@@ -1901,10 +1961,11 @@ func (qb *QueryBuilder) BatchInsert(table string, columns []string) *BatchInsert
 
 // Values adds a row of values to the batch insert.
 // The number of values must match the number of columns specified in BatchInsert.
-// Panics if the value count doesn't match the column count (fail fast).
+// Stores an error (instead of panicking) if the value count doesn't match the column count.
 func (biq *BatchInsertQuery) Values(values ...interface{}) *BatchInsertQuery {
 	if len(values) != len(biq.columns) {
-		panic(fmt.Sprintf("BatchInsert: expected %d values, got %d", len(biq.columns), len(values)))
+		biq.buildErr = fmt.Errorf("relica: BatchInsert.Values expected %d values for %d columns, got %d", len(biq.columns), len(biq.columns), len(values))
+		return biq
 	}
 	biq.rows = append(biq.rows, values)
 	return biq
@@ -1923,10 +1984,31 @@ func (biq *BatchInsertQuery) ValuesMap(values map[string]interface{}) *BatchInse
 
 // Build constructs the Query object from BatchInsertQuery.
 // Generates SQL in the form: INSERT INTO table (cols) VALUES (?, ?), (?, ?), ...
-// Panics if no rows have been added (fail fast).
+// If a programming error was stored (e.g., wrong Values count or no rows added),
+// it is propagated through the Query and returned by Execute at call time.
 func (biq *BatchInsertQuery) Build() *Query {
+	// Context priority: query ctx > builder ctx > nil
+	ctx := biq.ctx
+	if ctx == nil {
+		ctx = biq.builder.ctx
+	}
+
+	if biq.buildErr != nil {
+		return &Query{
+			prepErr: biq.buildErr,
+			db:      biq.builder.db,
+			tx:      biq.builder.tx,
+			ctx:     ctx,
+		}
+	}
+
 	if len(biq.rows) == 0 {
-		panic("BatchInsert: no rows to insert")
+		return &Query{
+			prepErr: fmt.Errorf("relica: BatchInsert.Build called with no rows to insert"),
+			db:      biq.builder.db,
+			tx:      biq.builder.tx,
+			ctx:     ctx,
+		}
 	}
 
 	// Build column list with proper quoting
@@ -1953,12 +2035,6 @@ func (biq *BatchInsertQuery) Build() *Query {
 	query := "INSERT INTO " + biq.builder.db.dialect.QuoteIdentifier(biq.table) +
 		" (" + strings.Join(quotedColumns, ", ") + ") VALUES " +
 		strings.Join(valueClauses, ", ")
-
-	// Context priority: query ctx > builder ctx > nil
-	ctx := biq.ctx
-	if ctx == nil {
-		ctx = biq.builder.ctx
-	}
 
 	return &Query{
 		sql:    query,
@@ -2055,10 +2131,21 @@ func (buq *BatchUpdateQuery) Set(keyValue interface{}, values map[string]interfa
 //	  col2 = CASE key WHEN ? THEN ? WHEN ? THEN ? END
 //	WHERE key IN (?, ?)
 //
-// Panics if no updates have been added (fail fast).
+// If no updates have been added, returns a Query carrying an error instead of panicking.
 func (buq *BatchUpdateQuery) Build() *Query {
+	// Context priority: query ctx > builder ctx > nil
+	ctx := buq.ctx
+	if ctx == nil {
+		ctx = buq.builder.ctx
+	}
+
 	if len(buq.updates) == 0 {
-		panic("BatchUpdate: no updates to apply")
+		return &Query{
+			prepErr: fmt.Errorf("relica: BatchUpdate.Build called with no updates to apply"),
+			db:      buq.builder.db,
+			tx:      buq.builder.tx,
+			ctx:     ctx,
+		}
 	}
 
 	// Collect all key values for WHERE IN clause
@@ -2105,12 +2192,6 @@ func (buq *BatchUpdateQuery) Build() *Query {
 		" SET " + strings.Join(setClauses, ", ") +
 		" WHERE " + buq.builder.db.dialect.QuoteIdentifier(buq.keyColumn) +
 		" IN (" + strings.Join(whereInPlaceholders, ", ") + ")"
-
-	// Context priority: query ctx > builder ctx > nil
-	ctx := buq.ctx
-	if ctx == nil {
-		ctx = buq.builder.ctx
-	}
 
 	return &Query{
 		sql:    query,
