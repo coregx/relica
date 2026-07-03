@@ -332,6 +332,16 @@ func (tx *Tx) Rollback() error {
 	return tx.tx.Rollback()
 }
 
+// NewQuery creates a raw SQL query that executes within the transaction.
+func (tx *Tx) NewQuery(query string) *Query {
+	return &Query{
+		sql: query,
+		db:  tx.builder.db,
+		tx:  tx.tx,
+		ctx: tx.ctx,
+	}
+}
+
 // Transactional executes f within a transaction with automatic commit/rollback.
 // If f returns an error, the transaction is rolled back and the error is returned.
 // If f panics, the transaction is rolled back and the panic is re-raised.

@@ -16,7 +16,7 @@ func TestDistinct_Demo(t *testing.T) {
 	fmt.Println("\n1. Basic DISTINCT:")
 	q1 := qb.Select("category").
 		From("products").
-		Distinct(true).
+		Distinct().
 		Build()
 	fmt.Printf("   SQL: %s\n", q1.sql)
 	fmt.Printf("   Expected: SELECT DISTINCT \"category\" FROM \"products\"\n")
@@ -25,7 +25,7 @@ func TestDistinct_Demo(t *testing.T) {
 	fmt.Println("\n2. DISTINCT with multiple columns:")
 	q2 := qb.Select("country", "city").
 		From("locations").
-		Distinct(true).
+		Distinct().
 		Build()
 	fmt.Printf("   SQL: %s\n", q2.sql)
 	fmt.Printf("   Expected: SELECT DISTINCT \"country\", \"city\" FROM \"locations\"\n")
@@ -35,7 +35,7 @@ func TestDistinct_Demo(t *testing.T) {
 	q3 := qb.Select("status").
 		From("orders").
 		Where("total > ?", 100).
-		Distinct(true).
+		Distinct().
 		Build()
 	fmt.Printf("   SQL: %s\n", q3.sql)
 	fmt.Printf("   Params: %v\n", q3.params)
@@ -47,7 +47,7 @@ func TestDistinct_Demo(t *testing.T) {
 		From("users u").
 		InnerJoin("orders o", "o.user_id = u.id").
 		Where("o.status = ?", "completed").
-		Distinct(true).
+		Distinct().
 		OrderBy("u.country ASC").
 		Limit(10).
 		Build()
@@ -62,24 +62,14 @@ func TestDistinct_Demo(t *testing.T) {
 	fmt.Printf("   SQL: %s\n", q5.sql)
 	fmt.Printf("   Expected: SELECT \"category\" FROM \"products\"\n")
 
-	// Example 6: Explicitly disable DISTINCT.
-	fmt.Println("\n6. Explicitly disable DISTINCT:")
+	// Example 6: DISTINCT is always enabled when called.
+	fmt.Println("\n6. DISTINCT is always enabled when Distinct() is called:")
 	q6 := qb.Select("name").
 		From("users").
-		Distinct(false).
+		Distinct().
 		Build()
 	fmt.Printf("   SQL: %s\n", q6.sql)
-	fmt.Printf("   Expected: SELECT \"name\" FROM \"users\"\n")
-
-	// Example 7: Toggle DISTINCT (last call wins).
-	fmt.Println("\n7. Toggle DISTINCT (last call wins):")
-	q7 := qb.Select("role").
-		From("users").
-		Distinct(true).
-		Distinct(false).
-		Build()
-	fmt.Printf("   SQL: %s\n", q7.sql)
-	fmt.Printf("   Note: DISTINCT(false) overrides DISTINCT(true)\n")
+	fmt.Printf("   Expected: SELECT DISTINCT \"name\" FROM \"users\"\n")
 
 	fmt.Println("\n=== Demo Complete ===")
 }

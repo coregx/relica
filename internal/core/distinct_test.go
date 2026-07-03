@@ -7,14 +7,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestSelectQuery_Distinct_True tests DISTINCT with true flag.
+// TestSelectQuery_Distinct tests that Distinct() adds the DISTINCT keyword.
 func TestSelectQuery_Distinct_True(t *testing.T) {
 	db := mockDB("postgres")
 	qb := &QueryBuilder{db: db}
 
 	query := qb.Select("category").
 		From("products").
-		Distinct(true)
+		Distinct()
 
 	q := query.Build()
 	require.NotNil(t, q)
@@ -25,14 +25,13 @@ func TestSelectQuery_Distinct_True(t *testing.T) {
 	assert.Empty(t, q.params, "DISTINCT should have no params")
 }
 
-// TestSelectQuery_Distinct_False tests DISTINCT with false flag.
+// TestSelectQuery_Distinct_False tests that without Distinct() there is no DISTINCT keyword.
 func TestSelectQuery_Distinct_False(t *testing.T) {
 	db := mockDB("postgres")
 	qb := &QueryBuilder{db: db}
 
 	query := qb.Select("name").
-		From("users").
-		Distinct(false)
+		From("users")
 
 	q := query.Build()
 	require.NotNil(t, q)
@@ -66,7 +65,7 @@ func TestSelectQuery_Distinct_MultipleColumns(t *testing.T) {
 
 	query := qb.Select("country", "city").
 		From("locations").
-		Distinct(true)
+		Distinct()
 
 	q := query.Build()
 	require.NotNil(t, q)
@@ -82,7 +81,7 @@ func TestSelectQuery_Distinct_Wildcard(t *testing.T) {
 
 	query := qb.Select("*").
 		From("logs").
-		Distinct(true)
+		Distinct()
 
 	q := query.Build()
 	require.NotNil(t, q)
@@ -99,7 +98,7 @@ func TestSelectQuery_Distinct_WithWhere(t *testing.T) {
 	query := qb.Select("status").
 		From("orders").
 		Where("total > ?", 100).
-		Distinct(true)
+		Distinct()
 
 	q := query.Build()
 	require.NotNil(t, q)
@@ -118,7 +117,7 @@ func TestSelectQuery_Distinct_WithOrderBy(t *testing.T) {
 
 	query := qb.Select("department").
 		From("employees").
-		Distinct(true).
+		Distinct().
 		OrderBy("department ASC")
 
 	q := query.Build()
@@ -135,7 +134,7 @@ func TestSelectQuery_Distinct_WithLimit(t *testing.T) {
 
 	query := qb.Select("tag").
 		From("posts").
-		Distinct(true).
+		Distinct().
 		Limit(10)
 
 	q := query.Build()
@@ -153,7 +152,7 @@ func TestSelectQuery_Distinct_WithJoin(t *testing.T) {
 	query := qb.Select("u.country").
 		From("users u").
 		InnerJoin("orders o", "o.user_id = u.id").
-		Distinct(true)
+		Distinct()
 
 	q := query.Build()
 	require.NotNil(t, q)
@@ -162,7 +161,7 @@ func TestSelectQuery_Distinct_WithJoin(t *testing.T) {
 	assert.Contains(t, q.sql, `INNER JOIN`)
 }
 
-// TestSelectQuery_Distinct_Toggle tests toggling DISTINCT on and off.
+// TestSelectQuery_Distinct_Toggle tests that Distinct() enables DISTINCT and a fresh query without it has none.
 func TestSelectQuery_Distinct_Toggle(t *testing.T) {
 	db := mockDB("postgres")
 	qb := &QueryBuilder{db: db}
@@ -170,17 +169,15 @@ func TestSelectQuery_Distinct_Toggle(t *testing.T) {
 	// Enable DISTINCT
 	query := qb.Select("role").
 		From("users").
-		Distinct(true)
+		Distinct()
 
 	q := query.Build()
 	require.NotNil(t, q)
 	assert.Contains(t, q.sql, "DISTINCT")
 
-	// Disable DISTINCT (override)
+	// Without Distinct() — no DISTINCT keyword
 	query2 := qb.Select("role").
-		From("users").
-		Distinct(true).
-		Distinct(false)
+		From("users")
 
 	q2 := query2.Build()
 	require.NotNil(t, q2)
@@ -195,7 +192,7 @@ func TestSelectQuery_Distinct_Chainable(t *testing.T) {
 	// Verify method chaining works
 	query := qb.Select("type").
 		From("items").
-		Distinct(true).
+		Distinct().
 		Where("active = ?", true).
 		OrderBy("type").
 		Limit(5)
@@ -216,7 +213,7 @@ func TestSelectQuery_Distinct_WithAggregate(t *testing.T) {
 
 	query := qb.Select("COUNT(DISTINCT user_id)").
 		From("events").
-		Distinct(true)
+		Distinct()
 
 	q := query.Build()
 	require.NotNil(t, q)
@@ -232,7 +229,7 @@ func TestSelectQuery_Distinct_PostgreSQL(t *testing.T) {
 
 	query := qb.Select("category").
 		From("products").
-		Distinct(true)
+		Distinct()
 
 	q := query.Build()
 	require.NotNil(t, q)
@@ -249,7 +246,7 @@ func TestSelectQuery_Distinct_MySQL(t *testing.T) {
 
 	query := qb.Select("brand").
 		From("products").
-		Distinct(true)
+		Distinct()
 
 	q := query.Build()
 	require.NotNil(t, q)
@@ -266,7 +263,7 @@ func TestSelectQuery_Distinct_SQLite(t *testing.T) {
 
 	query := qb.Select("color").
 		From("items").
-		Distinct(true)
+		Distinct()
 
 	q := query.Build()
 	require.NotNil(t, q)
@@ -286,7 +283,7 @@ func TestSelectQuery_Distinct_ComplexQuery(t *testing.T) {
 		InnerJoin("orders o", "o.user_id = u.id").
 		Where("o.status = ?", "completed").
 		Where("o.total > ?", 50).
-		Distinct(true).
+		Distinct().
 		OrderBy("u.country ASC", "u.city ASC").
 		Limit(100).
 		Offset(20)
@@ -333,7 +330,7 @@ func TestSelectQuery_Distinct_WithGroupBy(t *testing.T) {
 	query := qb.Select("category", "COUNT(*) as cnt").
 		From("products").
 		GroupBy("category").
-		Distinct(true)
+		Distinct()
 
 	q := query.Build()
 	require.NotNil(t, q)
@@ -350,7 +347,7 @@ func TestSelectQuery_Distinct_WithSelectExpr(t *testing.T) {
 	query := qb.Select("name").
 		SelectExpr("UPPER(email) as upper_email").
 		From("users").
-		Distinct(true)
+		Distinct()
 
 	q := query.Build()
 	require.NotNil(t, q)
@@ -366,7 +363,7 @@ func TestSelectQuery_Distinct_EmptySelect(t *testing.T) {
 
 	query := qb.Select().
 		From("users").
-		Distinct(true)
+		Distinct()
 
 	q := query.Build()
 	require.NotNil(t, q)
@@ -383,7 +380,7 @@ func TestSelectQuery_Distinct_WithAlias(t *testing.T) {
 
 	query := qb.Select("status as order_status").
 		From("orders").
-		Distinct(true)
+		Distinct()
 
 	q := query.Build()
 	require.NotNil(t, q)

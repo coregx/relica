@@ -881,7 +881,7 @@ func TestSelectQuery_Extended(t *testing.T) {
 		var names []string
 		err := db.Builder().Select("name").
 			From("cover_users").
-			Distinct(true).
+			Distinct().
 			Column(&names)
 		require.NoError(t, err)
 		// Should have unique names.
@@ -892,11 +892,10 @@ func TestSelectQuery_Extended(t *testing.T) {
 		assert.Equal(t, 1, seen["Alice"], "Alice should appear once with DISTINCT")
 	})
 
-	t.Run("Distinct false includes all rows", func(t *testing.T) {
+	t.Run("Without distinct includes all rows", func(t *testing.T) {
 		var names []string
 		err := db.Builder().Select("name").
 			From("cover_users").
-			Distinct(false).
 			Column(&names)
 		require.NoError(t, err)
 		assert.GreaterOrEqual(t, len(names), 3)

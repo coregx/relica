@@ -51,8 +51,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"log/slog"
 	"reflect"
 	"sort"
+	"time"
 
 	"github.com/coregx/relica/internal/core"
 	"github.com/coregx/relica/internal/logger"
@@ -1152,6 +1154,60 @@ func (t *Tx) Model(model interface{}) *ModelQuery {
 	return &ModelQuery{mq: t.tx.Model(model)}
 }
 
+// BatchInsert creates a new batch INSERT query within the transaction.
+//
+// This is a convenience method equivalent to tx.Builder().BatchInsert(table, columns).
+//
+// Example:
+//
+//	result, err := tx.BatchInsert("users", []string{"name", "email"}).
+//	    Values("Alice", "alice@example.com").
+//	    Values("Bob", "bob@example.com").
+//	    Execute()
+func (t *Tx) BatchInsert(table string, columns []string) *BatchInsertQuery {
+	return t.Builder().BatchInsert(table, columns)
+}
+
+// BatchUpdate creates a new batch UPDATE query within the transaction.
+//
+// This is a convenience method equivalent to tx.Builder().BatchUpdate(table, keyColumn).
+//
+// Example:
+//
+//	result, err := tx.BatchUpdate("users", "id").
+//	    Set(1, map[string]interface{}{"name": "Alice"}).
+//	    Set(2, map[string]interface{}{"name": "Bob"}).
+//	    Execute()
+func (t *Tx) BatchUpdate(table, keyColumn string) *BatchUpdateQuery {
+	return t.Builder().BatchUpdate(table, keyColumn)
+}
+
+// Upsert creates a new UPSERT query within the transaction.
+//
+// This is a convenience method equivalent to tx.Builder().Upsert(table, values).
+//
+// Example:
+//
+//	result, err := tx.Upsert("users", map[string]interface{}{
+//	    "email": "alice@example.com",
+//	    "name":  "Alice",
+//	}).OnConflict("email").DoUpdate("name").Execute()
+func (t *Tx) Upsert(table string, values map[string]interface{}) *UpsertQuery {
+	return t.Builder().Upsert(table, values)
+}
+
+// NewQuery creates a raw SQL query within the transaction.
+//
+// This is a convenience method equivalent to tx.Builder()-based raw query execution.
+//
+// Example:
+//
+//	var count int
+//	err := tx.NewQuery("SELECT COUNT(*) FROM users").Row(&count)
+func (t *Tx) NewQuery(query string) *Query {
+	return &Query{q: t.tx.NewQuery(query)}
+}
+
 // ============================================================================
 // ModelQuery methods
 // ============================================================================
@@ -1276,6 +1332,21 @@ func (mq *ModelQuery) Exclude(attrs ...string) *ModelQuery {
 //	err := db.Model(&user).Table("users_archive").Insert()
 func (mq *ModelQuery) Table(name string) *ModelQuery {
 	return &ModelQuery{mq: mq.mq.Table(name)}
+}
+
+// WithContext sets the context for this model operation.
+//
+// The context is propagated to the underlying query execution,
+// enabling cancellation and deadline support.
+//
+// Example:
+//
+//	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+//	defer cancel()
+//	err := db.Model(&user).WithContext(ctx).Insert()
+func (mq *ModelQuery) WithContext(ctx context.Context) *ModelQuery {
+	mq.mq.SetContext(ctx)
+	return mq
 }
 
 // ============================================================================
@@ -1726,19 +1797,14 @@ func (sq *SelectQuery) Having(condition interface{}, args ...interface{}) *Selec
 	return sq
 }
 
-// Distinct sets whether to select distinct rows.
-// When enabled, adds DISTINCT keyword to the SELECT clause to eliminate duplicate rows.
-// Multiple calls to Distinct() override previous settings.
+// Distinct adds the DISTINCT keyword to the SELECT clause, eliminating duplicate rows.
 //
 // Example:
 //
-//	db.Builder().Select("category").From("products").Distinct(true).All(&categories)
+//	db.Builder().Select("category").From("products").Distinct().All(&categories)
 //	// SELECT DISTINCT "category" FROM "products"
-//
-//	db.Builder().Select("*").From("users").Distinct(false).All(&users)
-//	// SELECT * FROM "users"
-func (sq *SelectQuery) Distinct(v bool) *SelectQuery {
-	sq.sq.Distinct(v)
+func (sq *SelectQuery) Distinct() *SelectQuery {
+	sq.sq.Distinct()
 	return sq
 }
 
@@ -2148,6 +2214,18 @@ func (uq *UpsertQuery) Execute() (sql.Result, error) {
 	return uq.Build().Execute()
 }
 
+// ToSQL returns the SQL string and parameters without executing the query.
+// This is useful for debugging, logging, or passing the query to another layer.
+//
+// Example:
+//
+//	sql, params := db.Upsert("users", map[string]interface{}{"id": 1, "name": "Alice"}).
+//	    OnConflict("id").DoUpdate("name").ToSQL()
+func (uq *UpsertQuery) ToSQL() (string, []interface{}) {
+	q := uq.Build()
+	return q.SQL(), q.Params()
+}
+
 // ============================================================================
 // BatchInsertQuery Methods
 // ============================================================================
@@ -2195,6 +2273,18 @@ func (biq *BatchInsertQuery) Execute() (sql.Result, error) {
 	return biq.Build().Execute()
 }
 
+// ToSQL returns the SQL string and parameters without executing the query.
+// This is useful for debugging, logging, or passing the query to another layer.
+//
+// Example:
+//
+//	sql, params := db.BatchInsert("users", []string{"name", "email"}).
+//	    Values("Alice", "alice@example.com").ToSQL()
+func (biq *BatchInsertQuery) ToSQL() (string, []interface{}) {
+	q := biq.Build()
+	return q.SQL(), q.Params()
+}
+
 // ============================================================================
 // BatchUpdateQuery Methods
 // ============================================================================
@@ -2229,6 +2319,18 @@ func (buq *BatchUpdateQuery) Build() *Query {
 // Execute executes the batch UPDATE query.
 func (buq *BatchUpdateQuery) Execute() (sql.Result, error) {
 	return buq.Build().Execute()
+}
+
+// ToSQL returns the SQL string and parameters without executing the query.
+// This is useful for debugging, logging, or passing the query to another layer.
+//
+// Example:
+//
+//	sql, params := db.BatchUpdate("users", "id").
+//	    Set(1, map[string]interface{}{"status": 2}).ToSQL()
+func (buq *BatchUpdateQuery) ToSQL() (string, []interface{}) {
+	q := buq.Build()
+	return q.SQL(), q.Params()
 }
 
 // ============================================================================
@@ -2373,12 +2475,19 @@ func (q *Query) SQL() string {
 	return q.q.SQL()
 }
 
-// QueryParams returns the query parameters.
-func (q *Query) QueryParams() []interface{} {
+// Params returns the query parameters.
+func (q *Query) Params() []interface{} {
 	if q.q == nil {
 		return nil
 	}
 	return q.q.Params()
+}
+
+// QueryParams returns the query parameters.
+//
+// Deprecated: Use Params instead.
+func (q *Query) QueryParams() []interface{} {
+	return q.Params()
 }
 
 // ============================================================================
@@ -2407,7 +2516,7 @@ var ErrNotFound = core.ErrNotFound
 //	if relica.IsUniqueViolation(err) {
 //	    // handle duplicate key
 //	}
-var IsUniqueViolation = core.IsUniqueViolation
+func IsUniqueViolation(err error) bool { return core.IsUniqueViolation(err) }
 
 // IsForeignKeyViolation reports whether err represents a foreign key constraint violation.
 // Works with PostgreSQL, MySQL, and SQLite. Returns false for nil errors.
@@ -2418,7 +2527,7 @@ var IsUniqueViolation = core.IsUniqueViolation
 //	if relica.IsForeignKeyViolation(err) {
 //	    // handle missing referenced row
 //	}
-var IsForeignKeyViolation = core.IsForeignKeyViolation
+func IsForeignKeyViolation(err error) bool { return core.IsForeignKeyViolation(err) }
 
 // IsNotNullViolation reports whether err represents a NOT NULL constraint violation.
 // Works with PostgreSQL, MySQL, and SQLite. Returns false for nil errors.
@@ -2429,7 +2538,7 @@ var IsForeignKeyViolation = core.IsForeignKeyViolation
 //	if relica.IsNotNullViolation(err) {
 //	    // handle missing required field
 //	}
-var IsNotNullViolation = core.IsNotNullViolation
+func IsNotNullViolation(err error) bool { return core.IsNotNullViolation(err) }
 
 // IsCheckViolation reports whether err represents a CHECK constraint violation.
 // Works with PostgreSQL, MySQL, and SQLite. Returns false for nil errors.
@@ -2440,17 +2549,17 @@ var IsNotNullViolation = core.IsNotNullViolation
 //	if relica.IsCheckViolation(err) {
 //	    // handle check constraint failure
 //	}
-var IsCheckViolation = core.IsCheckViolation
+func IsCheckViolation(err error) bool { return core.IsCheckViolation(err) }
 
 // ============================================================================
 // Re-export configuration options
 // ============================================================================
 
 // WithMaxOpenConns sets the maximum number of open connections.
-var WithMaxOpenConns = core.WithMaxOpenConns
+func WithMaxOpenConns(n int) Option { return core.WithMaxOpenConns(n) }
 
 // WithMaxIdleConns sets the maximum number of idle connections.
-var WithMaxIdleConns = core.WithMaxIdleConns
+func WithMaxIdleConns(n int) Option { return core.WithMaxIdleConns(n) }
 
 // WithConnMaxLifetime sets the maximum amount of time a connection may be reused.
 // Expired connections may be closed lazily before reuse.
@@ -2460,7 +2569,7 @@ var WithMaxIdleConns = core.WithMaxIdleConns
 //
 //	db, err := relica.Open("postgres", dsn,
 //	    relica.WithConnMaxLifetime(5*time.Minute))
-var WithConnMaxLifetime = core.WithConnMaxLifetime
+func WithConnMaxLifetime(d time.Duration) Option { return core.WithConnMaxLifetime(d) }
 
 // WithConnMaxIdleTime sets the maximum amount of time a connection may be idle.
 // Expired connections may be closed lazily before reuse.
@@ -2470,7 +2579,7 @@ var WithConnMaxLifetime = core.WithConnMaxLifetime
 //
 //	db, err := relica.Open("postgres", dsn,
 //	    relica.WithConnMaxIdleTime(1*time.Minute))
-var WithConnMaxIdleTime = core.WithConnMaxIdleTime
+func WithConnMaxIdleTime(d time.Duration) Option { return core.WithConnMaxIdleTime(d) }
 
 // WithHealthCheck enables periodic health checks on database connections.
 // The health checker pings the database at the specified interval to detect dead connections.
@@ -2480,10 +2589,10 @@ var WithConnMaxIdleTime = core.WithConnMaxIdleTime
 //
 //	db, err := relica.Open("postgres", dsn,
 //	    relica.WithHealthCheck(30*time.Second))
-var WithHealthCheck = core.WithHealthCheck
+func WithHealthCheck(interval time.Duration) Option { return core.WithHealthCheck(interval) }
 
 // WithStmtCacheCapacity sets the prepared statement cache capacity.
-var WithStmtCacheCapacity = core.WithStmtCacheCapacity
+func WithStmtCacheCapacity(capacity int) Option { return core.WithStmtCacheCapacity(capacity) }
 
 // WithLogger sets the logger for database query logging.
 // If not set, a NoopLogger is used (zero overhead when logging is disabled).
@@ -2494,7 +2603,7 @@ var WithStmtCacheCapacity = core.WithStmtCacheCapacity
 //	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 //	db, err := relica.Open("postgres", dsn,
 //	    relica.WithLogger(logger.NewSlogAdapter(logger)))
-var WithLogger = core.WithLogger
+func WithLogger(l Logger) Option { return core.WithLogger(l) }
 
 // WithQueryHook sets a callback function that is invoked after each query execution.
 // Use this for logging, metrics, distributed tracing, or debugging.
@@ -2506,7 +2615,7 @@ var WithLogger = core.WithLogger
 //	    relica.WithQueryHook(func(ctx context.Context, e relica.QueryEvent) {
 //	        slog.Info("query", "sql", e.SQL, "duration", e.Duration, "err", e.Error)
 //	    }))
-var WithQueryHook = core.WithQueryHook
+func WithQueryHook(hook QueryHook) Option { return core.WithQueryHook(hook) }
 
 // WithSensitiveFields sets the list of sensitive field names for parameter masking.
 // If not set, default sensitive field patterns are used.
@@ -2515,7 +2624,7 @@ var WithQueryHook = core.WithQueryHook
 //
 //	db, err := relica.Open("postgres", dsn,
 //	    relica.WithSensitiveFields([]string{"password", "token", "api_key"}))
-var WithSensitiveFields = core.WithSensitiveFields
+func WithSensitiveFields(fields []string) Option { return core.WithSensitiveFields(fields) }
 
 // Logger defines the logging interface for Relica.
 // Implementations should handle structured logging with key-value pairs.
@@ -2528,7 +2637,7 @@ type NoopLogger = logger.NoopLogger
 type SlogAdapter = logger.SlogAdapter
 
 // NewSlogAdapter creates a new logger adapter wrapping an slog.Logger.
-var NewSlogAdapter = logger.NewSlogAdapter
+func NewSlogAdapter(l *slog.Logger) *SlogAdapter { return logger.NewSlogAdapter(l) }
 
 // QueryEvent contains information about an executed query.
 // This is passed to QueryHook callbacks for logging, metrics, or tracing.
@@ -2549,7 +2658,7 @@ type QueryHook = core.QueryHook
 type Params = core.Params
 
 // DetectOperation detects the SQL operation type (SELECT, INSERT, UPDATE, DELETE, UNKNOWN).
-var DetectOperation = core.DetectOperation
+func DetectOperation(query string) string { return core.DetectOperation(query) }
 
 // NullStringMap represents a map of nullable string values scanned from database rows.
 // Each value is a sql.NullString that can be checked for NULL.
@@ -2574,89 +2683,93 @@ type NullStringMap = core.NullStringMap
 // ============================================================================
 
 // NewExp creates a new raw SQL expression.
-var NewExp = core.NewExp
+func NewExp(rawSQL string, args ...interface{}) Expression { return core.NewExp(rawSQL, args...) }
 
 // Eq creates an equality expression (column = value).
-var Eq = core.Eq
+func Eq(col string, value interface{}) Expression { return core.Eq(col, value) }
 
 // NotEq creates a not-equal expression (column != value).
-var NotEq = core.NotEq
+func NotEq(col string, value interface{}) Expression { return core.NotEq(col, value) }
 
 // GreaterThan creates a greater-than expression (column > value).
-var GreaterThan = core.GreaterThan
+func GreaterThan(col string, value interface{}) Expression { return core.GreaterThan(col, value) }
 
 // LessThan creates a less-than expression (column < value).
-var LessThan = core.LessThan
+func LessThan(col string, value interface{}) Expression { return core.LessThan(col, value) }
 
 // GreaterOrEqual creates a greater-or-equal expression (column >= value).
-var GreaterOrEqual = core.GreaterOrEqual
+func GreaterOrEqual(col string, value interface{}) Expression {
+	return core.GreaterOrEqual(col, value)
+}
 
 // LessOrEqual creates a less-or-equal expression (column <= value).
-var LessOrEqual = core.LessOrEqual
+func LessOrEqual(col string, value interface{}) Expression { return core.LessOrEqual(col, value) }
 
 // In creates an IN expression (column IN (values...)).
-var In = core.In
+func In(col string, values ...interface{}) Expression { return core.In(col, values...) }
 
 // NotIn creates a NOT IN expression (column NOT IN (values...)).
-var NotIn = core.NotIn
+func NotIn(col string, values ...interface{}) Expression { return core.NotIn(col, values...) }
 
 // Between creates a BETWEEN expression (column BETWEEN low AND high).
-var Between = core.Between
+func Between(col string, from, to interface{}) Expression { return core.Between(col, from, to) }
 
 // NotBetween creates a NOT BETWEEN expression.
-var NotBetween = core.NotBetween
+func NotBetween(col string, from, to interface{}) Expression {
+	return core.NotBetween(col, from, to)
+}
 
 // Like creates a LIKE expression with automatic escaping.
-var Like = core.Like
+func Like(col string, values ...string) *LikeExp { return core.Like(col, values...) }
 
 // NotLike creates a NOT LIKE expression.
-var NotLike = core.NotLike
+func NotLike(col string, values ...string) *LikeExp { return core.NotLike(col, values...) }
 
 // OrLike creates a LIKE expression combined with OR.
-var OrLike = core.OrLike
+func OrLike(col string, values ...string) *LikeExp { return core.OrLike(col, values...) }
 
 // OrNotLike creates a NOT LIKE expression combined with OR.
-var OrNotLike = core.OrNotLike
+func OrNotLike(col string, values ...string) *LikeExp { return core.OrNotLike(col, values...) }
 
 // And combines expressions with AND.
-var And = core.And
+func And(exps ...Expression) Expression { return core.And(exps...) }
 
 // Or combines expressions with OR.
-var Or = core.Or
+func Or(exps ...Expression) Expression { return core.Or(exps...) }
 
 // Not negates an expression.
-var Not = core.Not
+func Not(exp Expression) Expression { return core.Not(exp) }
 
 // Exists creates an EXISTS subquery expression.
-var Exists = core.Exists
+func Exists(exp Expression) Expression { return core.Exists(exp) }
 
 // NotExists creates a NOT EXISTS subquery expression.
-var NotExists = core.NotExists
+func NotExists(exp Expression) Expression { return core.NotExists(exp) }
 
 // ============================================================================
 // Re-export functional expressions (CASE, COALESCE, NULLIF, etc.)
 // ============================================================================
 
 // Case creates a simple CASE expression.
-var Case = core.Case
+func Case(column string) *CaseExp { return core.Case(column) }
 
 // CaseWhen creates a searched CASE expression (without column).
-var CaseWhen = core.CaseWhen
+func CaseWhen() *CaseExp { return core.CaseWhen() }
 
 // Coalesce creates a COALESCE expression.
-var Coalesce = core.Coalesce
+func Coalesce(values ...interface{}) *CoalesceExp { return core.Coalesce(values...) }
 
 // NullIf creates a NULLIF expression.
-var NullIf = core.NullIf
+func NullIf(expr1, expr2 interface{}) *NullIfExp { return core.NullIf(expr1, expr2) }
 
 // Greatest creates a GREATEST expression.
-var Greatest = core.Greatest
+func Greatest(values ...interface{}) *GreatestLeastExp { return core.Greatest(values...) }
 
 // Least creates a LEAST expression.
-var Least = core.Least
+func Least(values ...interface{}) *GreatestLeastExp { return core.Least(values...) }
 
 // Concat creates a string concatenation expression.
-var Concat = core.Concat
+func Concat(values ...interface{}) *ConcatExp { return core.Concat(values...) }
 
 // CaseExp represents a SQL CASE expression.
 type CaseExp = core.CaseExp
