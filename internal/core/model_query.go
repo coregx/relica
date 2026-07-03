@@ -2,6 +2,7 @@
 package core
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"reflect"
@@ -22,6 +23,14 @@ type ModelQuery struct {
 	model   interface{}
 	table   string
 	exclude map[string]bool
+	ctx     context.Context // nil means use background context
+}
+
+// SetContext sets the context for this ModelQuery.
+// Returns the same ModelQuery to allow further configuration.
+func (mq *ModelQuery) SetContext(ctx context.Context) *ModelQuery {
+	mq.ctx = ctx
+	return mq
 }
 
 // Model creates a new ModelQuery for the given struct.
@@ -177,10 +186,11 @@ func (mq *ModelQuery) Insert(attrs ...string) error {
 		}
 	}
 
-	// Create builder with transaction context if applicable.
+	// Create builder with transaction/query context if applicable.
 	qb := &QueryBuilder{
-		db: mq.db,
-		tx: mq.tx,
+		db:  mq.db,
+		tx:  mq.tx,
+		ctx: mq.ctx,
 	}
 
 	// Build INSERT query.
@@ -376,10 +386,11 @@ func (mq *ModelQuery) Update(attrs ...string) error {
 		delete(filtered, col)
 	}
 
-	// Create builder with transaction context if applicable.
+	// Create builder with transaction/query context if applicable.
 	qb := &QueryBuilder{
-		db: mq.db,
-		tx: mq.tx,
+		db:  mq.db,
+		tx:  mq.tx,
+		ctx: mq.ctx,
 	}
 
 	// Build UPDATE query with WHERE clause for all PK columns.
@@ -439,10 +450,11 @@ func (mq *ModelQuery) Upsert(fields ...string) error {
 	// Build update columns: either specified fields or all non-PK fields.
 	updateCols := mq.buildUpsertUpdateCols(dataMap, pkCols, fields)
 
-	// Create builder with transaction context if applicable.
+	// Create builder with transaction/query context if applicable.
 	qb := &QueryBuilder{
-		db: mq.db,
-		tx: mq.tx,
+		db:  mq.db,
+		tx:  mq.tx,
+		ctx: mq.ctx,
 	}
 
 	upsertQuery := qb.Upsert(mq.table, dataMap).
@@ -567,10 +579,11 @@ func (mq *ModelQuery) UpdateChanged(original interface{}) error {
 		return errors.New("model: primary key not found")
 	}
 
-	// Create builder with transaction context if applicable.
+	// Create builder with transaction/query context if applicable.
 	qb := &QueryBuilder{
-		db: mq.db,
-		tx: mq.tx,
+		db:  mq.db,
+		tx:  mq.tx,
+		ctx: mq.ctx,
 	}
 
 	updateQuery := qb.Update(mq.table).Set(changed)
@@ -699,10 +712,11 @@ func (mq *ModelQuery) Delete() error {
 		return errors.New("model: primary key not found")
 	}
 
-	// Create builder with transaction context if applicable.
+	// Create builder with transaction/query context if applicable.
 	qb := &QueryBuilder{
-		db: mq.db,
-		tx: mq.tx,
+		db:  mq.db,
+		tx:  mq.tx,
+		ctx: mq.ctx,
 	}
 
 	// Build DELETE query with WHERE clause for all PK columns.

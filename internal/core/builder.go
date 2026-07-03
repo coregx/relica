@@ -599,19 +599,14 @@ func (sq *SelectQuery) WithRecursive(name string, query *SelectQuery) *SelectQue
 	return sq
 }
 
-// Distinct sets whether to select distinct rows.
-// When enabled, adds DISTINCT keyword to the SELECT clause to eliminate duplicate rows.
-// Multiple calls to Distinct() override previous settings.
+// Distinct adds the DISTINCT keyword to the SELECT clause, eliminating duplicate rows.
 //
 // Example:
 //
-//	db.Builder().Select("category").From("products").Distinct(true).All(&categories)
+//	db.Builder().Select("category").From("products").Distinct().All(&categories)
 //	// SELECT DISTINCT "category" FROM "products"
-//
-//	db.Builder().Select("*").From("users").Distinct(false).All(&users)
-//	// SELECT * FROM "users"
-func (sq *SelectQuery) Distinct(v bool) *SelectQuery {
-	sq.distinct = v
+func (sq *SelectQuery) Distinct() *SelectQuery {
+	sq.distinct = true
 	return sq
 }
 
