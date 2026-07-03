@@ -22,6 +22,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **N-part identifier support** — `quoteColumn()` upgraded from `SplitN` (2-part) to `Split` (N-part) for `schema.table.column` support
 - **DRY: unified quoting** — `DB.quoteIdentifier()` in params.go now delegates to shared `quoteColumn()` helper
 
+### Robustness
+
+- **Zero panics from public API** — all 17 panic paths in query builder converted to stored errors via `buildErr` pattern. Errors propagate through `Build()`/`Execute()`/`All()`/`One()` instead of crashing the process
+- **Affected methods**: `Where()`, `OrWhere()`, `Having()`, `FromSelect()`, `With()`, `WithRecursive()`, `JOIN ON`, `BatchInsert.Values()`, `BatchInsert.Build()`, `BatchUpdate.Build()`, `LikeExp.EscapeChars()`
+- **`Model(nil)`** — nil guard returns clean error instead of nil pointer dereference
+- **`WrapDB(nil)`** — immediate panic with clear message at construction (acceptable for constructor)
+- **`pgx` driver** — registered as PostgreSQL dialect, `Open("pgx", dsn)` now works
+- **`GetDialect`** — actionable panic message listing all supported dialects
+
 ### Example
 
 ```go
@@ -34,6 +43,13 @@ db.Insert("events", map[string]interface{}{
 // After v0.11.2: all column names properly quoted
 // PostgreSQL: INSERT INTO "events" ("order", "select") VALUES ($1, $2)
 // MySQL:      INSERT INTO `events` (`order`, `select`) VALUES (?, ?)
+
+// Before v0.11.2: wrong type in Where() crashed the process
+db.Select().From("users").Where(42).All(&users) // PANIC!
+
+// After v0.11.2: clean error returned
+err := db.Select().From("users").Where(42).All(&users)
+// err: "relica: Where() expects string or Expression, got int"
 ```
 
 ---
