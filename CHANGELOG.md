@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.12.1] - 2026-07-05
+
+### Performance
+
+- **Transaction queries 3x faster** — transactions now use direct `tx.ExecContext()`/`tx.QueryContext()` (1 network round-trip) instead of `PrepareContext()` + `ExecContext()` + `Close()` (3 round-trips). Matches ozzo-dbx, sqlx, bun, and GORM default behavior.
+- Explicit `Prepare()` remains available as opt-in for batch scenarios within transactions.
+
+### Added
+
+- **13 transaction integration tests** — MultipleOps, Rollback (error + panic), ReadYourOwnWrites, BatchInsert (+rollback), Update+Delete, Upsert, manual Begin/Commit/Rollback, 50-op stress test. Runs on PostgreSQL, MySQL, SQLite in CI.
+
+---
+
 ## [0.12.0] - 2026-07-03
 
 ### Breaking Changes (pre-v1.0 API cleanup)

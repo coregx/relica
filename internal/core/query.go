@@ -87,16 +87,14 @@ func (q *Query) IsPrepared() bool {
 	return q.prepared && q.stmt != nil
 }
 
-// prepareStatement prepares a SQL statement, using transaction or statement cache.
-// For manually prepared queries (Prepare() called), uses the stored statement.
-// For transactions, bypasses cache to avoid conflicts.
+// prepareStatement prepares a SQL statement using the statement cache.
+// For manually prepared queries (Prepare() called), returns the stored statement.
 // For regular queries, uses LRU statement cache for better performance.
-//
-//nolint:cyclop // Validation + manual-prepare + tx + cache paths each require distinct branches; collapsing them would reduce clarity.
-func (q *Query) prepareStatement(ctx context.Context) (*sql.Stmt, bool, error) {
+// Transactions skip this path entirely — they use direct tx.QueryContext/tx.ExecContext.
+func (q *Query) prepareStatement(ctx context.Context) (*sql.Stmt, error) {
 	// Check for preparation error from Prepare() call
 	if q.prepErr != nil {
-		return nil, false, q.prepErr
+		return nil, q.prepErr
 	}
 
 	// Validate query and parameters if a validator is configured.
@@ -104,35 +102,26 @@ func (q *Query) prepareStatement(ctx context.Context) (*sql.Stmt, bool, error) {
 	// the raw DB.ExecContext/QueryContext paths where validation already occurs.
 	if q.db != nil && q.db.validator != nil {
 		if err := q.db.validateQueryAndParams(ctx, q.sql, q.params); err != nil {
-			return nil, false, err
+			return nil, err
 		}
 	}
 
 	// Use manually prepared statement if available
 	if q.prepared && q.stmt != nil {
-		return q.stmt, false, nil // false = don't close, user manages lifecycle
-	}
-
-	if q.tx != nil {
-		// Transactions bypass statement cache
-		stmt, err := q.tx.PrepareContext(ctx, q.sql)
-		if err != nil {
-			return nil, false, err
-		}
-		return stmt, true, nil // true = needs close
+		return q.stmt, nil
 	}
 
 	// Use statement cache for non-transactional queries
 	if stmt, ok := q.db.stmtCache.Get(q.sql); ok {
-		return stmt, false, nil // false = cached, don't close
+		return stmt, nil
 	}
 
 	stmt, err := q.db.sqlDB.PrepareContext(ctx, q.sql)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	q.db.stmtCache.Set(q.sql, stmt)
-	return stmt, false, nil // false = cached, don't close
+	return stmt, nil
 }
 
 // logExecutionResult logs query execution results if logger is enabled.
@@ -167,17 +156,73 @@ func (q *Query) logExecutionResult(result sql.Result, err error, elapsed time.Du
 	)
 }
 
-// Execute runs the query and returns results.
-// If query is part of a transaction, bypasses statement cache and uses transaction connection.
-func (q *Query) Execute() (sql.Result, error) {
-	ctx := q.ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
+// useDirectTx returns true when the query should use direct tx.Exec/Query
+// instead of Prepare+Exec (saves 2 round-trips per query).
+func (q *Query) useDirectTx() bool {
+	return q.tx != nil && !q.prepared
+}
 
+// getContext returns the query context, defaulting to context.Background().
+func (q *Query) getContext() context.Context {
+	if q.ctx != nil {
+		return q.ctx
+	}
+	return context.Background()
+}
+
+// validateBeforeExec runs validator and checks for build errors.
+// Returns error if validation fails, nil otherwise.
+func (q *Query) validateBeforeExec(ctx context.Context) error {
+	if q.prepErr != nil {
+		return q.prepErr
+	}
+	if q.db != nil && q.db.validator != nil {
+		return q.db.validateQueryAndParams(ctx, q.sql, q.params)
+	}
+	return nil
+}
+
+// Execute runs the query and returns results.
+// For transactions, uses direct tx.ExecContext (1 round-trip).
+// For non-tx queries, uses prepared statement cache.
+func (q *Query) Execute() (sql.Result, error) {
+	ctx := q.getContext()
 	start := time.Now()
 
-	stmt, needsClose, err := q.prepareStatement(ctx)
+	// Validate
+	if err := q.validateBeforeExec(ctx); err != nil {
+		if q.db.logger != nil {
+			q.db.logger.Error("query preparation failed",
+				"sql", q.sql,
+				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
+				"error", err,
+			)
+		}
+		return nil, err
+	}
+
+	// Direct execution for transactions (1 round-trip, no Prepare overhead)
+	if q.useDirectTx() {
+		result, err := q.tx.ExecContext(ctx, q.sql, q.params...)
+		elapsed := time.Since(start)
+		q.logExecutionResult(result, err, elapsed)
+		var rowsAffected int64
+		if result != nil {
+			rowsAffected, _ = result.RowsAffected()
+		}
+		q.db.invokeHook(ctx, QueryEvent{
+			SQL:          q.sql,
+			Args:         q.params,
+			Duration:     elapsed,
+			RowsAffected: rowsAffected,
+			Error:        err,
+			Operation:    DetectOperation(q.sql),
+		})
+		return result, err
+	}
+
+	// Standard path: prepare + execute (with cache for non-tx)
+	stmt, err := q.prepareStatement(ctx)
 	if err != nil {
 		if q.db.logger != nil {
 			q.db.logger.Error("query preparation failed",
@@ -188,17 +233,12 @@ func (q *Query) Execute() (sql.Result, error) {
 		}
 		return nil, err
 	}
-	if needsClose {
-		defer func() { _ = stmt.Close() }()
-	}
 
 	result, err := stmt.ExecContext(ctx, q.params...)
 	elapsed := time.Since(start)
 
-	// Log query execution
 	q.logExecutionResult(result, err, elapsed)
 
-	// Invoke query hook
 	var rowsAffected int64
 	if result != nil {
 		rowsAffected, _ = result.RowsAffected()
@@ -218,17 +258,12 @@ func (q *Query) Execute() (sql.Result, error) {
 // One fetches a single row into a struct.
 // If query is part of a transaction, uses transaction connection.
 //
-//nolint:cyclop,funlen // Query execution requires comprehensive error handling and logging
+//nolint:cyclop,funlen,gocognit,nestif // Query execution requires comprehensive error handling and logging
 func (q *Query) One(dest interface{}) error {
-	ctx := q.ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
+	ctx := q.getContext()
 	start := time.Now()
 
-	stmt, needsClose, err := q.prepareStatement(ctx)
-	if err != nil {
+	if err := q.validateBeforeExec(ctx); err != nil {
 		if q.db.logger != nil {
 			q.db.logger.Error("query preparation failed",
 				"sql", q.sql,
@@ -238,12 +273,27 @@ func (q *Query) One(dest interface{}) error {
 		}
 		return err
 	}
-	if needsClose {
-		defer func() { _ = stmt.Close() }()
-	}
 
-	// Execute query
-	rows, err := stmt.QueryContext(ctx, q.params...)
+	// Execute query — direct for tx, prepared for non-tx
+	var rows *sql.Rows
+	var err error
+	if q.useDirectTx() {
+		rows, err = q.tx.QueryContext(ctx, q.sql, q.params...)
+	} else {
+		var stmt *sql.Stmt
+		stmt, err = q.prepareStatement(ctx)
+		if err != nil {
+			if q.db.logger != nil {
+				q.db.logger.Error("query preparation failed",
+					"sql", q.sql,
+					"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
+					"error", err,
+				)
+			}
+			return err
+		}
+		rows, err = stmt.QueryContext(ctx, q.params...)
+	}
 	if err != nil {
 		elapsed := time.Since(start)
 		if q.db.logger != nil {
@@ -355,17 +405,12 @@ func (q *Query) One(dest interface{}) error {
 //	var count int
 //	err := db.NewQuery("SELECT COUNT(*) FROM users").Row(&count)
 //
-//nolint:cyclop,funlen // Query execution requires comprehensive error handling and logging
+//nolint:cyclop,funlen,nestif // Query execution requires comprehensive error handling and logging
 func (q *Query) Row(dest ...interface{}) error {
-	ctx := q.ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
+	ctx := q.getContext()
 	start := time.Now()
 
-	stmt, needsClose, err := q.prepareStatement(ctx)
-	if err != nil {
+	if err := q.validateBeforeExec(ctx); err != nil {
 		if q.db.logger != nil {
 			q.db.logger.Error("query preparation failed",
 				"sql", q.sql,
@@ -375,12 +420,27 @@ func (q *Query) Row(dest ...interface{}) error {
 		}
 		return err
 	}
-	if needsClose {
-		defer func() { _ = stmt.Close() }()
-	}
 
-	// Execute query
-	rows, err := stmt.QueryContext(ctx, q.params...)
+	// Execute query — direct for tx, prepared for non-tx
+	var rows *sql.Rows
+	var err error
+	if q.useDirectTx() {
+		rows, err = q.tx.QueryContext(ctx, q.sql, q.params...)
+	} else {
+		var stmt *sql.Stmt
+		stmt, err = q.prepareStatement(ctx)
+		if err != nil {
+			if q.db.logger != nil {
+				q.db.logger.Error("query preparation failed",
+					"sql", q.sql,
+					"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
+					"error", err,
+				)
+			}
+			return err
+		}
+		rows, err = stmt.QueryContext(ctx, q.params...)
+	}
 	if err != nil {
 		elapsed := time.Since(start)
 		if q.db.logger != nil {
@@ -482,14 +542,21 @@ func (q *Query) Row(dest ...interface{}) error {
 //	var emails []string
 //	err := db.Select("email").From("users").Column(&emails)
 //
-//nolint:gocognit,gocyclo,cyclop,funlen // Query execution requires comprehensive error handling and logging
+//nolint:gocognit,gocyclo,cyclop,funlen,nestif // Query execution requires comprehensive error handling and logging
 func (q *Query) Column(slice interface{}) error {
-	ctx := q.ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
+	ctx := q.getContext()
 	start := time.Now()
+
+	if err := q.validateBeforeExec(ctx); err != nil {
+		if q.db.logger != nil {
+			q.db.logger.Error("query preparation failed",
+				"sql", q.sql,
+				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
+				"error", err,
+			)
+		}
+		return err
+	}
 
 	// Validate slice parameter
 	sliceVal := reflect.ValueOf(slice)
@@ -504,23 +571,26 @@ func (q *Query) Column(slice interface{}) error {
 
 	elemType := sliceVal.Type().Elem()
 
-	stmt, needsClose, err := q.prepareStatement(ctx)
-	if err != nil {
-		if q.db.logger != nil {
-			q.db.logger.Error("query preparation failed",
-				"sql", q.sql,
-				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-				"error", err,
-			)
+	// Execute query — direct for tx, prepared for non-tx
+	var rows *sql.Rows
+	var err error
+	if q.useDirectTx() {
+		rows, err = q.tx.QueryContext(ctx, q.sql, q.params...)
+	} else {
+		var stmt *sql.Stmt
+		stmt, err = q.prepareStatement(ctx)
+		if err != nil {
+			if q.db.logger != nil {
+				q.db.logger.Error("query preparation failed",
+					"sql", q.sql,
+					"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
+					"error", err,
+				)
+			}
+			return err
 		}
-		return err
+		rows, err = stmt.QueryContext(ctx, q.params...)
 	}
-	if needsClose {
-		defer func() { _ = stmt.Close() }()
-	}
-
-	// Execute query
-	rows, err := stmt.QueryContext(ctx, q.params...)
 	if err != nil {
 		elapsed := time.Since(start)
 		if q.db.logger != nil {
@@ -623,17 +693,12 @@ func (q *Query) Column(slice interface{}) error {
 // All fetches all rows into a slice of structs.
 // If query is part of a transaction, uses transaction connection.
 //
-//nolint:cyclop // Query execution requires comprehensive error handling and logging
+//nolint:cyclop,funlen,nestif // Query execution requires comprehensive error handling and logging
 func (q *Query) All(dest interface{}) error {
-	ctx := q.ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
+	ctx := q.getContext()
 	start := time.Now()
 
-	stmt, needsClose, err := q.prepareStatement(ctx)
-	if err != nil {
+	if err := q.validateBeforeExec(ctx); err != nil {
 		if q.db.logger != nil {
 			q.db.logger.Error("query preparation failed",
 				"sql", q.sql,
@@ -643,12 +708,27 @@ func (q *Query) All(dest interface{}) error {
 		}
 		return err
 	}
-	if needsClose {
-		defer func() { _ = stmt.Close() }()
-	}
 
-	// Execute query
-	rows, err := stmt.QueryContext(ctx, q.params...)
+	// Execute query — direct for tx, prepared for non-tx
+	var rows *sql.Rows
+	var err error
+	if q.useDirectTx() {
+		rows, err = q.tx.QueryContext(ctx, q.sql, q.params...)
+	} else {
+		var stmt *sql.Stmt
+		stmt, err = q.prepareStatement(ctx)
+		if err != nil {
+			if q.db.logger != nil {
+				q.db.logger.Error("query preparation failed",
+					"sql", q.sql,
+					"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
+					"error", err,
+				)
+			}
+			return err
+		}
+		rows, err = stmt.QueryContext(ctx, q.params...)
+	}
 	if err != nil {
 		elapsed := time.Since(start)
 		if q.db.logger != nil {
