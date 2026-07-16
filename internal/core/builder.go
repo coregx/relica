@@ -128,9 +128,9 @@ type subExprEntry struct {
 type SelectQuery struct {
 	builder       *QueryBuilder
 	columns       []string
-	table         string      // DEPRECATED: use fromSrc instead (kept for backward compatibility)
-	fromSrc       *fromSource // FROM source (table or subquery)
-	selectExprs   []RawExp    // Raw SELECT expressions (for scalar subqueries, etc.)
+	table         string         // DEPRECATED: use fromSrc instead (kept for backward compatibility)
+	fromSrc       *fromSource    // FROM source (table or subquery)
+	selectExprs   []RawExp       // Raw SELECT expressions (for scalar subqueries, etc.)
 	subExprs      []subExprEntry // Type-safe SELECT expressions (subqueries, computed columns)
 	joins         []JoinInfo
 	where         []string
