@@ -1628,6 +1628,23 @@ func (sq *SelectQuery) SelectExpr(expr string, args ...interface{}) *SelectQuery
 	return sq
 }
 
+// SelectSub adds a type-safe subquery or computed expression to the SELECT clause with a quoted alias.
+// The expression is built with the correct dialect so identifiers are properly quoted.
+// Prefer SelectSub over SelectExpr when you have an Expression (e.g. a correlated subquery).
+//
+// Example:
+//
+//	sub := db.Builder().Select("COUNT(*)").From("orders").Where(relica.EqCol("orders.user_id", "users.id"))
+//	db.Builder().Select("id", "name").SelectSub(sub.AsExpression(), "order_count").From("users").All(&results)
+//
+// Generates (PostgreSQL):
+//
+//	SELECT "id", "name", (SELECT COUNT(*) FROM "orders" WHERE "orders"."user_id" = "users"."id") AS "order_count" FROM "users"
+func (sq *SelectQuery) SelectSub(exp Expression, alias string) *SelectQuery {
+	sq.sq.SelectSub(exp, alias)
+	return sq
+}
+
 // Where adds a WHERE condition.
 //
 // Accepts either a string with placeholders or an Expression.
@@ -2696,6 +2713,24 @@ func GreaterThan(col string, value interface{}) Expression { return core.Greater
 
 // LessThan creates a less-than expression (column < value).
 func LessThan(col string, value interface{}) Expression { return core.LessThan(col, value) }
+
+// EqCol creates a column-to-column equality expression (col1 = col2).
+// Both identifiers are quoted using the current dialect.
+// Useful for JOIN ON conditions and correlated subquery WHERE clauses.
+//
+// Example:
+//
+//	relica.EqCol("orders.user_id", "users.id")  →  "orders"."user_id" = "users"."id"
+func EqCol(col1, col2 string) Expression { return core.EqCol(col1, col2) }
+
+// NotEqCol creates a column-to-column inequality expression (col1 <> col2).
+func NotEqCol(col1, col2 string) Expression { return core.NotEqCol(col1, col2) }
+
+// GreaterThanCol creates a column-to-column greater-than expression (col1 > col2).
+func GreaterThanCol(col1, col2 string) Expression { return core.GreaterThanCol(col1, col2) }
+
+// LessThanCol creates a column-to-column less-than expression (col1 < col2).
+func LessThanCol(col1, col2 string) Expression { return core.LessThanCol(col1, col2) }
 
 // GreaterOrEqual creates a greater-or-equal expression (column >= value).
 func GreaterOrEqual(col string, value interface{}) Expression {

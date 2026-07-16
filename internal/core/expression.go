@@ -229,6 +229,46 @@ func (e *CompareExp) Build(dialect dialects.Dialect) (string, []interface{}) {
 	return col + " " + e.Operator + " ?", []interface{}{e.Value}
 }
 
+// ColumnCompareExp compares two column identifiers with an operator.
+// Both sides are quoted using the dialect's identifier quoting (dots split per part).
+//
+// Example:
+//
+//	EqCol("o.user_id", "u.id")         → "o"."user_id" = "u"."id"
+//	NotEqCol("a.status", "b.status")   → "a"."status" <> "b"."status"
+type ColumnCompareExp struct {
+	Col1     string
+	Col2     string
+	Operator string
+}
+
+// EqCol generates a column-to-column equality expression (col1 = col2).
+// Both identifiers are quoted using the current dialect.
+func EqCol(col1, col2 string) Expression {
+	return &ColumnCompareExp{Col1: col1, Col2: col2, Operator: "="}
+}
+
+// NotEqCol generates a column-to-column inequality expression (col1 <> col2).
+func NotEqCol(col1, col2 string) Expression {
+	return &ColumnCompareExp{Col1: col1, Col2: col2, Operator: "<>"}
+}
+
+// GreaterThanCol generates a column-to-column greater-than expression (col1 > col2).
+func GreaterThanCol(col1, col2 string) Expression {
+	return &ColumnCompareExp{Col1: col1, Col2: col2, Operator: ">"}
+}
+
+// LessThanCol generates a column-to-column less-than expression (col1 < col2).
+func LessThanCol(col1, col2 string) Expression {
+	return &ColumnCompareExp{Col1: col1, Col2: col2, Operator: "<"}
+}
+
+// Build converts a ColumnCompareExp into a SQL fragment.
+// Returns no bind parameters since both sides are column references, not values.
+func (e *ColumnCompareExp) Build(dialect dialects.Dialect) (string, []interface{}) {
+	return quoteColumn(e.Col1, dialect) + " " + e.Operator + " " + quoteColumn(e.Col2, dialect), nil
+}
+
 // InExp represents an IN or NOT IN expression.
 type InExp struct {
 	Col    string
