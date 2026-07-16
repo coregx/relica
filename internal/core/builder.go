@@ -117,13 +117,21 @@ type cteInfo struct {
 	recursive bool         // true for WITH RECURSIVE
 }
 
+// subExprEntry holds a type-safe SELECT expression (e.g. a correlated subquery)
+// together with the alias it will be given in the SELECT clause.
+type subExprEntry struct {
+	exp   Expression
+	alias string
+}
+
 // SelectQuery represents a SELECT query being built.
 type SelectQuery struct {
 	builder       *QueryBuilder
 	columns       []string
-	table         string      // DEPRECATED: use fromSrc instead (kept for backward compatibility)
-	fromSrc       *fromSource // FROM source (table or subquery)
-	selectExprs   []RawExp    // Raw SELECT expressions (for scalar subqueries, etc.)
+	table         string         // DEPRECATED: use fromSrc instead (kept for backward compatibility)
+	fromSrc       *fromSource    // FROM source (table or subquery)
+	selectExprs   []RawExp       // Raw SELECT expressions (for scalar subqueries, etc.)
+	subExprs      []subExprEntry // Type-safe SELECT expressions (subqueries, computed columns)
 	joins         []JoinInfo
 	where         []string
 	params        []interface{}
@@ -212,6 +220,27 @@ func (sq *SelectQuery) SelectExpr(expr string, args ...interface{}) *SelectQuery
 		SQL:  expr,
 		Args: args,
 	})
+	return sq
+}
+
+// SelectSub adds a type-safe SQL expression to the SELECT clause with a quoted alias.
+// The expression is built using the current dialect, so identifiers are quoted correctly.
+// This is the recommended way to add correlated subqueries or computed columns.
+//
+// Example:
+//
+//	sub := db.Builder().Select("COUNT(*)").From("orders").Where(relica.EqCol("orders.user_id", "users.id"))
+//	db.Builder().Select("id", "name").SelectSub(sub.AsExpression(), "order_count").From("users").All(&results)
+//
+// Generates (PostgreSQL):
+//
+//	SELECT "id", "name", (SELECT COUNT(*) FROM "orders" WHERE "orders"."user_id" = "users"."id") AS "order_count" FROM "users"
+func (sq *SelectQuery) SelectSub(exp Expression, alias string) *SelectQuery {
+	if alias == "" {
+		sq.buildErr = fmt.Errorf("relica: SelectSub requires a non-empty alias")
+		return sq
+	}
+	sq.subExprs = append(sq.subExprs, subExprEntry{exp: exp, alias: alias})
 	return sq
 }
 
@@ -776,35 +805,44 @@ func (sq *SelectQuery) buildLimitOffset() string {
 	return result
 }
 
-// buildSelect constructs the SELECT clause, handling aggregate functions and raw expressions.
-// Detects aggregate functions (contains "(") and column aliases (contains "AS").
-// Returns "*" if no columns and no selectExprs specified.
-// Includes DISTINCT keyword if sq.distinct is true.
-func (sq *SelectQuery) buildSelect(dialect dialects.Dialect) string {
-	parts := make([]string, 0, len(sq.columns)+len(sq.selectExprs))
+// formatSelectColumn formats a single column token for the SELECT clause.
+// Aggregates, aliases, and wildcards are passed through as-is; plain identifiers are quoted.
+func (sq *SelectQuery) formatSelectColumn(col string, dialect dialects.Dialect) string {
+	switch {
+	case col == "*":
+		return "*"
+	case strings.Contains(col, "("):
+		return col
+	case strings.Contains(col, " as ") || strings.Contains(col, " AS "):
+		return col
+	default:
+		return sq.quoteColumnName(col, dialect)
+	}
+}
 
-	// Add regular columns
+// buildSelect constructs the SELECT clause, handling aggregate functions and raw expressions.
+// renderedSubExprs contains pre-built SQL strings for subExprs entries (dialect-specific,
+// with placeholders already renumbered); passed in from buildSQL to keep renumbering logic centralized.
+// Returns "*" if no columns, no selectExprs, and no subExprs specified.
+// Includes DISTINCT keyword if sq.distinct is true.
+func (sq *SelectQuery) buildSelect(dialect dialects.Dialect, renderedSubExprs []string) string {
+	parts := make([]string, 0, len(sq.columns)+len(sq.selectExprs)+len(renderedSubExprs))
+
 	for _, col := range sq.columns {
-		// Determine column type and format accordingly
-		switch {
-		case col == "*":
-			// Wildcard - use as-is, don't quote
-			parts = append(parts, "*")
-		case strings.Contains(col, "("):
-			// Aggregate function or expression - use as-is
-			parts = append(parts, col)
-		case strings.Contains(col, " as ") || strings.Contains(col, " AS "):
-			// Column with alias - use as-is
-			parts = append(parts, col)
-		default:
-			// Simple column name - quote it
-			parts = append(parts, sq.quoteColumnName(col, dialect))
-		}
+		parts = append(parts, sq.formatSelectColumn(col, dialect))
 	}
 
-	// Add raw SELECT expressions (scalar subqueries, etc.)
 	for _, expr := range sq.selectExprs {
 		parts = append(parts, expr.SQL)
+	}
+
+	// Add type-safe subquery expressions (pre-built with dialect quoting and renumbered placeholders)
+	for i, sub := range sq.subExprs {
+		var sqlFrag string
+		if i < len(renderedSubExprs) {
+			sqlFrag = renderedSubExprs[i]
+		}
+		parts = append(parts, "("+sqlFrag+") AS "+dialect.QuoteIdentifier(sub.alias))
 	}
 
 	columns := "*"
@@ -812,11 +850,9 @@ func (sq *SelectQuery) buildSelect(dialect dialects.Dialect) string {
 		columns = strings.Join(parts, ", ")
 	}
 
-	// Add DISTINCT keyword if enabled
 	if sq.distinct {
 		return "DISTINCT " + columns
 	}
-
 	return columns
 }
 
@@ -1006,7 +1042,7 @@ func (sq *SelectQuery) buildWithClause(dialect dialects.Dialect) (string, []inte
 
 // buildSQL constructs the SQL string and parameters for SelectQuery.
 // This is the core implementation shared by both Build() and the Expression interface.
-// Parameter ordering: CTEs → SelectExprs → FROM subquery → JOINs → WHERE → HAVING
+// Parameter ordering: CTEs → SelectExprs → SubExprs → FROM subquery → JOINs → WHERE → HAVING
 func (sq *SelectQuery) buildSQL(dialect dialects.Dialect) (string, []interface{}) {
 	// Collect all parameters in correct order
 	var allParams []interface{}
@@ -1019,48 +1055,55 @@ func (sq *SelectQuery) buildSQL(dialect dialects.Dialect) (string, []interface{}
 		allParams = append(allParams, withArgs...)
 	}
 
-	// 2. Add params from SelectExpr (scalar subqueries in SELECT clause)
+	// 2. Add params from SelectExpr (raw scalar subqueries in SELECT clause)
 	for _, expr := range sq.selectExprs {
 		allParams = append(allParams, expr.Args...)
 	}
 
-	// 3. Build SELECT clause (handles aggregates and raw expressions)
-	cols := sq.buildSelect(dialect)
-
-	// 4. Build FROM clause (may be table or subquery)
-	fromClause := sq.buildFrom(dialect, &allParams)
-
-	// 5. Build JOIN clause (adds params via pointer)
-	joinClause := sq.buildJoins(dialect, &allParams)
-
-	// 6. Build WHERE clause (adds params via pointer)
-	whereClause := sq.buildWhere(dialect, &allParams)
-
-	// 7. Renumber SelectExpr, FROM, and JOIN placeholders if needed (PostgreSQL)
-	if dialect.Placeholder(1) != "?" {
-		// Renumber SELECT expressions
-		selectExprParamCount := 0
-		for _, expr := range sq.selectExprs {
-			selectExprParamCount += len(expr.Args)
+	// 3. Build type-safe subquery SELECT expressions (SelectSub).
+	// Each expression is built with the correct dialect, then its placeholders are renumbered
+	// so they continue from the current allParams count (for PostgreSQL $N style).
+	renderedSubExprs := make([]string, len(sq.subExprs))
+	for i, sub := range sq.subExprs {
+		subSQL, subArgs := sub.exp.Build(dialect)
+		if dialect.Placeholder(1) != "?" && len(subArgs) > 0 {
+			// Renumber placeholders from $1 to the correct offset.
+			startIndex := len(allParams) + 1
+			for j := range subArgs {
+				oldPlaceholder := dialect.Placeholder(j + 1)
+				newPlaceholder := dialect.Placeholder(startIndex + j)
+				subSQL = strings.Replace(subSQL, oldPlaceholder, newPlaceholder, 1)
+			}
 		}
-
-		// Renumber FROM subquery placeholders (already handled in buildFrom)
-		// Renumber JOIN placeholders (already handled in buildJoins)
+		renderedSubExprs[i] = subSQL
+		allParams = append(allParams, subArgs...)
 	}
 
-	// 8. Build GROUP BY clause
+	// 4. Build SELECT clause (handles aggregates, raw expressions, and subExprs)
+	cols := sq.buildSelect(dialect, renderedSubExprs)
+
+	// 5. Build FROM clause (may be table or subquery)
+	fromClause := sq.buildFrom(dialect, &allParams)
+
+	// 6. Build JOIN clause (adds params via pointer)
+	joinClause := sq.buildJoins(dialect, &allParams)
+
+	// 7. Build WHERE clause (adds params via pointer)
+	whereClause := sq.buildWhere(dialect, &allParams)
+
+	// 9. Build GROUP BY clause
 	groupByClause := sq.buildGroupBy(dialect)
 
-	// 9. Build HAVING clause (adds params via pointer)
+	// 10. Build HAVING clause (adds params via pointer)
 	havingClause := sq.buildHaving(&allParams)
 
 	// Renumber HAVING placeholders if needed (PostgreSQL)
 	havingClause = sq.renumberHavingPlaceholders(havingClause, len(allParams), dialect)
 
-	// 10. Build ORDER BY clause
+	// 11. Build ORDER BY clause
 	orderByClause := sq.buildOrderBy(dialect)
 
-	// 11. Build LIMIT/OFFSET clause
+	// 12. Build LIMIT/OFFSET clause
 	limitOffsetClause := sq.buildLimitOffset()
 
 	// Construct SQL: SELECT ... FROM ... JOIN ... WHERE ... GROUP BY ... HAVING ... ORDER BY ... LIMIT ... OFFSET

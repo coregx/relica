@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.13.0] - 2026-07-05
+
+### Added
+
+- **`SelectSub(exp Expression, alias string)`** — Type-safe scalar subqueries in SELECT clause. No more raw SQL for correlated subqueries — use the builder API to construct subqueries and embed them with proper quoting and parameterization.
+- **`EqCol(col1, col2 string)`** — Column-to-column equality comparison with proper identifier quoting. Essential for correlated subqueries and JOIN conditions: `EqCol("o.user_id", "u.id")` → `"o"."user_id" = "u"."id"`.
+- **`NotEqCol`, `GreaterThanCol`, `LessThanCol`** — Column comparison variants for all common operators.
+
+### Example
+
+```go
+// Before: raw SQL (not type-safe)
+db.Select("id", "name").
+    SelectExpr("(SELECT COUNT(*) FROM orders WHERE orders.user_id = users.id) AS order_count").
+    From("users")
+
+// After: type-safe builder API
+sub := db.Select("COUNT(*)").From("orders").
+    Where(relica.EqCol("orders.user_id", "users.id"))
+db.Select("id", "name").
+    SelectSub(sub.AsExpression(), "order_count").
+    From("users")
+```
+
+---
+
 ## [0.12.1] - 2026-07-05
 
 ### Performance
