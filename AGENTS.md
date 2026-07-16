@@ -78,6 +78,18 @@ db.Select().From("users").
 db.Select().From("orders").
     Where(relica.Between("created_at", start, end)).
     All(&orders)
+
+// CORRECT - Column-to-column comparison (for JOINs and correlated subqueries)
+db.Select().From("orders o").
+    Where(relica.EqCol("o.user_id", "u.id")).
+    All(&orders)
+
+// CORRECT - Type-safe scalar subquery in SELECT
+sub := db.Select("COUNT(*)").From("orders").
+    Where(relica.EqCol("orders.user_id", "users.id"))
+db.Select("id", "name").
+    SelectSub(sub.AsExpression(), "order_count").
+    From("users").All(&results)
 ```
 
 ### 3. ACCEPTABLE: Named Placeholders

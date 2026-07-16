@@ -776,6 +776,16 @@ db.Select("user_id", "order_count", "total_spent").
     All(&topCustomers)
 ```
 
+**Scalar Subqueries in SELECT** (type-safe, no raw SQL):
+```go
+// Count orders per user — correlated subquery
+sub := db.Select("COUNT(*)").From("orders").
+    Where(relica.EqCol("orders.user_id", "users.id"))
+db.Select("id", "name").
+    SelectSub(sub.AsExpression(), "order_count").
+    From("users").All(&users)
+```
+
 See [Subquery Guide](docs/SUBQUERY_GUIDE.md) for complete examples and performance tips.
 
 #### Set Operations
