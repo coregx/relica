@@ -224,10 +224,104 @@ func TestIssue34_CaseWhenOrderBy(t *testing.T) {
 		Build()
 
 	require.NotNil(t, q)
-	// Must NOT contain quoted "CASE"
 	assert.NotContains(t, q.sql, `"CASE"`)
-	// Must contain raw CASE expression
 	assert.Contains(t, q.sql, "CASE WHEN t.due_date < CURRENT_DATE THEN 0 ELSE 1 END")
-	// Regular OrderBy still quoted
 	assert.Contains(t, q.sql, `"t"."due_date" ASC`)
+}
+
+// =============================================================================
+// OrderBySub — type-safe expressions (CaseWhen builder)
+// =============================================================================
+
+func TestOrderBySub_CaseWhen(t *testing.T) {
+	db := mockDB("postgres")
+	qb := &QueryBuilder{db: db}
+
+	q := qb.Select("id", "title").From("tasks t").
+		OrderBySub(CaseWhen().
+			When("t.due_date < CURRENT_DATE", 0).
+			When("t.due_date = CURRENT_DATE", 1).
+			When("t.due_date IS NULL", 3).
+			Else(2)).
+		OrderBy("t.due_date ASC").
+		Build()
+
+	require.NotNil(t, q)
+	// CaseWhen: conditions are raw SQL, THEN results are parameterized
+	assert.Contains(t, q.sql, "CASE WHEN t.due_date < CURRENT_DATE THEN ?")
+	assert.Contains(t, q.sql, "WHEN t.due_date IS NULL THEN ?")
+	assert.Contains(t, q.sql, "ELSE ?")
+	assert.Contains(t, q.sql, `"t"."due_date" ASC`)
+	assert.Contains(t, q.params, 0)
+	assert.Contains(t, q.params, 1)
+	assert.Contains(t, q.params, 2)
+	assert.Contains(t, q.params, 3)
+}
+
+func TestOrderBySub_CaseWhenWithParams_PostgreSQL(t *testing.T) {
+	db := mockDB("postgres")
+	qb := &QueryBuilder{db: db}
+
+	q := qb.Select("id").From("tasks").
+		Where("user_id = ?", 42).
+		OrderBySub(CaseWhen().
+			When("status IN ('DONE','CANCELLED')", 1).
+			Else(0)).
+		Build()
+
+	require.NotNil(t, q)
+	// WHERE param + CaseWhen params
+	assert.Equal(t, 42, q.params[0])
+	assert.Contains(t, q.sql, "ORDER BY CASE")
+}
+
+func TestOrderBySub_CombinedWithOrderBy(t *testing.T) {
+	db := mockDB("postgres")
+	qb := &QueryBuilder{db: db}
+
+	q := qb.Select("id", "title").From("tasks t").
+		OrderBySub(CaseWhen().
+			When("t.status = 'urgent'", 0).
+			Else(1)).
+		OrderBy("t.created_at DESC").
+		Build()
+
+	require.NotNil(t, q)
+	// Regular OrderBy comes first, then Sub expressions
+	assert.Contains(t, q.sql, `"t"."created_at" DESC`)
+	assert.Contains(t, q.sql, "CASE")
+}
+
+func TestOrderBySub_SimpleCase(t *testing.T) {
+	db := mockDB("postgres")
+	qb := &QueryBuilder{db: db}
+
+	// Simple CASE (with column)
+	q := qb.Select("id").From("tasks").
+		OrderBySub(Case("priority").
+			When("high", 0).
+			When("medium", 1).
+			Else(2)).
+		Build()
+
+	require.NotNil(t, q)
+	assert.Contains(t, q.sql, `ORDER BY CASE "priority"`)
+}
+
+// =============================================================================
+// GroupBySub
+// =============================================================================
+
+func TestGroupBySub_CaseWhen(t *testing.T) {
+	db := mockDB("postgres")
+	qb := &QueryBuilder{db: db}
+
+	q := qb.Select("COUNT(*)").From("tasks").
+		GroupBySub(CaseWhen().
+			When("priority = 'high'", "critical").
+			Else("normal")).
+		Build()
+
+	require.NotNil(t, q)
+	assert.Contains(t, q.sql, "GROUP BY CASE")
 }

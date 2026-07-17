@@ -1800,6 +1800,23 @@ func (sq *SelectQuery) OrderByExpr(expr string, args ...interface{}) *SelectQuer
 	return sq
 }
 
+// OrderBySub adds a type-safe expression to the ORDER BY clause.
+// Use with CaseWhen() or any Expression builder instead of raw SQL strings.
+//
+// Example:
+//
+//	db.Select("id", "title").From("tasks t").
+//	    OrderBySub(relica.CaseWhen().
+//	        When("t.due_date < CURRENT_DATE", 0).
+//	        When("t.due_date IS NULL", 3).
+//	        Else(1)).
+//	    OrderBy("t.due_date ASC").
+//	    All(&rows)
+func (sq *SelectQuery) OrderBySub(exp Expression) *SelectQuery {
+	sq.sq.OrderBySub(exp)
+	return sq
+}
+
 // Limit sets the LIMIT clause.
 //
 // Example:
@@ -1841,6 +1858,12 @@ func (sq *SelectQuery) GroupBy(columns ...string) *SelectQuery {
 //	GroupByExpr("EXTRACT(YEAR FROM order_date)")
 func (sq *SelectQuery) GroupByExpr(expr string, args ...interface{}) *SelectQuery {
 	sq.sq.GroupByExpr(expr, args...)
+	return sq
+}
+
+// GroupBySub adds a type-safe expression to the GROUP BY clause.
+func (sq *SelectQuery) GroupBySub(exp Expression) *SelectQuery {
+	sq.sq.GroupBySub(exp)
 	return sq
 }
 

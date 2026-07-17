@@ -146,15 +146,17 @@ type SelectQuery struct {
 		condition string
 		args      []interface{}
 	} // HAVING clauses (WHERE for aggregates)
-	orderBy      []string        // ORDER BY clauses: ["age DESC", "name ASC", "created_at"]
-	orderByExprs []RawExp        // Raw ORDER BY expressions (CASE WHEN, functions with params)
-	limitValue   *int64          // LIMIT value (nil = not set)
-	offsetValue  *int64          // OFFSET value (nil = not set)
-	unions       []unionInfo     // Set operations: UNION, INTERSECT, EXCEPT
-	ctes         []cteInfo       // Common Table Expressions (CTEs)
-	distinct     bool            // SELECT DISTINCT flag
-	ctx          context.Context // context for this specific query
-	buildErr     error           // stored programming error (replaces panic in fluent chain)
+	orderBy         []string        // ORDER BY clauses: ["age DESC", "name ASC", "created_at"]
+	orderByExprs    []RawExp        // Raw ORDER BY expressions (CASE WHEN, functions with params)
+	subOrderByExprs []Expression    // Type-safe ORDER BY expressions (CaseWhen, etc.)
+	subGroupByExprs []Expression    // Type-safe GROUP BY expressions
+	limitValue      *int64          // LIMIT value (nil = not set)
+	offsetValue     *int64          // OFFSET value (nil = not set)
+	unions          []unionInfo     // Set operations: UNION, INTERSECT, EXCEPT
+	ctes            []cteInfo       // Common Table Expressions (CTEs)
+	distinct        bool            // SELECT DISTINCT flag
+	ctx             context.Context // context for this specific query
+	buildErr        error           // stored programming error (replaces panic in fluent chain)
 }
 
 // WithContext sets the context for this SELECT query.
@@ -472,6 +474,20 @@ func (sq *SelectQuery) OrderByExpr(expr string, args ...interface{}) *SelectQuer
 	return sq
 }
 
+// OrderBySub adds a type-safe expression to the ORDER BY clause.
+// Use with CaseWhen() or any Expression builder for complex ordering without raw SQL.
+//
+// Example:
+//
+//	OrderBySub(relica.CaseWhen().
+//	    When("t.due_date < CURRENT_DATE", 0).
+//	    When("t.due_date IS NULL", 3).
+//	    Else(1))
+func (sq *SelectQuery) OrderBySub(exp Expression) *SelectQuery {
+	sq.subOrderByExprs = append(sq.subOrderByExprs, exp)
+	return sq
+}
+
 // Limit sets the LIMIT clause for the query.
 // Limits the number of rows returned by the query.
 //
@@ -776,8 +792,10 @@ func (sq *SelectQuery) buildJoins(dialect dialects.Dialect, params *[]interface{
 // buildOrderBy constructs the ORDER BY clause from the orderBy slice.
 // Returns empty string if no ORDER BY is specified.
 // Parses column direction (ASC/DESC) and quotes column names.
+//
+//nolint:cyclop // Three sources (columns, raw exprs, sub exprs) each need separate handling.
 func (sq *SelectQuery) buildOrderBy(dialect dialects.Dialect) string {
-	if len(sq.orderBy) == 0 && len(sq.orderByExprs) == 0 {
+	if len(sq.orderBy) == 0 && len(sq.orderByExprs) == 0 && len(sq.subOrderByExprs) == 0 {
 		return ""
 	}
 
@@ -806,6 +824,12 @@ func (sq *SelectQuery) buildOrderBy(dialect dialects.Dialect) string {
 	// Append raw ORDER BY expressions (CASE WHEN, complex functions)
 	for _, expr := range sq.orderByExprs {
 		parts = append(parts, expr.SQL)
+	}
+
+	// Append type-safe ORDER BY expressions (CaseWhen, etc.)
+	for _, exp := range sq.subOrderByExprs {
+		expSQL, _ := exp.Build(dialect)
+		parts = append(parts, expSQL)
 	}
 
 	if len(parts) == 0 {
@@ -915,11 +939,17 @@ func (sq *SelectQuery) GroupByExpr(expr string, args ...interface{}) *SelectQuer
 	return sq
 }
 
+// GroupBySub adds a type-safe expression to the GROUP BY clause.
+func (sq *SelectQuery) GroupBySub(exp Expression) *SelectQuery {
+	sq.subGroupByExprs = append(sq.subGroupByExprs, exp)
+	return sq
+}
+
 // buildGroupBy constructs the GROUP BY clause from the groupBy slice.
 // Returns empty string if no GROUP BY is specified.
 // Quotes column names using dialect.
 func (sq *SelectQuery) buildGroupBy(dialect dialects.Dialect) string {
-	if len(sq.groupBy) == 0 && len(sq.groupByExprs) == 0 {
+	if len(sq.groupBy) == 0 && len(sq.groupByExprs) == 0 && len(sq.subGroupByExprs) == 0 {
 		return ""
 	}
 
@@ -931,6 +961,12 @@ func (sq *SelectQuery) buildGroupBy(dialect dialects.Dialect) string {
 	// Append raw GROUP BY expressions (DATE, EXTRACT, CASE)
 	for _, expr := range sq.groupByExprs {
 		parts = append(parts, expr.SQL)
+	}
+
+	// Append type-safe GROUP BY expressions
+	for _, exp := range sq.subGroupByExprs {
+		expSQL, _ := exp.Build(dialect)
+		parts = append(parts, expSQL)
 	}
 
 	return " GROUP BY " + strings.Join(parts, ", ")
@@ -1162,6 +1198,10 @@ func (sq *SelectQuery) buildSQL(dialect dialects.Dialect) (string, []interface{}
 	for _, expr := range sq.groupByExprs {
 		allParams = append(allParams, expr.Args...)
 	}
+	for _, exp := range sq.subGroupByExprs {
+		_, subArgs := exp.Build(dialect)
+		allParams = append(allParams, subArgs...)
+	}
 
 	// 11. Build ORDER BY clause
 	orderByClause := sq.buildOrderBy(dialect)
@@ -1169,6 +1209,10 @@ func (sq *SelectQuery) buildSQL(dialect dialects.Dialect) (string, []interface{}
 	// 11a. Collect ORDER BY expression params
 	for _, expr := range sq.orderByExprs {
 		allParams = append(allParams, expr.Args...)
+	}
+	for _, exp := range sq.subOrderByExprs {
+		_, subArgs := exp.Build(dialect)
+		allParams = append(allParams, subArgs...)
 	}
 
 	// 12. Build LIMIT/OFFSET clause
