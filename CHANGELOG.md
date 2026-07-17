@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.14.1] - 2026-07-17
+
+### Added
+
+- **`OrderBySub(exp Expression)`** — type-safe expression in ORDER BY using CaseWhen() and other builders instead of raw SQL
+- **`GroupBySub(exp Expression)`** — type-safe expression in GROUP BY
+
+### Example
+
+```go
+// Instead of raw SQL:
+OrderByExpr("CASE WHEN t.due_date < CURRENT_DATE THEN 0 WHEN t.due_date IS NULL THEN 3 ELSE 1 END")
+
+// Type-safe builder:
+OrderBySub(relica.CaseWhen().
+    When("t.due_date < CURRENT_DATE", 0).
+    When("t.due_date IS NULL", 3).
+    Else(1))
+```
+
+---
+
 ## [0.14.0] - 2026-07-17
 
 ### Added
