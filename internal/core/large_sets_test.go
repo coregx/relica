@@ -107,8 +107,8 @@ func TestRecursiveCTE_ManyLevels(t *testing.T) {
 	// Verify UNION ALL (recursive CTEs must use UNION ALL)
 	assert.Contains(t, query.sql, "UNION ALL")
 
-	// Verify anchor query (1 as level)
-	assert.Contains(t, query.sql, "1 as level")
+	// Verify anchor query (1 AS "level" — now properly quoted)
+	assert.Contains(t, query.sql, `AS "level"`)
 
 	// Verify recursive query structure
 	assert.Contains(t, query.sql, "level + 1")

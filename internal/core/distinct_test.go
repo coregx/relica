@@ -385,6 +385,6 @@ func TestSelectQuery_Distinct_WithAlias(t *testing.T) {
 	q := query.Build()
 	require.NotNil(t, q)
 
-	assert.Contains(t, q.sql, "SELECT DISTINCT status as order_status")
+	assert.Contains(t, q.sql, `SELECT DISTINCT "status" AS "order_status"`)
 	assert.Contains(t, q.sql, `FROM "orders"`)
 }

@@ -23,7 +23,11 @@ const (
 
 // quoteColumn quotes a dotted identifier, splitting each part separately.
 // "col" → "col", "t.col" → "t"."col", "schema.t.col" → "schema"."t"."col"
+// Function calls like COUNT(*), MAX(price) are returned as-is.
 func quoteColumn(col string, dialect dialects.Dialect) string {
+	if strings.Contains(col, "(") {
+		return col
+	}
 	if !strings.Contains(col, ".") {
 		return dialect.QuoteIdentifier(col)
 	}

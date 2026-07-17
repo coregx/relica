@@ -171,6 +171,7 @@ func TestSelectQuery_Limit(t *testing.T) {
 }
 
 // TestSelectQuery_Offset tests OFFSET clause
+// When OFFSET is set without LIMIT, a maximum LIMIT is emitted for MySQL compatibility.
 func TestSelectQuery_Offset(t *testing.T) {
 	db := mockDB("postgres")
 	qb := &QueryBuilder{db: db}
@@ -183,7 +184,9 @@ func TestSelectQuery_Offset(t *testing.T) {
 	require.NotNil(t, q)
 
 	assert.Contains(t, q.sql, ` OFFSET 200`)
-	assert.NotContains(t, q.sql, "LIMIT")
+	// MySQL requires LIMIT before OFFSET; a max-value sentinel is emitted when
+	// no explicit LIMIT is set, ensuring portability across all supported dialects.
+	assert.Contains(t, q.sql, "LIMIT 9223372036854775807")
 }
 
 // TestSelectQuery_Limit_And_Offset tests LIMIT and OFFSET together

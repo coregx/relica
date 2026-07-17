@@ -1628,6 +1628,23 @@ func (sq *SelectQuery) SelectExpr(expr string, args ...interface{}) *SelectQuery
 	return sq
 }
 
+// AndSelect appends additional columns to the SELECT clause.
+// Useful for conditional column building where columns are added based on runtime conditions.
+//
+// Example:
+//
+//	q := db.Select("id", "name").From("users")
+//	if includeEmail {
+//	    q = q.AndSelect("email")
+//	}
+//	if includePhone {
+//	    q = q.AndSelect("phone")
+//	}
+func (sq *SelectQuery) AndSelect(cols ...string) *SelectQuery {
+	sq.sq.AndSelect(cols...)
+	return sq
+}
+
 // SelectSub adds a type-safe subquery or computed expression to the SELECT clause with a quoted alias.
 // The expression is built with the correct dialect so identifiers are properly quoted.
 // Prefer SelectSub over SelectExpr when you have an Expression (e.g. a correlated subquery).
