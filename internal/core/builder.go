@@ -140,12 +140,14 @@ type SelectQuery struct {
 	joins         []JoinInfo
 	where         []string
 	params        []interface{}
-	groupBy       []string // GROUP BY columns: ["user_id", "status"]
+	groupBy       []string  // GROUP BY columns: ["user_id", "status"]
+	groupByExprs  []RawExp  // Raw GROUP BY expressions (EXTRACT, DATE, CASE)
 	havingClauses []struct {
 		condition string
 		args      []interface{}
 	} // HAVING clauses (WHERE for aggregates)
-	orderBy     []string        // ORDER BY clauses: ["age DESC", "name ASC", "created_at"]
+	orderBy      []string  // ORDER BY clauses: ["age DESC", "name ASC", "created_at"]
+	orderByExprs []RawExp  // Raw ORDER BY expressions (CASE WHEN, functions with params)
 	limitValue  *int64          // LIMIT value (nil = not set)
 	offsetValue *int64          // OFFSET value (nil = not set)
 	unions      []unionInfo     // Set operations: UNION, INTERSECT, EXCEPT
@@ -457,6 +459,19 @@ func (sq *SelectQuery) OrderBy(columns ...string) *SelectQuery {
 	return sq
 }
 
+// OrderByExpr adds a raw SQL expression to the ORDER BY clause.
+// The expression is used as-is without quoting — useful for CASE WHEN,
+// complex functions, or any expression that shouldn't be treated as a column name.
+//
+// Example:
+//
+//	OrderByExpr("CASE WHEN status = ? THEN 0 ELSE 1 END", "active")
+//	OrderByExpr("FIELD(id, ?, ?, ?)", 3, 1, 2)
+func (sq *SelectQuery) OrderByExpr(expr string, args ...interface{}) *SelectQuery {
+	sq.orderByExprs = append(sq.orderByExprs, RawExp{SQL: expr, Args: args})
+	return sq
+}
+
 // Limit sets the LIMIT clause for the query.
 // Limits the number of rows returned by the query.
 //
@@ -762,11 +777,11 @@ func (sq *SelectQuery) buildJoins(dialect dialects.Dialect, params *[]interface{
 // Returns empty string if no ORDER BY is specified.
 // Parses column direction (ASC/DESC) and quotes column names.
 func (sq *SelectQuery) buildOrderBy(dialect dialects.Dialect) string {
-	if len(sq.orderBy) == 0 {
+	if len(sq.orderBy) == 0 && len(sq.orderByExprs) == 0 {
 		return ""
 	}
 
-	parts := make([]string, 0, len(sq.orderBy))
+	parts := make([]string, 0, len(sq.orderBy)+len(sq.orderByExprs))
 	for _, col := range sq.orderBy {
 		// Parse "column [ASC|DESC]"
 		fields := strings.Fields(col)
@@ -786,6 +801,11 @@ func (sq *SelectQuery) buildOrderBy(dialect dialects.Dialect) string {
 		}
 
 		parts = append(parts, quoted)
+	}
+
+	// Append raw ORDER BY expressions (CASE WHEN, complex functions)
+	for _, expr := range sq.orderByExprs {
+		parts = append(parts, expr.SQL)
 	}
 
 	if len(parts) == 0 {
@@ -883,17 +903,34 @@ func (sq *SelectQuery) GroupBy(columns ...string) *SelectQuery {
 	return sq
 }
 
+// GroupByExpr adds a raw SQL expression to the GROUP BY clause.
+// The expression is used as-is without quoting.
+//
+// Example:
+//
+//	GroupByExpr("DATE(created_at)")
+//	GroupByExpr("EXTRACT(YEAR FROM order_date)")
+func (sq *SelectQuery) GroupByExpr(expr string, args ...interface{}) *SelectQuery {
+	sq.groupByExprs = append(sq.groupByExprs, RawExp{SQL: expr, Args: args})
+	return sq
+}
+
 // buildGroupBy constructs the GROUP BY clause from the groupBy slice.
 // Returns empty string if no GROUP BY is specified.
 // Quotes column names using dialect.
 func (sq *SelectQuery) buildGroupBy(dialect dialects.Dialect) string {
-	if len(sq.groupBy) == 0 {
+	if len(sq.groupBy) == 0 && len(sq.groupByExprs) == 0 {
 		return ""
 	}
 
-	parts := make([]string, 0, len(sq.groupBy))
+	parts := make([]string, 0, len(sq.groupBy)+len(sq.groupByExprs))
 	for _, col := range sq.groupBy {
 		parts = append(parts, sq.quoteColumnName(col, dialect))
+	}
+
+	// Append raw GROUP BY expressions (DATE, EXTRACT, CASE)
+	for _, expr := range sq.groupByExprs {
+		parts = append(parts, expr.SQL)
 	}
 
 	return " GROUP BY " + strings.Join(parts, ", ")
@@ -1061,7 +1098,9 @@ func (sq *SelectQuery) buildWithClause(dialect dialects.Dialect) (string, []inte
 
 // buildSQL constructs the SQL string and parameters for SelectQuery.
 // This is the core implementation shared by both Build() and the Expression interface.
-// Parameter ordering: CTEs → SelectExprs → SubExprs → FROM subquery → JOINs → WHERE → HAVING
+// Parameter ordering: CTEs → SelectExprs → SubExprs → FROM subquery → JOINs → WHERE → HAVING → GroupByExprs → OrderByExprs
+//
+//nolint:cyclop // Central query assembly requires sequential clause building; splitting would reduce clarity.
 func (sq *SelectQuery) buildSQL(dialect dialects.Dialect) (string, []interface{}) {
 	// Collect all parameters in correct order
 	var allParams []interface{}
@@ -1119,8 +1158,18 @@ func (sq *SelectQuery) buildSQL(dialect dialects.Dialect) (string, []interface{}
 	// Renumber HAVING placeholders if needed (PostgreSQL)
 	havingClause = sq.renumberHavingPlaceholders(havingClause, len(allParams), dialect)
 
+	// 10a. Collect GROUP BY expression params
+	for _, expr := range sq.groupByExprs {
+		allParams = append(allParams, expr.Args...)
+	}
+
 	// 11. Build ORDER BY clause
 	orderByClause := sq.buildOrderBy(dialect)
+
+	// 11a. Collect ORDER BY expression params
+	for _, expr := range sq.orderByExprs {
+		allParams = append(allParams, expr.Args...)
+	}
 
 	// 12. Build LIMIT/OFFSET clause
 	limitOffsetClause := sq.buildLimitOffset()

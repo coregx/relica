@@ -1787,6 +1787,19 @@ func (sq *SelectQuery) OrderBy(columns ...string) *SelectQuery {
 	return sq
 }
 
+// OrderByExpr adds a raw SQL expression to the ORDER BY clause.
+// The expression is used as-is without quoting — useful for CASE WHEN,
+// complex functions, or any expression that shouldn't be treated as a column name.
+//
+// Example:
+//
+//	OrderByExpr("CASE WHEN status = ? THEN 0 ELSE 1 END", "active")
+//	OrderByExpr("FIELD(id, ?, ?, ?)", 3, 1, 2)
+func (sq *SelectQuery) OrderByExpr(expr string, args ...interface{}) *SelectQuery {
+	sq.sq.OrderByExpr(expr, args...)
+	return sq
+}
+
 // Limit sets the LIMIT clause.
 //
 // Example:
@@ -1816,6 +1829,18 @@ func (sq *SelectQuery) Offset(offset int64) *SelectQuery {
 //	GroupBy("user_id", "status")
 func (sq *SelectQuery) GroupBy(columns ...string) *SelectQuery {
 	sq.sq.GroupBy(columns...)
+	return sq
+}
+
+// GroupByExpr adds a raw SQL expression to the GROUP BY clause.
+// The expression is used as-is without quoting.
+//
+// Example:
+//
+//	GroupByExpr("DATE(created_at)")
+//	GroupByExpr("EXTRACT(YEAR FROM order_date)")
+func (sq *SelectQuery) GroupByExpr(expr string, args ...interface{}) *SelectQuery {
+	sq.sq.GroupByExpr(expr, args...)
 	return sq
 }
 
