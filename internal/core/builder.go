@@ -140,21 +140,21 @@ type SelectQuery struct {
 	joins         []JoinInfo
 	where         []string
 	params        []interface{}
-	groupBy       []string  // GROUP BY columns: ["user_id", "status"]
-	groupByExprs  []RawExp  // Raw GROUP BY expressions (EXTRACT, DATE, CASE)
+	groupBy       []string // GROUP BY columns: ["user_id", "status"]
+	groupByExprs  []RawExp // Raw GROUP BY expressions (EXTRACT, DATE, CASE)
 	havingClauses []struct {
 		condition string
 		args      []interface{}
 	} // HAVING clauses (WHERE for aggregates)
-	orderBy      []string  // ORDER BY clauses: ["age DESC", "name ASC", "created_at"]
-	orderByExprs []RawExp  // Raw ORDER BY expressions (CASE WHEN, functions with params)
-	limitValue  *int64          // LIMIT value (nil = not set)
-	offsetValue *int64          // OFFSET value (nil = not set)
-	unions      []unionInfo     // Set operations: UNION, INTERSECT, EXCEPT
-	ctes        []cteInfo       // Common Table Expressions (CTEs)
-	distinct    bool            // SELECT DISTINCT flag
-	ctx         context.Context // context for this specific query
-	buildErr    error           // stored programming error (replaces panic in fluent chain)
+	orderBy      []string        // ORDER BY clauses: ["age DESC", "name ASC", "created_at"]
+	orderByExprs []RawExp        // Raw ORDER BY expressions (CASE WHEN, functions with params)
+	limitValue   *int64          // LIMIT value (nil = not set)
+	offsetValue  *int64          // OFFSET value (nil = not set)
+	unions       []unionInfo     // Set operations: UNION, INTERSECT, EXCEPT
+	ctes         []cteInfo       // Common Table Expressions (CTEs)
+	distinct     bool            // SELECT DISTINCT flag
+	ctx          context.Context // context for this specific query
+	buildErr     error           // stored programming error (replaces panic in fluent chain)
 }
 
 // WithContext sets the context for this SELECT query.
