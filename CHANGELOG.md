@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.14.0] - 2026-07-17
+
+### Added
+
+- **`OrderByExpr(expr string, args...)`** — raw SQL expressions in ORDER BY without quoting. Supports parameterized CASE WHEN, COALESCE, and complex ordering expressions ([#34](https://github.com/coregx/relica/issues/34))
+- **`GroupByExpr(expr string, args...)`** — raw SQL expressions in GROUP BY. Supports DATE(), EXTRACT(), and computed grouping expressions
+
+### Example
+
+```go
+// Before: OrderBy("CASE WHEN ...") produced "CASE" (quoted) — syntax error
+// After: OrderByExpr passes through without quoting
+db.Select("id", "title").
+    From("tasks t").
+    OrderByExpr("CASE WHEN t.due_date < CURRENT_DATE THEN 0 ELSE 1 END").
+    OrderBy("t.due_date ASC").
+    All(&rows)
+
+// GroupByExpr for date grouping
+db.Select("DATE(created_at) AS day", "COUNT(*)").
+    From("orders").
+    GroupByExpr("DATE(created_at)").
+    All(&stats)
+```
+
+---
+
 ## [0.13.1] - 2026-07-17
 
 ### Fixed (ozzo-dbx parity)
