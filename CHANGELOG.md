@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.13.1] - 2026-07-17
+
+### Fixed (ozzo-dbx parity)
+
+- **SELECT alias quoting** — `Select("u.name AS display")` now properly quotes both column and alias: `"u"."name" AS "display"` (was passed through raw)
+- **Function-call guard in quoteColumn** — `COUNT(*)`, `MAX(price)`, `SUM(total)` are no longer wrapped in quotes. Fixes invalid SQL in ORDER BY and GROUP BY with aggregate functions
+- **OFFSET without LIMIT** — auto-emits `LIMIT 9223372036854775807` for MySQL compatibility (MySQL requires LIMIT before OFFSET)
+
+### Added
+
+- **`AndSelect(cols...)`** — append columns to existing SELECT for conditional query building, matching ozzo-dbx's `AndSelect` pattern
+
+---
+
 ## [0.13.0] - 2026-07-05
 
 ### Added
