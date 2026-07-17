@@ -93,7 +93,7 @@ func TestCTE_Nested_3Levels(t *testing.T) {
 	// Verify each CTE query is present
 	// Note: Each CTE buildSQL() independently, placeholders may be reused across CTEs
 	assert.Contains(t, query.sql, `SELECT "id", "value" FROM "base_table" WHERE status = $1`)
-	assert.Contains(t, query.sql, `value * 2 as doubled`)
+	assert.Contains(t, query.sql, `"value * 2" AS "doubled"`)
 	assert.Contains(t, query.sql, `FROM "cte1"`)
 	assert.Contains(t, query.sql, `SELECT "id", SUM(doubled) as total FROM "cte2" GROUP BY "id"`)
 

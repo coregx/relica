@@ -4,12 +4,17 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/coregx/relica/internal/analyzer"
 	"github.com/coregx/relica/internal/dialects"
 )
+
+// selectAliasRegex matches explicit "AS alias" in SELECT columns.
+// Only matches explicit AS keyword to avoid false positives with expressions like "level + 1".
+var selectAliasRegex = regexp.MustCompile(`(?i)\s+AS\s+([\w\-.]+)$`)
 
 // resolveNamedParams checks if the SQL condition contains named placeholders {:name}
 // and resolves them to positional ? placeholders using the provided Params map.
@@ -195,6 +200,13 @@ func (sq *SelectQuery) FromSelect(subquery *SelectQuery, alias string) *SelectQu
 	}
 	// Clear table for safety (subquery takes precedence)
 	sq.table = ""
+	return sq
+}
+
+// AndSelect appends additional columns to the SELECT clause.
+// Useful for conditional column building where columns are added based on runtime conditions.
+func (sq *SelectQuery) AndSelect(cols ...string) *SelectQuery {
+	sq.columns = append(sq.columns, cols...)
 	return sq
 }
 
@@ -796,6 +808,9 @@ func (sq *SelectQuery) buildLimitOffset() string {
 
 	if sq.limitValue != nil {
 		result += fmt.Sprintf(" LIMIT %d", *sq.limitValue)
+	} else if sq.offsetValue != nil {
+		// MySQL requires LIMIT before OFFSET; emit max value for compatibility
+		result += " LIMIT 9223372036854775807"
 	}
 
 	if sq.offsetValue != nil {
@@ -813,9 +828,13 @@ func (sq *SelectQuery) formatSelectColumn(col string, dialect dialects.Dialect) 
 		return "*"
 	case strings.Contains(col, "("):
 		return col
-	case strings.Contains(col, " as ") || strings.Contains(col, " AS "):
-		return col
 	default:
+		matches := selectAliasRegex.FindStringSubmatch(col)
+		if len(matches) > 0 {
+			colPart := col[:len(col)-len(matches[0])]
+			alias := matches[1]
+			return quoteColumn(colPart, dialect) + " AS " + dialect.QuoteIdentifier(alias)
+		}
 		return sq.quoteColumnName(col, dialect)
 	}
 }

@@ -286,7 +286,7 @@ func TestWithRecursive_UnionAll(t *testing.T) {
 	require.NotNil(t, query)
 
 	assert.Contains(t, query.sql, `WITH RECURSIVE "numbers" AS`)
-	assert.Contains(t, query.sql, `SELECT 1 as n`)
+	assert.Contains(t, query.sql, `SELECT "1" AS "n"`)
 	assert.Contains(t, query.sql, `UNION ALL`)
 	assert.Contains(t, query.sql, `SELECT "n + 1" FROM "numbers" WHERE n < $1`)
 	assert.Len(t, query.params, 1)
