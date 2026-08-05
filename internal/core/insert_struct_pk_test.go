@@ -51,8 +51,8 @@ func TestInsertStruct_SkipsZeroPK(t *testing.T) {
 // TestInsertStruct_KeepsNonZeroPK verifies that non-zero PK is kept.
 func TestInsertStruct_KeepsNonZeroPK(t *testing.T) {
 	type User struct {
-		ID    int64  `db:"id,pk"`
-		Name  string `db:"name"`
+		ID   int64  `db:"id,pk"`
+		Name string `db:"name"`
 	}
 
 	user := User{ID: 42, Name: "Bob"}
