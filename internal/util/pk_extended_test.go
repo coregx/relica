@@ -729,11 +729,11 @@ func TestModelToColumns(t *testing.T) {
 // TestParseDBTag_AutoIncrement covers all formats that include autoincrement.
 func TestParseDBTag_AutoIncrement(t *testing.T) {
 	tests := []struct {
-		name          string
-		tag           string
-		wantCol       string
-		wantIsPK      bool
-		wantAutoInc   bool
+		name        string
+		tag         string
+		wantCol     string
+		wantIsPK    bool
+		wantAutoInc bool
 	}{
 		{
 			name:        "column,pk,autoincrement",
