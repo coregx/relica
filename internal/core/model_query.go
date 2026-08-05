@@ -349,8 +349,9 @@ func (mq *ModelQuery) insertWithReturning(query *Query, pkCol string) error {
 	}
 
 	// Execute query and scan returned ID.
+	// Row() for scalar, not One() which expects struct.
 	var id int64
-	err = query.One(&id)
+	err = query.Row(&id)
 	if err != nil {
 		return err
 	}
@@ -527,12 +528,12 @@ func (mq *ModelQuery) scanReturningID(q *Query, _ string) error {
 		return errors.New("model: scanReturningID does not support composite primary keys")
 	}
 
-	var id int64
-	if err := q.One(&id); err != nil {
+	var pkValue int64
+	if err := q.Row(&pkValue); err != nil {
 		return err
 	}
 
-	return util.SetPrimaryKeyValue(pkInfo.Values[0], id)
+	return util.SetPrimaryKeyValue(pkInfo.Values[0], pkValue)
 }
 
 // UpdateChanged updates only the fields that differ between the current model
