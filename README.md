@@ -16,8 +16,8 @@
 
 - **Zero Production Dependencies** - Uses only Go standard library
 - **High Performance** - LRU statement cache, batch operations (3.3x faster)
-- **Type-Safe** - Reflection-based struct scanning with compile-time checks
-- **Model() API** - ORM-style CRUD with auto-populated IDs, composite PKs (ozzo-dbx compatible)
+- **Type-Safe** - Generic `One[T]`/`All[T]`/`Scalar[T]` + reflection-based struct scanning
+- **Model() API** - ORM-style CRUD with auto-populated IDs (int + UUID via `autoincrement` tag), composite PKs
 - **NullStringMap** - Dynamic scanning without predefined structs
 - **Named Placeholders** - `{:name}` syntax with `Bind(Params{})` for readable queries
 - **Functional Expressions** - CASE, COALESCE, NULLIF, GREATEST, LEAST, CONCAT
@@ -35,7 +35,7 @@
 - **Set Operations** - UNION, UNION ALL, INTERSECT, EXCEPT
 - **Common Table Expressions** - WITH clause, recursive CTEs
 - **Multi-Database** - PostgreSQL, MySQL 8.0+, SQLite 3.25+ support
-- **Well-Tested** - 1500+ test cases, 88%+ coverage
+- **Well-Tested** - 1850+ test cases, ~90% coverage
 - **Clean API** - Fluent builder pattern with context support
 
 > **Latest Release:** See [CHANGELOG.md](CHANGELOG.md) for version history and [GitHub Releases](https://github.com/coregx/relica/releases) for release notes.
