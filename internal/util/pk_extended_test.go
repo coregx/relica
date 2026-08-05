@@ -118,11 +118,15 @@ func TestIsPrimaryKeyZero_AllTypes(t *testing.T) {
 		{"uint16 non-zero", reflect.ValueOf(uint16(5)), false},
 		{"uint32 non-zero", reflect.ValueOf(uint32(5)), false},
 		{"uint64 non-zero", reflect.ValueOf(uint64(5)), false},
-		// string: always false regardless of value
-		{"string empty — not zero", reflect.ValueOf(""), false},
+		// string: empty = zero (for UUID/string PK auto-populate)
+		{"string empty — zero", reflect.ValueOf(""), true},
 		{"string non-empty — not zero", reflect.ValueOf("abc"), false},
-		// bool: always false
-		{"bool false — not zero", reflect.ValueOf(false), false},
+		{"string nil UUID — not zero", reflect.ValueOf("00000000-0000-0000-0000-000000000000"), false},
+		// [16]byte (uuid.UUID): all-zeros = zero
+		{"[16]byte zero — zero", reflect.ValueOf([16]byte{}), true},
+		{"[16]byte non-zero — not zero", reflect.ValueOf([16]byte{1}), false},
+		// bool: false = zero (pathological case, acceptable)
+		{"bool false — zero", reflect.ValueOf(false), true},
 		{"bool true — not zero", reflect.ValueOf(true), false},
 		// invalid value
 		{"invalid reflect.Value", reflect.Value{}, true},

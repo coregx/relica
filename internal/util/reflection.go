@@ -327,33 +327,23 @@ func FindPrimaryKeyField(v reflect.Value) (reflect.StructField, reflect.Value, e
 
 // IsPrimaryKeyZero checks if primary key value is zero (needs auto-population).
 //
-// Handles:
-//   - int types: v.Int() == 0
-//   - uint types: v.Uint() == 0
-//   - pointers: v.IsNil() || (deref and check)
-//
-// Returns false for non-numeric types (string, UUID, etc).
+// Handles all types via reflect.IsZero():
+//   - int/uint: == 0
+//   - string: == ""
+//   - [16]byte (uuid.UUID): all bytes zero
+//   - pointers: nil = zero, otherwise checks pointed value
+//   - structs: all fields zero
 func IsPrimaryKeyZero(v reflect.Value) bool {
-	// Handle invalid values.
 	if !v.IsValid() {
 		return true
 	}
-
-	switch v.Kind() {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return v.Int() == 0
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return v.Uint() == 0
-	case reflect.Pointer:
+	if v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			return true
 		}
-		// Recursively check dereferenced value.
 		return IsPrimaryKeyZero(v.Elem())
-	default:
-		// Non-numeric types (string, UUID, etc) don't auto-populate.
-		return false
 	}
+	return v.IsZero()
 }
 
 // SetPrimaryKeyValue sets primary key value using reflection.
