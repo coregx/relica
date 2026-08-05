@@ -224,6 +224,9 @@ func (mq *ModelQuery) Insert(attrs ...string) error {
 // For PostgreSQL, LastInsertId() is not supported by lib/pq - handled separately.
 //
 // Only works for single PK. Composite PKs do not support auto-populate.
+// Non-numeric PKs (string/UUID) with autoincrement tag are skipped here:
+// MySQL LastInsertId() returns int64 only, so server-generated string PKs
+// (e.g. UUID via DEFAULT gen_random_uuid()) cannot be populated via this path.
 func (mq *ModelQuery) populatePrimaryKey(result sql.Result) error {
 	// 1. Find primary key fields.
 	v := reflect.ValueOf(mq.model)
@@ -248,16 +251,17 @@ func (mq *ModelQuery) populatePrimaryKey(result sql.Result) error {
 		return nil // PK already set - skip.
 	}
 
-	// 3. Check if PK is numeric (auto-increment).
+	// 3. Check if PK is numeric (auto-increment by convention).
+	// Non-numeric PKs with autoincrement tag are not supported via LastInsertId()
+	// since MySQL/SQLite LastInsertId() returns int64 only.
 	if !isPKNumeric(pkValue) {
-		return nil // Non-numeric PK (string, UUID) - skip.
+		return nil // Non-numeric PK (string, UUID) - skip for MySQL/SQLite.
 	}
 
 	// 4. Get LastInsertId from result.
 	id, err := result.LastInsertId()
 	if err != nil {
-		// PostgreSQL lib/pq doesn't support LastInsertId() - return nil for now
-		// (PostgreSQL support will be added in Phase 3 if needed).
+		// PostgreSQL lib/pq doesn't support LastInsertId() - return nil.
 		// Note: SQLite and MySQL should support this.
 		return nil //nolint:nilerr // Intentionally ignore - DB doesn't support LastInsertId (e.g., PostgreSQL).
 	}
@@ -284,7 +288,11 @@ func isPKNumeric(pkValue reflect.Value) bool {
 // needsPostgresReturning checks if we need PostgreSQL RETURNING clause.
 // Returns (needsReturning bool, pkColumnName string).
 //
-// Only returns true for single PK. Composite PKs do not support auto-populate.
+// Returns true for single PK when:
+//   - PK is numeric (auto-increment by convention), OR
+//   - PK is non-numeric (string/UUID) with explicit `autoincrement` tag.
+//
+// Composite PKs do not support auto-populate.
 func (mq *ModelQuery) needsPostgresReturning() (bool, string) {
 	// Check if database is PostgreSQL (check driver name, not dialect).
 	driverName := mq.db.DriverName()
@@ -315,12 +323,18 @@ func (mq *ModelQuery) needsPostgresReturning() (bool, string) {
 		return false, "" // PK already set.
 	}
 
-	// Check if PK is numeric.
-	if !isPKNumeric(pkValue) {
-		return false, "" // Non-numeric PK.
+	// Numeric PKs use RETURNING by convention (auto-increment).
+	if isPKNumeric(pkValue) {
+		return true, pkInfo.Columns[0]
 	}
 
-	return true, pkInfo.Columns[0]
+	// Non-numeric PKs (string, UUID) require explicit autoincrement tag
+	// to opt into server-side ID generation via RETURNING.
+	if pkInfo.AutoIncrement {
+		return true, pkInfo.Columns[0]
+	}
+
+	return false, ""
 }
 
 // insertWithReturning executes INSERT with PostgreSQL RETURNING clause.
@@ -348,16 +362,8 @@ func (mq *ModelQuery) insertWithReturning(query *Query, pkCol string) error {
 		return errors.New("model: insertWithReturning does not support composite primary keys")
 	}
 
-	// Execute query and scan returned ID.
-	// Row() for scalar, not One() which expects struct.
-	var id int64
-	err = query.Row(&id)
-	if err != nil {
-		return err
-	}
-
-	// Set ID back to struct.
-	return util.SetPrimaryKeyValue(pkInfo.Values[0], id)
+	pkField := pkInfo.Values[0]
+	return scanReturningIntoField(query, pkField)
 }
 
 // Update updates the model in the table.
@@ -528,12 +534,43 @@ func (mq *ModelQuery) scanReturningID(q *Query, _ string) error {
 		return errors.New("model: scanReturningID does not support composite primary keys")
 	}
 
-	var pkValue int64
-	if err := q.Row(&pkValue); err != nil {
-		return err
+	return scanReturningIntoField(q, pkInfo.Values[0])
+}
+
+// scanReturningIntoField executes q.Row() and writes the returned value into pkField.
+// Supports int/uint families (via SetPrimaryKeyValue) and string (direct scan).
+func scanReturningIntoField(q *Query, pkField reflect.Value) error {
+	kind := pkField.Kind()
+	if kind == reflect.Pointer {
+		if pkField.IsNil() {
+			pkField.Set(reflect.New(pkField.Type().Elem()))
+		}
+		return scanReturningIntoField(q, pkField.Elem())
 	}
 
-	return util.SetPrimaryKeyValue(pkInfo.Values[0], pkValue)
+	switch kind {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		var v int64
+		if err := q.Row(&v); err != nil {
+			return err
+		}
+		return util.SetPrimaryKeyValue(pkField, v)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		var v int64
+		if err := q.Row(&v); err != nil {
+			return err
+		}
+		return util.SetPrimaryKeyValue(pkField, v)
+	case reflect.String:
+		var v string
+		if err := q.Row(&v); err != nil {
+			return err
+		}
+		pkField.SetString(v)
+		return nil
+	default:
+		return errors.New("model: unsupported PK type for RETURNING: " + kind.String())
+	}
 }
 
 // UpdateChanged updates only the fields that differ between the current model
