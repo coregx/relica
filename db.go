@@ -1409,6 +1409,20 @@ func (qb *QueryBuilder) InsertStruct(table string, data interface{}) *Query {
 	if err != nil {
 		return &Query{q: nil, err: err}
 	}
+
+	// Skip zero PK for auto-increment (same as Model().Insert())
+	v := reflect.ValueOf(data)
+	if v.Kind() == reflect.Pointer {
+		v = v.Elem()
+	}
+	if v.Kind() == reflect.Struct {
+		if pkInfo, err := util.FindPrimaryKeyFields(v); err == nil && pkInfo != nil && pkInfo.IsSingle() {
+			if util.IsPrimaryKeyZero(pkInfo.Values[0]) {
+				delete(dataMap, pkInfo.Columns[0])
+			}
+		}
+	}
+
 	return &Query{q: qb.qb.Insert(table, dataMap)}
 }
 
@@ -1424,6 +1438,8 @@ func (qb *QueryBuilder) InsertStruct(table string, data interface{}) *Query {
 //	    {Name: "Bob", Email: "bob@example.com"},
 //	}
 //	result, err := db.Builder().BatchInsertStruct("users", users).Execute()
+//
+//nolint:cyclop // Slice validation + PK detection + column extraction + row iteration require sequential steps.
 func (qb *QueryBuilder) BatchInsertStruct(table string, data interface{}) *Query {
 	// Validate input is a slice.
 	v := reflect.ValueOf(data)
@@ -1439,6 +1455,19 @@ func (qb *QueryBuilder) BatchInsertStruct(table string, data interface{}) *Query
 	firstMap, err := util.StructToMap(v.Index(0).Interface())
 	if err != nil {
 		return &Query{q: nil, err: err}
+	}
+
+	// Skip zero PK for auto-increment (same as Model().Insert())
+	firstElem := v.Index(0)
+	if firstElem.Kind() == reflect.Pointer {
+		firstElem = firstElem.Elem()
+	}
+	if firstElem.Kind() == reflect.Struct {
+		if pkInfo, err := util.FindPrimaryKeyFields(firstElem); err == nil && pkInfo != nil && pkInfo.IsSingle() {
+			if util.IsPrimaryKeyZero(pkInfo.Values[0]) {
+				delete(firstMap, pkInfo.Columns[0])
+			}
+		}
 	}
 
 	// Extract columns (sorted for consistency).
