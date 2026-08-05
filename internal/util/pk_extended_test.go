@@ -78,7 +78,7 @@ func TestParseDBTag(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			col, isPK := parseDBTag(tt.tag)
+			col, isPK, _ := parseDBTag(tt.tag)
 			assert.Equal(t, tt.wantCol, col)
 			assert.Equal(t, tt.wantIsPK, isPK)
 		})
@@ -118,11 +118,15 @@ func TestIsPrimaryKeyZero_AllTypes(t *testing.T) {
 		{"uint16 non-zero", reflect.ValueOf(uint16(5)), false},
 		{"uint32 non-zero", reflect.ValueOf(uint32(5)), false},
 		{"uint64 non-zero", reflect.ValueOf(uint64(5)), false},
-		// string: always false regardless of value
-		{"string empty — not zero", reflect.ValueOf(""), false},
+		// string: empty = zero (for UUID/string PK auto-populate)
+		{"string empty — zero", reflect.ValueOf(""), true},
 		{"string non-empty — not zero", reflect.ValueOf("abc"), false},
-		// bool: always false
-		{"bool false — not zero", reflect.ValueOf(false), false},
+		{"string nil UUID — not zero", reflect.ValueOf("00000000-0000-0000-0000-000000000000"), false},
+		// [16]byte (uuid.UUID): all-zeros = zero
+		{"[16]byte zero — zero", reflect.ValueOf([16]byte{}), true},
+		{"[16]byte non-zero — not zero", reflect.ValueOf([16]byte{1}), false},
+		// bool: false = zero (pathological case, acceptable)
+		{"bool false — zero", reflect.ValueOf(false), true},
 		{"bool true — not zero", reflect.ValueOf(true), false},
 		// invalid value
 		{"invalid reflect.Value", reflect.Value{}, true},
@@ -718,4 +722,145 @@ func TestModelToColumns(t *testing.T) {
 		cols := ModelToColumns(NoTags{})
 		assert.Empty(t, cols)
 	})
+}
+
+// ─── parseDBTag: autoincrement option ─────────────────────────────────────────
+
+// TestParseDBTag_AutoIncrement covers all formats that include autoincrement.
+func TestParseDBTag_AutoIncrement(t *testing.T) {
+	tests := []struct {
+		name        string
+		tag         string
+		wantCol     string
+		wantIsPK    bool
+		wantAutoInc bool
+	}{
+		{
+			name:        "column,pk,autoincrement",
+			tag:         "id,pk,autoincrement",
+			wantCol:     "id",
+			wantIsPK:    true,
+			wantAutoInc: true,
+		},
+		{
+			name:        "column,autoincrement without pk",
+			tag:         "id,autoincrement",
+			wantCol:     "id",
+			wantIsPK:    false,
+			wantAutoInc: true,
+		},
+		{
+			name:        "plain column — no autoincrement",
+			tag:         "id",
+			wantCol:     "id",
+			wantIsPK:    false,
+			wantAutoInc: false,
+		},
+		{
+			name:        "column,pk without autoincrement",
+			tag:         "id,pk",
+			wantCol:     "id",
+			wantIsPK:    true,
+			wantAutoInc: false,
+		},
+		{
+			name:        "autoincrement with spaces around option",
+			tag:         "uid, pk, autoincrement",
+			wantCol:     "uid",
+			wantIsPK:    true,
+			wantAutoInc: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			col, isPK, isAutoInc := parseDBTag(tt.tag)
+			assert.Equal(t, tt.wantCol, col)
+			assert.Equal(t, tt.wantIsPK, isPK)
+			assert.Equal(t, tt.wantAutoInc, isAutoInc)
+		})
+	}
+}
+
+// ─── FindPrimaryKeyFields: AutoIncrement propagation ─────────────────────────
+
+// TestFindPrimaryKeyFields_AutoIncrement verifies that AutoIncrement is set
+// correctly on PrimaryKeyInfo based on the autoincrement tag option.
+func TestFindPrimaryKeyFields_AutoIncrement(t *testing.T) {
+	t.Run("string PK with autoincrement tag sets AutoIncrement=true", func(t *testing.T) {
+		type WithStringPK struct {
+			ID   string `db:"id,pk,autoincrement"`
+			Name string `db:"name"`
+		}
+		info, err := FindPrimaryKeyFields(reflect.ValueOf(WithStringPK{}))
+		require.NoError(t, err)
+		assert.True(t, info.IsSingle())
+		assert.True(t, info.AutoIncrement)
+		assert.Equal(t, []string{"id"}, info.Columns)
+	})
+
+	t.Run("int PK without autoincrement tag sets AutoIncrement=false", func(t *testing.T) {
+		type WithIntPK struct {
+			ID   int64  `db:"id,pk"`
+			Name string `db:"name"`
+		}
+		info, err := FindPrimaryKeyFields(reflect.ValueOf(WithIntPK{}))
+		require.NoError(t, err)
+		assert.False(t, info.AutoIncrement)
+	})
+
+	t.Run("int PK with autoincrement tag sets AutoIncrement=true", func(t *testing.T) {
+		type WithIntAutoInc struct {
+			ID   int64  `db:"id,pk,autoincrement"`
+			Name string `db:"name"`
+		}
+		info, err := FindPrimaryKeyFields(reflect.ValueOf(WithIntAutoInc{}))
+		require.NoError(t, err)
+		assert.True(t, info.AutoIncrement)
+	})
+
+	t.Run("composite PK with autoincrement tag — AutoIncrement=false (not supported)", func(t *testing.T) {
+		type CPKWithAutoInc struct {
+			A int `db:"a_id,pk,autoincrement"`
+			B int `db:"b_id,pk"`
+		}
+		info, err := FindPrimaryKeyFields(reflect.ValueOf(CPKWithAutoInc{}))
+		require.NoError(t, err)
+		assert.True(t, info.IsComposite())
+		assert.False(t, info.AutoIncrement, "composite PK must not set AutoIncrement")
+	})
+
+	t.Run("legacy db:pk tag without autoincrement — AutoIncrement=false", func(t *testing.T) {
+		type LegacyPK struct {
+			MyID int `db:"pk"`
+			Name string
+		}
+		info, err := FindPrimaryKeyFields(reflect.ValueOf(LegacyPK{}))
+		require.NoError(t, err)
+		assert.False(t, info.AutoIncrement)
+	})
+}
+
+// ─── IsPrimaryKeyZero: string type ────────────────────────────────────────────
+
+// TestIsPrimaryKeyZero_StringType validates string zero/non-zero detection
+// specifically for the UUID/string PK use-case.
+func TestIsPrimaryKeyZero_StringType(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  bool
+	}{
+		{"empty string is zero", "", true},
+		{"non-empty string is not zero", "some-uuid", false},
+		{"whitespace string is not zero", " ", false},
+		{"all-zero UUID string is not zero", "00000000-0000-0000-0000-000000000000", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := IsPrimaryKeyZero(reflect.ValueOf(tt.value))
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }

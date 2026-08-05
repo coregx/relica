@@ -11,9 +11,10 @@ import (
 // PrimaryKeyInfo holds information about primary key fields.
 // Supports both single PK and composite PK (CPK).
 type PrimaryKeyInfo struct {
-	Fields  []reflect.StructField // Struct fields in declaration order
-	Values  []reflect.Value       // Field values in declaration order
-	Columns []string              // DB column names in declaration order
+	Fields        []reflect.StructField // Struct fields in declaration order
+	Values        []reflect.Value       // Field values in declaration order
+	Columns       []string              // DB column names in declaration order
+	AutoIncrement bool                  // True if single PK has autoincrement tag (enables RETURNING for non-numeric PKs)
 }
 
 // IsSingle returns true if this is a single-column primary key.
@@ -29,19 +30,21 @@ func (pk *PrimaryKeyInfo) IsComposite() bool {
 // parseDBTag parses db tag to extract column name and pk flag.
 //
 // Supported formats:
-//   - "pk"           -> column="pk", isPK=true (legacy single PK)
-//   - "column"       -> column="column", isPK=false
-//   - "column,pk"    -> column="column", isPK=true (composite PK)
-//   - "-"            -> column="-", isPK=false (skip field)
-func parseDBTag(tag string) (column string, isPK bool) {
+//   - "pk"                    -> column="pk", isPK=true (legacy single PK)
+//   - "column"                -> column="column", isPK=false
+//   - "column,pk"             -> column="column", isPK=true (composite PK)
+//   - "column,pk,autoincrement" -> column="column", isPK=true, isAutoIncrement=true
+//   - "-"                     -> column="-", isPK=false (skip field)
+func parseDBTag(tag string) (column string, isPK, isAutoIncrement bool) {
 	parts := strings.Split(tag, ",")
 	column = strings.TrimSpace(parts[0])
 
-	// Check for pk in additional parts
 	for _, part := range parts[1:] {
-		if strings.TrimSpace(part) == "pk" {
+		switch strings.TrimSpace(part) {
+		case "pk":
 			isPK = true
-			break
+		case "autoincrement":
+			isAutoIncrement = true
 		}
 	}
 
@@ -50,7 +53,7 @@ func parseDBTag(tag string) (column string, isPK bool) {
 		isPK = true
 	}
 
-	return column, isPK
+	return column, isPK, isAutoIncrement
 }
 
 // FindPrimaryKeyFields finds all primary key fields in a struct.
@@ -81,10 +84,11 @@ func FindPrimaryKeyFields(v reflect.Value) (*PrimaryKeyInfo, error) {
 
 	// Collect all PK fields with their indices for ordering
 	type pkField struct {
-		index  int
-		field  reflect.StructField
-		value  reflect.Value
-		column string
+		index         int
+		field         reflect.StructField
+		value         reflect.Value
+		column        string
+		autoIncrement bool
 	}
 	var pkFields []pkField
 	var legacyPKField *pkField // db:"pk" (legacy single PK)
@@ -113,7 +117,7 @@ func FindPrimaryKeyFields(v reflect.Value) (*PrimaryKeyInfo, error) {
 			continue
 		}
 
-		column, isPK := parseDBTag(tag)
+		column, isPK, isAutoInc := parseDBTag(tag)
 
 		// Skip db:"-" fields
 		if column == "-" {
@@ -122,10 +126,11 @@ func FindPrimaryKeyFields(v reflect.Value) (*PrimaryKeyInfo, error) {
 
 		if isPK {
 			pf := pkField{
-				index:  i,
-				field:  field,
-				value:  v.Field(i),
-				column: column,
+				index:         i,
+				field:         field,
+				value:         v.Field(i),
+				column:        column,
+				autoIncrement: isAutoInc,
 			}
 
 			// Legacy db:"pk" is special - column name is "pk"
@@ -164,6 +169,10 @@ func FindPrimaryKeyFields(v reflect.Value) (*PrimaryKeyInfo, error) {
 			info.Values[i] = pkFields[i].value
 			info.Columns[i] = pkFields[i].column
 		}
+		// AutoIncrement applies to single PK only.
+		if len(pkFields) == 1 {
+			info.AutoIncrement = pkFields[0].autoIncrement
+		}
 		return info, nil
 	}
 
@@ -172,9 +181,10 @@ func FindPrimaryKeyFields(v reflect.Value) (*PrimaryKeyInfo, error) {
 		// Column name defaults to field name lowercased
 		column := strings.ToLower(legacyPKField.field.Name)
 		return &PrimaryKeyInfo{
-			Fields:  []reflect.StructField{legacyPKField.field},
-			Values:  []reflect.Value{legacyPKField.value},
-			Columns: []string{column},
+			Fields:        []reflect.StructField{legacyPKField.field},
+			Values:        []reflect.Value{legacyPKField.value},
+			Columns:       []string{column},
+			AutoIncrement: legacyPKField.autoIncrement,
 		}, nil
 	}
 
@@ -183,7 +193,7 @@ func FindPrimaryKeyFields(v reflect.Value) (*PrimaryKeyInfo, error) {
 		field := t.Field(idFieldIndex)
 		column := "id"
 		if tag, ok := field.Tag.Lookup("db"); ok && tag != "" && tag != "-" {
-			col, _ := parseDBTag(tag)
+			col, _, _ := parseDBTag(tag)
 			if col != "-" {
 				column = col
 			}
@@ -200,7 +210,7 @@ func FindPrimaryKeyFields(v reflect.Value) (*PrimaryKeyInfo, error) {
 		field := t.Field(idcaseFieldIndex)
 		column := "id"
 		if tag, ok := field.Tag.Lookup("db"); ok && tag != "" && tag != "-" {
-			col, _ := parseDBTag(tag)
+			col, _, _ := parseDBTag(tag)
 			if col != "-" {
 				column = col
 			}
@@ -228,7 +238,7 @@ func ModelToColumns(model interface{}) map[string]string {
 		field := t.Field(i)
 		if tag, ok := field.Tag.Lookup("db"); ok {
 			// Parse db tag to extract only column name
-			column, _ := parseDBTag(tag)
+			column, _, _ := parseDBTag(tag)
 			if column != "-" {
 				columns[field.Name] = column
 			}
@@ -277,7 +287,7 @@ func StructToMap(data interface{}) (map[string]interface{}, error) {
 		dbName := field.Name
 		if tag, ok := field.Tag.Lookup("db"); ok {
 			// Parse db tag: "column" or "column,pk" or "-"
-			column, _ := parseDBTag(tag)
+			column, _, _ := parseDBTag(tag)
 			if column == "-" {
 				continue // Skip db:"-" fields.
 			}
@@ -327,33 +337,23 @@ func FindPrimaryKeyField(v reflect.Value) (reflect.StructField, reflect.Value, e
 
 // IsPrimaryKeyZero checks if primary key value is zero (needs auto-population).
 //
-// Handles:
-//   - int types: v.Int() == 0
-//   - uint types: v.Uint() == 0
-//   - pointers: v.IsNil() || (deref and check)
-//
-// Returns false for non-numeric types (string, UUID, etc).
+// Handles all types via reflect.IsZero():
+//   - int/uint: == 0
+//   - string: == ""
+//   - [16]byte (uuid.UUID): all bytes zero
+//   - pointers: nil = zero, otherwise checks pointed value
+//   - structs: all fields zero
 func IsPrimaryKeyZero(v reflect.Value) bool {
-	// Handle invalid values.
 	if !v.IsValid() {
 		return true
 	}
-
-	switch v.Kind() {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return v.Int() == 0
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return v.Uint() == 0
-	case reflect.Pointer:
+	if v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			return true
 		}
-		// Recursively check dereferenced value.
 		return IsPrimaryKeyZero(v.Elem())
-	default:
-		// Non-numeric types (string, UUID, etc) don't auto-populate.
-		return false
 	}
+	return v.IsZero()
 }
 
 // SetPrimaryKeyValue sets primary key value using reflection.

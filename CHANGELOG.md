@@ -6,6 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.15.0] - 2026-08-05
+
+### Added
+
+- **Generic `One[T]`, `All[T]`, `Scalar[T]`** — Type-safe scan destination via Go generics. Additive API alongside existing `interface{}`-based methods. Follows GORM `gorm.G[T]` and sqlx-v2 `GetG[T]` industry pattern.
+- **`autoincrement` tag for UUID/string PK** — `db:"id,pk,autoincrement"` enables PostgreSQL RETURNING for server-generated non-integer primary keys (e.g., `gen_random_uuid()`)
+- **`scanReturningIntoField`** — shared type-switch helper for int/uint/string PK scanning in RETURNING clause
+
+### Changed
+
+- **`IsPrimaryKeyZero`** — uses `reflect.IsZero()` for all types. Empty string `""` and `[16]byte{}` (nil UUID) now correctly detected as zero PK. Backward compatible for int/uint.
+
+### Example
+
+```go
+// Generic API (new):
+user, err := relica.One[User](db.Select().From("users").Where(relica.Eq("id", 1)))
+users, err := relica.All[User](db.Select().From("users").OrderBy("name"))
+count, err := relica.Scalar[int64](db.Select("COUNT(*)").From("users"))
+
+// UUID PK auto-populate (new):
+type Post struct {
+    ID    string `db:"id,pk,autoincrement"`  // server gen_random_uuid()
+    Title string `db:"title"`
+}
+post := Post{Title: "Hello"}
+db.Model(&post).Insert()
+fmt.Println(post.ID)  // "a1b2c3d4-..." — auto-populated via RETURNING
+```
+
+---
+
 ## [0.14.3] - 2026-07-17
 
 ### Fixed
