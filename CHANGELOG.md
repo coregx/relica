@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.16.1] - 2026-08-07
+
+### Fixed
+
+- **`Tx.Model()` context propagation** — transaction context was not passed to `ModelQuery`, causing `tx.Model(&user).Insert()` to use `context.Background()` instead of the transaction's context with deadline/cancellation
+- **`ModelQuery.WithContext()` immutability** — now returns a new copy (like `SelectQuery.WithContext()`), previously mutated in place causing shared state between `WithContext` calls
+- **`Row()` error consistency** — now returns `ErrNotFound` (matching `One()`) instead of raw `sql.ErrNoRows`. All "no rows" terminal methods now consistently return `ErrNotFound`
+
+---
+
 ## [0.16.0] - 2026-08-07
 
 ### Added

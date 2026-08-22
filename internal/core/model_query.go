@@ -26,11 +26,15 @@ type ModelQuery struct {
 	ctx     context.Context // nil means use background context
 }
 
-// SetContext sets the context for this ModelQuery.
-// Returns the same ModelQuery to allow further configuration.
-func (mq *ModelQuery) SetContext(ctx context.Context) *ModelQuery {
-	mq.ctx = ctx
-	return mq
+// WithContext returns a new ModelQuery with the given context.
+func (mq *ModelQuery) WithContext(ctx context.Context) *ModelQuery {
+	newMQ := *mq
+	newMQ.ctx = ctx
+	newMQ.exclude = make(map[string]bool, len(mq.exclude))
+	for k, v := range mq.exclude {
+		newMQ.exclude[k] = v
+	}
+	return &newMQ
 }
 
 // Model creates a new ModelQuery for the given struct.
@@ -46,7 +50,6 @@ func (db *DB) Model(model interface{}) *ModelQuery {
 
 // Model creates a ModelQuery within transaction context.
 func (tx *Tx) Model(model interface{}) *ModelQuery {
-	// Get the DB from the QueryBuilder stored in Tx.
 	db := tx.builder.db
 	return &ModelQuery{
 		db:      db,
@@ -54,6 +57,7 @@ func (tx *Tx) Model(model interface{}) *ModelQuery {
 		model:   model,
 		table:   inferTableName(model),
 		exclude: make(map[string]bool),
+		ctx:     tx.ctx,
 	}
 }
 

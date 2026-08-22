@@ -393,7 +393,7 @@ func (q *Query) One(dest interface{}) error {
 }
 
 // Row scans a single row into individual variables.
-// Returns sql.ErrNoRows if no rows are found.
+// Returns ErrNotFound if no rows are found.
 //
 // Example:
 //
@@ -466,7 +466,7 @@ func (q *Query) Row(dest ...interface{}) error {
 	if !rows.Next() {
 		err := rows.Err()
 		if err == nil {
-			err = sql.ErrNoRows
+			err = wrapErrNotFound()
 		}
 		elapsed := time.Since(start)
 		if q.db.logger != nil {
