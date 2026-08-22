@@ -149,6 +149,43 @@ func (mq *ModelQuery) Exclude(attrs ...string) *ModelQuery {
 	return mq
 }
 
+// BeforeInserter is implemented by models that need pre-insert logic
+// (timestamps, validation, custom ID generation).
+// Called before autoid generation — if BeforeInsert sets an autoid field, it won't be overwritten.
+type BeforeInserter interface {
+	BeforeInsert() error
+}
+
+// callBeforeInsert calls BeforeInsert() if the model implements BeforeInserter.
+func (mq *ModelQuery) callBeforeInsert() error {
+	if hook, ok := mq.model.(BeforeInserter); ok {
+		return hook.BeforeInsert()
+	}
+	return nil
+}
+
+// populateAutoIDFields generates IDs for autoid-tagged fields that are empty.
+// Must be called before StructToMap so generated values are included in the INSERT.
+func (mq *ModelQuery) populateAutoIDFields() {
+	v := reflect.ValueOf(mq.model)
+	if v.Kind() == reflect.Pointer {
+		v = v.Elem()
+	}
+
+	fields := util.FindAutoIDFields(v)
+	if len(fields) == 0 {
+		return
+	}
+
+	for _, f := range fields {
+		fv := v.Field(f.FieldIndex)
+		if fv.Kind() != reflect.String || fv.String() != "" {
+			continue
+		}
+		fv.SetString(util.GenerateAutoID(f.Prefix, f.Generator))
+	}
+}
+
 // Insert inserts the model into the table.
 // If the primary key is zero (auto-increment), it will be auto-populated after insert.
 //
@@ -158,6 +195,12 @@ func (mq *ModelQuery) Insert(attrs ...string) error {
 	if mq.table == "" {
 		return errors.New("model: table name not specified")
 	}
+
+	if err := mq.callBeforeInsert(); err != nil {
+		return err
+	}
+
+	mq.populateAutoIDFields()
 
 	// Convert struct to map.
 	dataMap, err := util.StructToMap(mq.model)
@@ -441,6 +484,12 @@ func (mq *ModelQuery) Upsert(fields ...string) error {
 	if mq.table == "" {
 		return errors.New("model: table name not specified")
 	}
+
+	if err := mq.callBeforeInsert(); err != nil {
+		return err
+	}
+
+	mq.populateAutoIDFields()
 
 	// Convert struct to map.
 	dataMap, err := util.StructToMap(mq.model)
@@ -770,4 +819,45 @@ func (mq *ModelQuery) Delete() error {
 
 	_, err = deleteQuery.Execute()
 	return err
+}
+
+// FindByPublicID finds a record by its autoid-tagged field value.
+// Validates the prefix if the autoid tag specifies one.
+// Scans the result into the model struct (same as One).
+func (mq *ModelQuery) FindByPublicID(publicID string) error {
+	if mq.table == "" {
+		return errors.New("model: table name not specified")
+	}
+
+	if publicID == "" {
+		return errors.New("model: public ID is empty")
+	}
+
+	v := reflect.ValueOf(mq.model)
+	if v.Kind() == reflect.Pointer {
+		v = v.Elem()
+	}
+
+	fields := util.FindAutoIDFields(v)
+	if len(fields) == 0 {
+		return errors.New("model: no autoid field found")
+	}
+
+	f := fields[0]
+
+	if err := util.ValidateAutoIDPrefix(publicID, f.Prefix); err != nil {
+		return err
+	}
+
+	qb := &QueryBuilder{
+		db:  mq.db,
+		tx:  mq.tx,
+		ctx: mq.ctx,
+	}
+
+	return qb.Select().
+		From(mq.table).
+		Where(Eq(f.Column, publicID)).
+		Limit(1).
+		One(mq.model)
 }

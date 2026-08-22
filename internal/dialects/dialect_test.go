@@ -4,10 +4,8 @@ package dialects
 
 import (
 	"fmt"
+	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // ---------------------------------------------------------------------------
@@ -29,30 +27,44 @@ func TestGetDialect_BuiltinDialects(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := GetDialect(tt.dialectKey)
-			require.NotNil(t, d)
+			if d == nil {
+				t.Fatal("expected non-nil")
+			}
 		})
 	}
 }
 
 func TestGetDialect_UnknownPanics(t *testing.T) {
-	assert.Panics(t, func() {
-		GetDialect("unknown_db")
-	})
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic for unknown dialect")
+		}
+	}()
+	GetDialect("unknown_db")
 }
 
 func TestGetDialect_EmptyNamePanics(t *testing.T) {
-	assert.Panics(t, func() {
-		GetDialect("")
-	})
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic for empty dialect name")
+		}
+	}()
+	GetDialect("")
 }
 
 func TestRegisterDialect_CustomDialect(t *testing.T) {
 	// Register a custom stub dialect and verify it is retrievable.
 	RegisterDialect("stub_custom", &stubDialect{quote: "[", unquote: "]", ph: "@@"})
 	d := GetDialect("stub_custom")
-	require.NotNil(t, d)
-	assert.Equal(t, "[users]", d.QuoteIdentifier("users"))
-	assert.Equal(t, "@@", d.Placeholder(1))
+	if d == nil {
+		t.Fatal("expected non-nil")
+	}
+	if got, want := d.QuoteIdentifier("users"), "[users]"; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+	if got, want := d.Placeholder(1), "@@"; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
 }
 
 func TestRegisterDialect_Overwrite(t *testing.T) {
@@ -60,7 +72,9 @@ func TestRegisterDialect_Overwrite(t *testing.T) {
 	RegisterDialect("overwrite_test", &stubDialect{ph: "first"})
 	RegisterDialect("overwrite_test", &stubDialect{ph: "second"})
 	d := GetDialect("overwrite_test")
-	assert.Equal(t, "second", d.Placeholder(1))
+	if got, want := d.Placeholder(1), "second"; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -143,7 +157,9 @@ func TestPostgresDialect_QuoteIdentifier(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := d.QuoteIdentifier(tt.input)
-			assert.Equal(t, tt.want, got)
+			if got != tt.want {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
 		})
 	}
 }
@@ -170,7 +186,9 @@ func TestPostgresDialect_Placeholder(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("index_%d", tt.index), func(t *testing.T) {
 			got := d.Placeholder(tt.index)
-			assert.Equal(t, tt.want, got)
+			if got != tt.want {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
 		})
 	}
 }
@@ -183,8 +201,12 @@ func TestPostgresDialect_Placeholder_Sequential(t *testing.T) {
 	previous := ""
 	for i := 1; i <= 20; i++ {
 		got := d.Placeholder(i)
-		assert.NotEqual(t, previous, got, "placeholder at index %d must differ from previous", i)
-		assert.Equal(t, fmt.Sprintf("$%d", i), got)
+		if got == previous {
+			t.Errorf("placeholder at index %d must differ from previous", i)
+		}
+		if want := fmt.Sprintf("$%d", i); got != want {
+			t.Errorf("got %v, want %v", got, want)
+		}
 		previous = got
 	}
 }
@@ -264,7 +286,9 @@ func TestPostgresDialect_UpsertSQL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := d.UpsertSQL(tt.table, tt.conflictColumns, tt.updateCols)
-			assert.Equal(t, tt.want, got)
+			if got != tt.want {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
 		})
 	}
 }
@@ -327,7 +351,9 @@ func TestMySQLDialect_QuoteIdentifier(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := d.QuoteIdentifier(tt.input)
-			assert.Equal(t, tt.want, got)
+			if got != tt.want {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
 		})
 	}
 }
@@ -345,7 +371,9 @@ func TestMySQLDialect_Placeholder(t *testing.T) {
 	for _, idx := range tests {
 		t.Run(fmt.Sprintf("index_%d", idx), func(t *testing.T) {
 			got := d.Placeholder(idx)
-			assert.Equal(t, "?", got)
+			if got != "?" {
+				t.Errorf("got %v, want %v", got, "?")
+			}
 		})
 	}
 }
@@ -419,7 +447,9 @@ func TestMySQLDialect_UpsertSQL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := d.UpsertSQL(tt.table, tt.conflictColumns, tt.updateCols)
-			assert.Equal(t, tt.want, got)
+			if got != tt.want {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
 		})
 	}
 }
@@ -476,7 +506,9 @@ func TestSQLiteDialect_QuoteIdentifier(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := d.QuoteIdentifier(tt.input)
-			assert.Equal(t, tt.want, got)
+			if got != tt.want {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
 		})
 	}
 }
@@ -494,7 +526,9 @@ func TestSQLiteDialect_Placeholder(t *testing.T) {
 	for _, idx := range tests {
 		t.Run(fmt.Sprintf("index_%d", idx), func(t *testing.T) {
 			got := d.Placeholder(idx)
-			assert.Equal(t, "?", got)
+			if got != "?" {
+				t.Errorf("got %v, want %v", got, "?")
+			}
 		})
 	}
 }
@@ -582,7 +616,9 @@ func TestSQLiteDialect_UpsertSQL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := d.UpsertSQL(tt.table, tt.conflictColumns, tt.updateCols)
-			assert.Equal(t, tt.want, got)
+			if got != tt.want {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
 		})
 	}
 }
@@ -604,14 +640,21 @@ func TestPlaceholder_DialectDifferences(t *testing.T) {
 			myPh := my.Placeholder(i)
 			sqPh := sq.Placeholder(i)
 
-			assert.Equal(t, fmt.Sprintf("$%d", i), pgPh, "postgres must use positional $N")
-			assert.Equal(t, "?", myPh, "mysql must use ?")
-			assert.Equal(t, "?", sqPh, "sqlite must use ?")
+			if want := fmt.Sprintf("$%d", i); pgPh != want {
+				t.Errorf("postgres must use positional $N: got %v, want %v", pgPh, want)
+			}
+			if myPh != "?" {
+				t.Errorf("mysql must use ?: got %v, want %v", myPh, "?")
+			}
+			if sqPh != "?" {
+				t.Errorf("sqlite must use ?: got %v, want %v", sqPh, "?")
+			}
 
 			// Postgres placeholders must be unique across indices.
 			if i > 1 {
-				assert.NotEqual(t, pg.Placeholder(i-1), pgPh,
-					"postgres placeholder at %d must differ from index %d", i, i-1)
+				if pg.Placeholder(i-1) == pgPh {
+					t.Errorf("postgres placeholder at %d must differ from index %d", i, i-1)
+				}
 			}
 		})
 	}
@@ -641,9 +684,15 @@ func TestQuoteIdentifier_DialectDifferences(t *testing.T) {
 		t.Run(tt.dialectKey+"_"+tt.input, func(t *testing.T) {
 			d := GetDialect(tt.dialectKey)
 			got := d.QuoteIdentifier(tt.input)
-			require.True(t, len(got) >= 2, "quoted identifier must be at least 2 chars")
-			assert.Equal(t, tt.wantPrefix, got[0], "wrong opening quote character")
-			assert.Equal(t, tt.wantSuffix, got[len(got)-1], "wrong closing quote character")
+			if len(got) < 2 {
+				t.Fatalf("quoted identifier must be at least 2 chars")
+			}
+			if got[0] != tt.wantPrefix {
+				t.Errorf("wrong opening quote character: got %v, want %v", got[0], tt.wantPrefix)
+			}
+			if got[len(got)-1] != tt.wantSuffix {
+				t.Errorf("wrong closing quote character: got %v, want %v", got[len(got)-1], tt.wantSuffix)
+			}
 		})
 	}
 }
@@ -659,19 +708,25 @@ func TestUpsertSQL_DoNothingSemantics(t *testing.T) {
 	t.Run("postgres do nothing", func(t *testing.T) {
 		d := GetDialect("postgres")
 		got := d.UpsertSQL("t", conflictCols, nil)
-		assert.Equal(t, " ON CONFLICT (id) DO NOTHING", got)
+		if got != " ON CONFLICT (id) DO NOTHING" {
+			t.Errorf("got %v, want %v", got, " ON CONFLICT (id) DO NOTHING")
+		}
 	})
 
 	t.Run("sqlite do nothing", func(t *testing.T) {
 		d := GetDialect("sqlite")
 		got := d.UpsertSQL("t", conflictCols, nil)
-		assert.Equal(t, " ON CONFLICT (id) DO NOTHING", got)
+		if got != " ON CONFLICT (id) DO NOTHING" {
+			t.Errorf("got %v, want %v", got, " ON CONFLICT (id) DO NOTHING")
+		}
 	})
 
 	t.Run("mysql do nothing returns empty", func(t *testing.T) {
 		d := GetDialect("mysql")
 		got := d.UpsertSQL("t", conflictCols, nil)
-		assert.Equal(t, "", got, "mysql has no native DO NOTHING support")
+		if got != "" {
+			t.Errorf("mysql has no native DO NOTHING support: got %v, want %v", got, "")
+		}
 	})
 }
 
@@ -688,15 +743,23 @@ func TestUpsertSQL_ExcludedKeywordCase(t *testing.T) {
 	t.Run("postgres uses EXCLUDED uppercase", func(t *testing.T) {
 		d := GetDialect("postgres")
 		got := d.UpsertSQL("t", conflictCols, updateCols)
-		assert.Contains(t, got, "EXCLUDED.name", "postgres must use uppercase EXCLUDED")
-		assert.NotContains(t, got, "excluded.name")
+		if !strings.Contains(got, "EXCLUDED.name") {
+			t.Errorf("postgres must use uppercase EXCLUDED: %q does not contain %q", got, "EXCLUDED.name")
+		}
+		if strings.Contains(got, "excluded.name") {
+			t.Errorf("%q should not contain %q", got, "excluded.name")
+		}
 	})
 
 	t.Run("sqlite uses excluded lowercase", func(t *testing.T) {
 		d := GetDialect("sqlite")
 		got := d.UpsertSQL("t", conflictCols, updateCols)
-		assert.Contains(t, got, "excluded.name", "sqlite must use lowercase excluded")
-		assert.NotContains(t, got, "EXCLUDED.name")
+		if !strings.Contains(got, "excluded.name") {
+			t.Errorf("sqlite must use lowercase excluded: %q does not contain %q", got, "excluded.name")
+		}
+		if strings.Contains(got, "EXCLUDED.name") {
+			t.Errorf("%q should not contain %q", got, "EXCLUDED.name")
+		}
 	})
 }
 
@@ -734,7 +797,9 @@ func TestBuildUpdateSet_ViaPostgresUpsert(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := d.UpsertSQL("users", []string{"id"}, tt.updateCols)
-			assert.Equal(t, tt.want, got)
+			if got != tt.want {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
 		})
 	}
 }
@@ -772,10 +837,17 @@ func TestInit_AllDialectsRegistered(t *testing.T) {
 
 	for _, alias := range aliases {
 		t.Run(alias, func(t *testing.T) {
-			assert.NotPanics(t, func() {
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						t.Errorf("unexpected panic for alias %q: %v", alias, r)
+					}
+				}()
 				d := GetDialect(alias)
-				require.NotNil(t, d)
-			})
+				if d == nil {
+					t.Fatal("expected non-nil")
+				}
+			}()
 		})
 	}
 }

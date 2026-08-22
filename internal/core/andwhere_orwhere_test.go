@@ -1,10 +1,8 @@
 package core
 
 import (
+	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // TestSelectQuery_AndWhere tests AndWhere() with string conditions.
@@ -90,9 +88,15 @@ func TestSelectQuery_AndWhere(t *testing.T) {
 			query := tt.buildQuery(qb)
 			q := query.Build()
 
-			require.NotNil(t, q)
-			assert.Equal(t, tt.expectedSQL, q.sql)
-			assert.Len(t, q.params, tt.expectedLen)
+			if q == nil {
+				t.Fatal("expected non-nil")
+			}
+			if q.sql != tt.expectedSQL {
+				t.Errorf("got %v, want %v", q.sql, tt.expectedSQL)
+			}
+			if len(q.params) != tt.expectedLen {
+				t.Errorf("expected length %d, got %d", tt.expectedLen, len(q.params))
+			}
 		})
 	}
 }
@@ -180,9 +184,15 @@ func TestSelectQuery_OrWhere(t *testing.T) {
 			query := tt.buildQuery(qb)
 			q := query.Build()
 
-			require.NotNil(t, q)
-			assert.Equal(t, tt.expectedSQL, q.sql)
-			assert.Len(t, q.params, tt.expectedLen)
+			if q == nil {
+				t.Fatal("expected non-nil")
+			}
+			if q.sql != tt.expectedSQL {
+				t.Errorf("got %v, want %v", q.sql, tt.expectedSQL)
+			}
+			if len(q.params) != tt.expectedLen {
+				t.Errorf("expected length %d, got %d", tt.expectedLen, len(q.params))
+			}
 		})
 	}
 }
@@ -200,10 +210,22 @@ func TestSelectQuery_AndWhere_OrWhere_Combined(t *testing.T) {
 		OrWhere("role = ?", "admin")
 
 	q := query.Build()
-	require.NotNil(t, q)
-	assert.Equal(t, `SELECT * FROM "users" WHERE (status = $1 AND age > $2) OR (role = $3)`, q.sql)
-	assert.Len(t, q.params, 3)
-	assert.Equal(t, []interface{}{1, 18, "admin"}, q.params)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
+	want := `SELECT * FROM "users" WHERE (status = $1 AND age > $2) OR (role = $3)`
+	if q.sql != want {
+		t.Errorf("got %v, want %v", q.sql, want)
+	}
+	if len(q.params) != 3 {
+		t.Errorf("expected length %d, got %d", 3, len(q.params))
+	}
+	wantParams := []interface{}{1, 18, "admin"}
+	for i, p := range wantParams {
+		if q.params[i] != p {
+			t.Errorf("param[%d]: got %v, want %v", i, q.params[i], p)
+		}
+	}
 }
 
 // TestUpdateQuery_AndWhere tests AndWhere() for UPDATE queries.
@@ -259,9 +281,15 @@ func TestUpdateQuery_AndWhere(t *testing.T) {
 			query := tt.buildQuery(qb)
 			q := query.Build()
 
-			require.NotNil(t, q)
-			assert.Equal(t, tt.expectedSQL, q.sql)
-			assert.Len(t, q.params, tt.expectedLen)
+			if q == nil {
+				t.Fatal("expected non-nil")
+			}
+			if q.sql != tt.expectedSQL {
+				t.Errorf("got %v, want %v", q.sql, tt.expectedSQL)
+			}
+			if len(q.params) != tt.expectedLen {
+				t.Errorf("expected length %d, got %d", tt.expectedLen, len(q.params))
+			}
 		})
 	}
 }
@@ -319,9 +347,15 @@ func TestUpdateQuery_OrWhere(t *testing.T) {
 			query := tt.buildQuery(qb)
 			q := query.Build()
 
-			require.NotNil(t, q)
-			assert.Equal(t, tt.expectedSQL, q.sql)
-			assert.Len(t, q.params, tt.expectedLen)
+			if q == nil {
+				t.Fatal("expected non-nil")
+			}
+			if q.sql != tt.expectedSQL {
+				t.Errorf("got %v, want %v", q.sql, tt.expectedSQL)
+			}
+			if len(q.params) != tt.expectedLen {
+				t.Errorf("expected length %d, got %d", tt.expectedLen, len(q.params))
+			}
 		})
 	}
 }
@@ -375,9 +409,15 @@ func TestDeleteQuery_AndWhere(t *testing.T) {
 			query := tt.buildQuery(qb)
 			q := query.Build()
 
-			require.NotNil(t, q)
-			assert.Equal(t, tt.expectedSQL, q.sql)
-			assert.Len(t, q.params, tt.expectedLen)
+			if q == nil {
+				t.Fatal("expected non-nil")
+			}
+			if q.sql != tt.expectedSQL {
+				t.Errorf("got %v, want %v", q.sql, tt.expectedSQL)
+			}
+			if len(q.params) != tt.expectedLen {
+				t.Errorf("expected length %d, got %d", tt.expectedLen, len(q.params))
+			}
 		})
 	}
 }
@@ -431,9 +471,15 @@ func TestDeleteQuery_OrWhere(t *testing.T) {
 			query := tt.buildQuery(qb)
 			q := query.Build()
 
-			require.NotNil(t, q)
-			assert.Equal(t, tt.expectedSQL, q.sql)
-			assert.Len(t, q.params, tt.expectedLen)
+			if q == nil {
+				t.Fatal("expected non-nil")
+			}
+			if q.sql != tt.expectedSQL {
+				t.Errorf("got %v, want %v", q.sql, tt.expectedSQL)
+			}
+			if len(q.params) != tt.expectedLen {
+				t.Errorf("expected length %d, got %d", tt.expectedLen, len(q.params))
+			}
 		})
 	}
 }
@@ -449,10 +495,17 @@ func TestAndWhere_OrWhere_EmptyExpression(t *testing.T) {
 		OrWhere(HashExp{}) // Empty expression
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 	// Should only have the first WHERE condition.
-	assert.Equal(t, `SELECT * FROM "users" WHERE status = $1`, q.sql)
-	assert.Len(t, q.params, 1)
+	want := `SELECT * FROM "users" WHERE status = $1`
+	if q.sql != want {
+		t.Errorf("got %v, want %v", q.sql, want)
+	}
+	if len(q.params) != 1 {
+		t.Errorf("expected length %d, got %d", 1, len(q.params))
+	}
 }
 
 // TestAndWhere_OrWhere_ErrorReturn tests that invalid arguments store an error
@@ -463,51 +516,87 @@ func TestAndWhere_OrWhere_Panic(t *testing.T) {
 
 	t.Run("AndWhere with invalid type", func(t *testing.T) {
 		sq := qb.Select().From("users").AndWhere(123)
-		assert.NotNil(t, sq)
+		if sq == nil {
+			t.Fatal("expected non-nil")
+		}
 		q := sq.Build()
-		assert.NotNil(t, q.prepErr)
-		assert.ErrorContains(t, q.prepErr, "Where()")
+		if q.prepErr == nil {
+			t.Error("expected error")
+		}
+		if !strings.Contains(q.prepErr.Error(), "Where()") {
+			t.Errorf("%q does not contain %q", q.prepErr.Error(), "Where()")
+		}
 	})
 
 	t.Run("OrWhere with invalid type", func(t *testing.T) {
 		sq := qb.Select().From("users").Where("id = ?", 1).OrWhere([]string{"bad"})
-		assert.NotNil(t, sq)
+		if sq == nil {
+			t.Fatal("expected non-nil")
+		}
 		q := sq.Build()
-		assert.NotNil(t, q.prepErr)
-		assert.ErrorContains(t, q.prepErr, "OrWhere()")
+		if q.prepErr == nil {
+			t.Error("expected error")
+		}
+		if !strings.Contains(q.prepErr.Error(), "OrWhere()") {
+			t.Errorf("%q does not contain %q", q.prepErr.Error(), "OrWhere()")
+		}
 	})
 
 	t.Run("UpdateQuery AndWhere with invalid type", func(t *testing.T) {
 		uq := qb.Update("users").Set(map[string]interface{}{"x": 1}).AndWhere(123)
-		assert.NotNil(t, uq)
+		if uq == nil {
+			t.Fatal("expected non-nil")
+		}
 		q := uq.Build()
-		assert.NotNil(t, q.prepErr)
-		assert.ErrorContains(t, q.prepErr, "Where()")
+		if q.prepErr == nil {
+			t.Error("expected error")
+		}
+		if !strings.Contains(q.prepErr.Error(), "Where()") {
+			t.Errorf("%q does not contain %q", q.prepErr.Error(), "Where()")
+		}
 	})
 
 	t.Run("UpdateQuery OrWhere with invalid type", func(t *testing.T) {
 		uq := qb.Update("users").Set(map[string]interface{}{"x": 1}).
 			Where("id = ?", 1).OrWhere(map[string]int{"bad": 1})
-		assert.NotNil(t, uq)
+		if uq == nil {
+			t.Fatal("expected non-nil")
+		}
 		q := uq.Build()
-		assert.NotNil(t, q.prepErr)
-		assert.ErrorContains(t, q.prepErr, "OrWhere()")
+		if q.prepErr == nil {
+			t.Error("expected error")
+		}
+		if !strings.Contains(q.prepErr.Error(), "OrWhere()") {
+			t.Errorf("%q does not contain %q", q.prepErr.Error(), "OrWhere()")
+		}
 	})
 
 	t.Run("DeleteQuery AndWhere with invalid type", func(t *testing.T) {
 		dq := qb.Delete("users").AndWhere(123)
-		assert.NotNil(t, dq)
+		if dq == nil {
+			t.Fatal("expected non-nil")
+		}
 		q := dq.Build()
-		assert.NotNil(t, q.prepErr)
-		assert.ErrorContains(t, q.prepErr, "Where()")
+		if q.prepErr == nil {
+			t.Error("expected error")
+		}
+		if !strings.Contains(q.prepErr.Error(), "Where()") {
+			t.Errorf("%q does not contain %q", q.prepErr.Error(), "Where()")
+		}
 	})
 
 	t.Run("DeleteQuery OrWhere with invalid type", func(t *testing.T) {
 		dq := qb.Delete("users").Where("id = ?", 1).OrWhere(map[string]int{"bad": 1})
-		assert.NotNil(t, dq)
+		if dq == nil {
+			t.Fatal("expected non-nil")
+		}
 		q := dq.Build()
-		assert.NotNil(t, q.prepErr)
-		assert.ErrorContains(t, q.prepErr, "OrWhere()")
+		if q.prepErr == nil {
+			t.Error("expected error")
+		}
+		if !strings.Contains(q.prepErr.Error(), "OrWhere()") {
+			t.Errorf("%q does not contain %q", q.prepErr.Error(), "OrWhere()")
+		}
 	})
 }
 
@@ -524,11 +613,24 @@ func TestAndWhere_OrWhere_ComplexScenario(t *testing.T) {
 		OrWhere("role = ?", "admin")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	expectedSQL := `SELECT * FROM "users" WHERE (status = $1 AND age > $2 AND city = $3) OR (role = $4)`
-	assert.Equal(t, expectedSQL, q.sql)
-	assert.Equal(t, []interface{}{1, 18, "NYC", "admin"}, q.params)
+	if q.sql != expectedSQL {
+		t.Errorf("got %v, want %v", q.sql, expectedSQL)
+	}
+	wantParams := []interface{}{1, 18, "NYC", "admin"}
+	if len(q.params) != len(wantParams) {
+		t.Errorf("got %v, want %v", q.params, wantParams)
+	} else {
+		for i, p := range wantParams {
+			if q.params[i] != p {
+				t.Errorf("param[%d]: got %v, want %v", i, q.params[i], p)
+			}
+		}
+	}
 }
 
 // TestAndWhere_OrWhere_HashExp tests using HashExp with AndWhere/OrWhere.
@@ -542,16 +644,30 @@ func TestAndWhere_OrWhere_HashExp(t *testing.T) {
 		OrWhere(HashExp{"role": "admin"})
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// HashExp with multiple keys uses AND internally and keys are sorted alphabetically.
 	// WHERE status=1 AND (age=18 AND city=NYC) OR (role=admin)
 	// After sorting: WHERE status=1 AND (age=18 AND city=NYC) OR (role=admin)
 	// With parentheses: (status=1 AND age=18 AND city=NYC) OR (role=admin)
-	assert.Contains(t, q.sql, `WHERE (`)
-	assert.Contains(t, q.sql, `"status" = $1`)
-	assert.Contains(t, q.sql, `"age" = $2`)
-	assert.Contains(t, q.sql, `"city" = $3`)
-	assert.Contains(t, q.sql, `OR ("role" = $4)`)
-	assert.Len(t, q.params, 4)
+	if !strings.Contains(q.sql, `WHERE (`) {
+		t.Errorf("%q does not contain %q", q.sql, `WHERE (`)
+	}
+	if !strings.Contains(q.sql, `"status" = $1`) {
+		t.Errorf("%q does not contain %q", q.sql, `"status" = $1`)
+	}
+	if !strings.Contains(q.sql, `"age" = $2`) {
+		t.Errorf("%q does not contain %q", q.sql, `"age" = $2`)
+	}
+	if !strings.Contains(q.sql, `"city" = $3`) {
+		t.Errorf("%q does not contain %q", q.sql, `"city" = $3`)
+	}
+	if !strings.Contains(q.sql, `OR ("role" = $4)`) {
+		t.Errorf("%q does not contain %q", q.sql, `OR ("role" = $4)`)
+	}
+	if len(q.params) != 4 {
+		t.Errorf("expected length %d, got %d", 4, len(q.params))
+	}
 }

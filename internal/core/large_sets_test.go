@@ -9,8 +9,6 @@ import (
 	"testing"
 
 	"github.com/coregx/relica/internal/dialects"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // ============================================================================
@@ -42,11 +40,15 @@ func TestUnion_Many_Queries(t *testing.T) {
 	}
 
 	query := main.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify 15 SELECTs are present
 	selectCount := strings.Count(query.sql, "SELECT")
-	assert.Equal(t, 15, selectCount, "Should have 15 SELECT statements")
+	if selectCount != 15 {
+		t.Errorf("Should have 15 SELECT statements: got %v, want %v", selectCount, 15)
+	}
 
 	// Verify 14 UNION keywords (15 queries = 14 UNIONs)
 	unionCount := strings.Count(query.sql, "UNION")
@@ -54,20 +56,39 @@ func TestUnion_Many_Queries(t *testing.T) {
 	// Count only standalone UNION (not UNION ALL)
 	unionAllCount := strings.Count(query.sql, "UNION ALL")
 	actualUnionCount := unionCount - unionAllCount
-	assert.Equal(t, 14, actualUnionCount, "Should have 14 UNION keywords")
+	if actualUnionCount != 14 {
+		t.Errorf("Should have 14 UNION keywords: got %v, want %v", actualUnionCount, 14)
+	}
 
 	// Verify all parameters present (15 categories: 0-14)
-	assert.Equal(t, 15, len(query.params))
+	if len(query.params) != 15 {
+		t.Errorf("got %v, want %v", len(query.params), 15)
+	}
 
 	// Verify parameter values (categories 0-14)
 	for i := 0; i < 15; i++ {
-		assert.Contains(t, query.params, i, "Should contain category %d", i)
+		found := false
+		for _, p := range query.params {
+			if p == i {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Should contain category %d: %q does not contain %q", i, query.params, i)
+		}
 	}
 
 	// Verify SQL structure contains table name and column names
-	assert.Contains(t, query.sql, `"table"`)
-	assert.Contains(t, query.sql, `"id"`)
-	assert.Contains(t, query.sql, `"name"`)
+	if !strings.Contains(query.sql, `"table"`) {
+		t.Errorf("%q does not contain %q", query.sql, `"table"`)
+	}
+	if !strings.Contains(query.sql, `"id"`) {
+		t.Errorf("%q does not contain %q", query.sql, `"id"`)
+	}
+	if !strings.Contains(query.sql, `"name"`) {
+		t.Errorf("%q does not contain %q", query.sql, `"name"`)
+	}
 }
 
 // TestRecursiveCTE_ManyLevels tests recursive CTE with LIMIT to prevent infinite recursion
@@ -96,33 +117,55 @@ func TestRecursiveCTE_ManyLevels(t *testing.T) {
 		Limit(1000)
 
 	query := main.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify WITH RECURSIVE keyword
-	assert.Contains(t, query.sql, "WITH RECURSIVE")
+	if !strings.Contains(query.sql, "WITH RECURSIVE") {
+		t.Errorf("%q does not contain %q", query.sql, "WITH RECURSIVE")
+	}
 
 	// Verify CTE name
-	assert.Contains(t, query.sql, `"numbers" AS`)
+	if !strings.Contains(query.sql, `"numbers" AS`) {
+		t.Errorf("%q does not contain %q", query.sql, `"numbers" AS`)
+	}
 
 	// Verify UNION ALL (recursive CTEs must use UNION ALL)
-	assert.Contains(t, query.sql, "UNION ALL")
+	if !strings.Contains(query.sql, "UNION ALL") {
+		t.Errorf("%q does not contain %q", query.sql, "UNION ALL")
+	}
 
 	// Verify anchor query (1 AS "level" — now properly quoted)
-	assert.Contains(t, query.sql, `AS "level"`)
+	if !strings.Contains(query.sql, `AS "level"`) {
+		t.Errorf("%q does not contain %q", query.sql, `AS "level"`)
+	}
 
 	// Verify recursive query structure
-	assert.Contains(t, query.sql, "level + 1")
-	assert.Contains(t, query.sql, `FROM "numbers"`)
+	if !strings.Contains(query.sql, "level + 1") {
+		t.Errorf("%q does not contain %q", query.sql, "level + 1")
+	}
+	if !strings.Contains(query.sql, `FROM "numbers"`) {
+		t.Errorf("%q does not contain %q", query.sql, `FROM "numbers"`)
+	}
 
 	// Verify termination condition (level < 1000)
-	assert.Contains(t, query.sql, "level <")
+	if !strings.Contains(query.sql, "level <") {
+		t.Errorf("%q does not contain %q", query.sql, "level <")
+	}
 
 	// Verify LIMIT clause in main query (prevents excessive output)
-	assert.Contains(t, query.sql, "LIMIT")
+	if !strings.Contains(query.sql, "LIMIT") {
+		t.Errorf("%q does not contain %q", query.sql, "LIMIT")
+	}
 
 	// Verify parameter (1000 from WHERE clause)
-	assert.Equal(t, 1, len(query.params))
-	assert.Equal(t, 1000, query.params[0])
+	if len(query.params) != 1 {
+		t.Errorf("got %v, want %v", len(query.params), 1)
+	}
+	if query.params[0] != 1000 {
+		t.Errorf("got %v, want %v", query.params[0], 1000)
+	}
 }
 
 // TestInSubquery_LargeList tests IN subquery that could return many values
@@ -145,14 +188,22 @@ func TestInSubquery_LargeList(t *testing.T) {
 		Where(In("id", sub))
 
 	query := main.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify SQL generated correctly
-	assert.Contains(t, query.sql, `SELECT * FROM "main_table"`)
-	assert.Contains(t, query.sql, `"id" IN (SELECT "id" FROM "large_table")`)
+	if !strings.Contains(query.sql, `SELECT * FROM "main_table"`) {
+		t.Errorf("%q does not contain %q", query.sql, `SELECT * FROM "main_table"`)
+	}
+	if !strings.Contains(query.sql, `"id" IN (SELECT "id" FROM "large_table")`) {
+		t.Errorf("%q does not contain %q", query.sql, `"id" IN (SELECT "id" FROM "large_table")`)
+	}
 
 	// No parameters in this case (no WHERE in subquery)
-	assert.Equal(t, 0, len(query.params))
+	if len(query.params) != 0 {
+		t.Errorf("got %v, want %v", len(query.params), 0)
+	}
 
 	// Test passed if SQL generation completes without panic or error
 	// This verifies the query builder can handle potentially large IN lists
@@ -177,14 +228,22 @@ func TestInSubquery_LargeList_WithFilter(t *testing.T) {
 		Where(In("id", sub))
 
 	query := main.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify SQL structure
-	assert.Contains(t, query.sql, `"id" IN (SELECT "id" FROM "large_table" WHERE status = $1 LIMIT 1000)`)
+	if !strings.Contains(query.sql, `"id" IN (SELECT "id" FROM "large_table" WHERE status = $1 LIMIT 1000)`) {
+		t.Errorf("%q does not contain %q", query.sql, `"id" IN (SELECT "id" FROM "large_table" WHERE status = $1 LIMIT 1000)`)
+	}
 
 	// Verify parameter
-	assert.Equal(t, 1, len(query.params))
-	assert.Equal(t, "active", query.params[0])
+	if len(query.params) != 1 {
+		t.Errorf("got %v, want %v", len(query.params), 1)
+	}
+	if query.params[0] != "active" {
+		t.Errorf("got %v, want %v", query.params[0], "active")
+	}
 }
 
 // TestUnionAll_Many_Queries tests UNION ALL with many queries (faster than UNION)
@@ -210,21 +269,38 @@ func TestUnionAll_Many_Queries(t *testing.T) {
 	}
 
 	query := main.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify 20 SELECTs
 	selectCount := strings.Count(query.sql, "SELECT")
-	assert.Equal(t, 20, selectCount)
+	if selectCount != 20 {
+		t.Errorf("got %v, want %v", selectCount, 20)
+	}
 
 	// Verify 19 UNION ALL keywords (20 queries = 19 UNION ALLs)
 	unionAllCount := strings.Count(query.sql, "UNION ALL")
-	assert.Equal(t, 19, unionAllCount)
+	if unionAllCount != 19 {
+		t.Errorf("got %v, want %v", unionAllCount, 19)
+	}
 
 	// Verify 20 parameters
-	assert.Equal(t, 20, len(query.params))
+	if len(query.params) != 20 {
+		t.Errorf("got %v, want %v", len(query.params), 20)
+	}
 
 	// Verify parameter values (partitions 0-19)
 	for i := 0; i < 20; i++ {
-		assert.Contains(t, query.params, i)
+		found := false
+		for _, p := range query.params {
+			if p == i {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("%q does not contain %q", query.params, i)
+		}
 	}
 }

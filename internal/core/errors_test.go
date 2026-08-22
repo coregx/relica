@@ -4,9 +4,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
 )
 
 // ============================================================================
@@ -14,34 +13,45 @@ import (
 // ============================================================================
 
 func TestErrNotFound_IsSentinel(t *testing.T) {
-	assert.NotNil(t, ErrNotFound)
-	assert.EqualError(t, ErrNotFound, "relica: record not found")
+	if ErrNotFound == nil {
+		t.Fatal("expected non-nil ErrNotFound")
+	}
+	if ErrNotFound.Error() != "relica: record not found" {
+		t.Errorf("got %q, want %q", ErrNotFound.Error(), "relica: record not found")
+	}
 }
 
 func TestWrapErrNotFound_IsErrNotFound(t *testing.T) {
 	err := wrapErrNotFound()
-	assert.True(t, errors.Is(err, ErrNotFound),
-		"wrapped error must satisfy errors.Is(err, ErrNotFound)")
+	if !errors.Is(err, ErrNotFound) {
+		t.Error("wrapped error must satisfy errors.Is(err, ErrNotFound)")
+	}
 }
 
 func TestWrapErrNotFound_IsSqlErrNoRows(t *testing.T) {
 	err := wrapErrNotFound()
-	assert.True(t, errors.Is(err, sql.ErrNoRows),
-		"wrapped error must satisfy errors.Is(err, sql.ErrNoRows)")
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Error("wrapped error must satisfy errors.Is(err, sql.ErrNoRows)")
+	}
 }
 
 func TestWrapErrNotFound_ErrorMessage(t *testing.T) {
 	err := wrapErrNotFound()
 	msg := err.Error()
-	assert.Contains(t, msg, "relica: record not found")
-	assert.Contains(t, msg, "sql: no rows in result set")
+	if !strings.Contains(msg, "relica: record not found") {
+		t.Errorf("%q does not contain %q", msg, "relica: record not found")
+	}
+	if !strings.Contains(msg, "sql: no rows in result set") {
+		t.Errorf("%q does not contain %q", msg, "sql: no rows in result set")
+	}
 }
 
 func TestErrNotFound_IsNotSqlErrNoRows(t *testing.T) {
 	// The sentinel itself must NOT match sql.ErrNoRows —
 	// only the wrapped version produced by wrapErrNotFound() should.
-	assert.False(t, errors.Is(ErrNotFound, sql.ErrNoRows),
-		"ErrNotFound sentinel must not equal sql.ErrNoRows")
+	if errors.Is(ErrNotFound, sql.ErrNoRows) {
+		t.Error("ErrNotFound sentinel must not equal sql.ErrNoRows")
+	}
 }
 
 func TestWrapErrNotFound_ChainedWrapping(t *testing.T) {
@@ -49,10 +59,12 @@ func TestWrapErrNotFound_ChainedWrapping(t *testing.T) {
 	inner := wrapErrNotFound()
 	outer := fmt.Errorf("find user: %w", inner)
 
-	assert.True(t, errors.Is(outer, ErrNotFound),
-		"outer-wrapped error must still satisfy errors.Is(_, ErrNotFound)")
-	assert.True(t, errors.Is(outer, sql.ErrNoRows),
-		"outer-wrapped error must still satisfy errors.Is(_, sql.ErrNoRows)")
+	if !errors.Is(outer, ErrNotFound) {
+		t.Error("outer-wrapped error must still satisfy errors.Is(_, ErrNotFound)")
+	}
+	if !errors.Is(outer, sql.ErrNoRows) {
+		t.Error("outer-wrapped error must still satisfy errors.Is(_, sql.ErrNoRows)")
+	}
 }
 
 // ============================================================================
@@ -105,7 +117,9 @@ func TestIsUniqueViolation(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			got := IsUniqueViolation(tc.err)
-			assert.Equal(t, tc.want, got)
+			if got != tc.want {
+				t.Errorf("got %v, want %v", got, tc.want)
+			}
 		})
 	}
 }
@@ -166,7 +180,9 @@ func TestIsForeignKeyViolation(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			got := IsForeignKeyViolation(tc.err)
-			assert.Equal(t, tc.want, got)
+			if got != tc.want {
+				t.Errorf("got %v, want %v", got, tc.want)
+			}
 		})
 	}
 }
@@ -221,7 +237,9 @@ func TestIsNotNullViolation(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			got := IsNotNullViolation(tc.err)
-			assert.Equal(t, tc.want, got)
+			if got != tc.want {
+				t.Errorf("got %v, want %v", got, tc.want)
+			}
 		})
 	}
 }
@@ -276,7 +294,9 @@ func TestIsCheckViolation(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			got := IsCheckViolation(tc.err)
-			assert.Equal(t, tc.want, got)
+			if got != tc.want {
+				t.Errorf("got %v, want %v", got, tc.want)
+			}
 		})
 	}
 }
@@ -286,12 +306,18 @@ func TestIsCheckViolation(t *testing.T) {
 // ============================================================================
 
 func TestWrapError_NilInput(t *testing.T) {
-	assert.Nil(t, WrapError(nil, "context"))
+	if WrapError(nil, "context") != nil {
+		t.Error("expected nil for nil input")
+	}
 }
 
 func TestWrapError_WrapsMessage(t *testing.T) {
 	base := errors.New("base error")
 	wrapped := WrapError(base, "operation failed")
-	assert.EqualError(t, wrapped, "operation failed: base error")
-	assert.True(t, errors.Is(wrapped, base))
+	if wrapped.Error() != "operation failed: base error" {
+		t.Errorf("got %q, want %q", wrapped.Error(), "operation failed: base error")
+	}
+	if !errors.Is(wrapped, base) {
+		t.Error("wrapped error must satisfy errors.Is(wrapped, base)")
+	}
 }

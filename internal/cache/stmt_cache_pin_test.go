@@ -1,25 +1,14 @@
 package cache
 
 import (
-	"database/sql"
 	"testing"
-
-	_ "modernc.org/sqlite"
 )
 
 func TestStmtCache_Pin(t *testing.T) {
 	cache := NewStmtCache()
-	db, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := setupTestDB(t)
 
-	// Prepare a statement
-	stmt, err := db.Prepare("SELECT 1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	stmt := createTestStmt(t, db, "SELECT 1")
 
 	// Add to cache
 	cache.Set("query1", stmt)
@@ -42,16 +31,9 @@ func TestStmtCache_Pin(t *testing.T) {
 
 func TestStmtCache_Unpin(t *testing.T) {
 	cache := NewStmtCache()
-	db, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := setupTestDB(t)
 
-	stmt, err := db.Prepare("SELECT 1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	stmt := createTestStmt(t, db, "SELECT 1")
 
 	cache.Set("query1", stmt)
 	cache.Pin("query1")
@@ -75,30 +57,20 @@ func TestStmtCache_Unpin(t *testing.T) {
 func TestStmtCache_PinnedNotEvicted(t *testing.T) {
 	// Create small cache (capacity 3)
 	cache := NewStmtCacheWithCapacity(3)
-	db, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := setupTestDB(t)
 
 	// Add 3 statements and pin the first one
-	for i := 1; i <= 3; i++ {
-		stmt, err := db.Prepare("SELECT ?")
-		if err != nil {
-			t.Fatal(err)
-		}
-		key := sql.NullString{String: string(rune('0' + i)), Valid: true}.String
+	keys := []string{"1", "2", "3"}
+	for i, key := range keys {
+		stmt := createTestStmt(t, db, "SELECT 1")
 		cache.Set(key, stmt)
-		if i == 1 {
+		if i == 0 {
 			cache.Pin(key)
 		}
 	}
 
 	// Add 4th statement - should evict oldest unpinned (not the pinned one)
-	stmt4, err := db.Prepare("SELECT ?")
-	if err != nil {
-		t.Fatal(err)
-	}
+	stmt4 := createTestStmt(t, db, "SELECT 1")
 	cache.Set("4", stmt4)
 
 	// Pinned query should still be in cache
@@ -120,16 +92,8 @@ func TestStmtCache_IsPinned(t *testing.T) {
 		t.Error("Non-existent query should not be pinned")
 	}
 
-	db, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-
-	stmt, err := db.Prepare("SELECT 1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := setupTestDB(t)
+	stmt := createTestStmt(t, db, "SELECT 1")
 
 	cache.Set("query1", stmt)
 

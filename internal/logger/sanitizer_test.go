@@ -3,8 +3,6 @@ package logger
 import (
 	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
 )
 
 func TestSanitizer_MaskParams_DefaultFields(t *testing.T) {
@@ -69,7 +67,16 @@ func TestSanitizer_MaskParams_DefaultFields(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := sanitizer.MaskParams(tt.sql, tt.params)
-			assert.Equal(t, tt.want, got)
+			if len(got) != len(tt.want) {
+				t.Errorf("got %v, want %v", got, tt.want)
+				return
+			}
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Errorf("got %v, want %v", got, tt.want)
+					break
+				}
+			}
 		})
 	}
 }
@@ -106,7 +113,16 @@ func TestSanitizer_MaskParams_CustomFields(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := sanitizer.MaskParams(tt.sql, tt.params)
-			assert.Equal(t, tt.want, got)
+			if len(got) != len(tt.want) {
+				t.Errorf("got %v, want %v", got, tt.want)
+				return
+			}
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Errorf("got %v, want %v", got, tt.want)
+					break
+				}
+			}
 		})
 	}
 }
@@ -159,7 +175,9 @@ func TestSanitizer_FormatParams(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := sanitizer.FormatParams(tt.params)
-			assert.Equal(t, tt.want, got)
+			if got != tt.want {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
 		})
 	}
 }
@@ -173,8 +191,12 @@ func TestSanitizer_FormatParams_AfterMasking(t *testing.T) {
 	masked := sanitizer.MaskParams(sql, params)
 	formatted := sanitizer.FormatParams(masked)
 
-	assert.Equal(t, "[***REDACTED***, ***REDACTED***]", formatted)
-	assert.NotContains(t, formatted, "secretPassword123")
+	if formatted != "[***REDACTED***, ***REDACTED***]" {
+		t.Errorf("got %v, want %v", formatted, "[***REDACTED***, ***REDACTED***]")
+	}
+	if strings.Contains(formatted, "secretPassword123") {
+		t.Errorf("%q should not contain %q", formatted, "secretPassword123")
+	}
 }
 
 func TestSanitizer_WordBoundaries(t *testing.T) {
@@ -190,7 +212,9 @@ func TestSanitizer_WordBoundaries(t *testing.T) {
 
 	// This test documents current behavior
 	// In a perfect world, we'd want smarter parsing
-	assert.NotNil(t, got)
+	if got == nil {
+		t.Errorf("expected non-nil, got %v", got)
+	}
 }
 
 func TestSanitizer_ThreadSafety(t *testing.T) {

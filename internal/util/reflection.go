@@ -27,33 +27,60 @@ func (pk *PrimaryKeyInfo) IsComposite() bool {
 	return len(pk.Columns) > 1
 }
 
-// parseDBTag parses db tag to extract column name and pk flag.
+// parseDBTag parses db tag to extract column name, pk flag, and autoid config.
 //
 // Supported formats:
-//   - "pk"                    -> column="pk", isPK=true (legacy single PK)
-//   - "column"                -> column="column", isPK=false
-//   - "column,pk"             -> column="column", isPK=true (composite PK)
-//   - "column,pk,autoincrement" -> column="column", isPK=true, isAutoIncrement=true
-//   - "-"                     -> column="-", isPK=false (skip field)
+//   - "pk"                              -> column="pk", isPK=true (legacy single PK)
+//   - "column"                          -> column="column", isPK=false
+//   - "column,pk"                       -> column="column", isPK=true (composite PK)
+//   - "column,pk,autoincrement"         -> column="column", isPK=true, isAutoIncrement=true
+//   - "column,autoid"                   -> column="column", autoIDPrefix="" (no prefix)
+//   - "column,autoid:usr"               -> column="column", autoIDPrefix="usr"
+//   - "column,autoid:usr,gen=ulid"      -> column="column", autoIDPrefix="usr", autoIDGen="ulid"
+//   - "-"                               -> column="-", isPK=false (skip field)
+//
+// DBTagInfo holds parsed struct tag information.
+type DBTagInfo struct {
+	Column        string
+	IsPK          bool
+	AutoIncrement bool
+	IsAutoID      bool   // true if autoid or autoid:prefix is present
+	AutoIDPrefix  string // "usr", "ord", "" (no prefix)
+	AutoIDGen     string // "uuid7" (default), "ulid", custom
+}
+
 func parseDBTag(tag string) (column string, isPK, isAutoIncrement bool) {
+	info := ParseDBTagFull(tag)
+	return info.Column, info.IsPK, info.AutoIncrement
+}
+
+// ParseDBTagFull parses db tag into DBTagInfo with all modifiers including autoid.
+func ParseDBTagFull(tag string) DBTagInfo {
 	parts := strings.Split(tag, ",")
-	column = strings.TrimSpace(parts[0])
+	info := DBTagInfo{Column: strings.TrimSpace(parts[0])}
 
 	for _, part := range parts[1:] {
-		switch strings.TrimSpace(part) {
-		case "pk":
-			isPK = true
-		case "autoincrement":
-			isAutoIncrement = true
+		trimmed := strings.TrimSpace(part)
+		switch {
+		case trimmed == "pk":
+			info.IsPK = true
+		case trimmed == "autoincrement":
+			info.AutoIncrement = true
+		case trimmed == "autoid":
+			info.IsAutoID = true
+		case strings.HasPrefix(trimmed, "autoid:"):
+			info.IsAutoID = true
+			info.AutoIDPrefix = strings.TrimPrefix(trimmed, "autoid:")
+		case strings.HasPrefix(trimmed, "gen="):
+			info.AutoIDGen = strings.TrimPrefix(trimmed, "gen=")
 		}
 	}
 
-	// Legacy: db:"pk" means column IS "pk" AND it's a primary key
-	if column == "pk" {
-		isPK = true
+	if info.Column == "pk" {
+		info.IsPK = true
 	}
 
-	return column, isPK, isAutoIncrement
+	return info
 }
 
 // FindPrimaryKeyFields finds all primary key fields in a struct.
@@ -223,6 +250,58 @@ func FindPrimaryKeyFields(v reflect.Value) (*PrimaryKeyInfo, error) {
 	}
 
 	return nil, errors.New("FindPrimaryKeyFields: no primary key found")
+}
+
+// AutoIDInfo holds information about a field with the autoid tag.
+type AutoIDInfo struct {
+	FieldIndex int
+	Column     string
+	Prefix     string // "usr", "ord", "" (no prefix)
+	Generator  string // "", "uuid7", "ulid", custom
+}
+
+// FindAutoIDFields finds all fields with the autoid tag in a struct.
+// Returns nil if no autoid fields are found.
+func FindAutoIDFields(v reflect.Value) []AutoIDInfo {
+	if v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			return nil
+		}
+		v = v.Elem()
+	}
+
+	if v.Kind() != reflect.Struct {
+		return nil
+	}
+
+	t := v.Type()
+	var fields []AutoIDInfo
+
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if !field.IsExported() {
+			continue
+		}
+
+		tag, ok := field.Tag.Lookup("db")
+		if !ok {
+			continue
+		}
+
+		info := ParseDBTagFull(tag)
+		if !info.IsAutoID {
+			continue
+		}
+
+		fields = append(fields, AutoIDInfo{
+			FieldIndex: i,
+			Column:     info.Column,
+			Prefix:     info.AutoIDPrefix,
+			Generator:  info.AutoIDGen,
+		})
+	}
+
+	return fields
 }
 
 // ModelToColumns extracts database columns from struct tags.

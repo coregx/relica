@@ -5,10 +5,10 @@
 package core
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/coregx/relica/internal/dialects"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestExists_WithRawExp(t *testing.T) {
@@ -18,8 +18,12 @@ func TestExists_WithRawExp(t *testing.T) {
 	exp := Exists(sub)
 
 	sql, args := exp.Build(dialect)
-	assert.Equal(t, `EXISTS (SELECT 1 FROM orders WHERE user_id = ?)`, sql)
-	assert.Equal(t, []interface{}{123}, args)
+	if sql != `EXISTS (SELECT 1 FROM orders WHERE user_id = ?)` {
+		t.Errorf("got %q, want %q", sql, `EXISTS (SELECT 1 FROM orders WHERE user_id = ?)`)
+	}
+	if len(args) != 1 || args[0] != 123 {
+		t.Errorf("got %v, want %v", args, []interface{}{123})
+	}
 }
 
 func TestNotExists_WithRawExp(t *testing.T) {
@@ -29,8 +33,12 @@ func TestNotExists_WithRawExp(t *testing.T) {
 	exp := NotExists(sub)
 
 	sql, args := exp.Build(dialect)
-	assert.Equal(t, `NOT EXISTS (SELECT 1 FROM orders WHERE user_id = ?)`, sql)
-	assert.Equal(t, []interface{}{123}, args)
+	if sql != `NOT EXISTS (SELECT 1 FROM orders WHERE user_id = ?)` {
+		t.Errorf("got %q, want %q", sql, `NOT EXISTS (SELECT 1 FROM orders WHERE user_id = ?)`)
+	}
+	if len(args) != 1 || args[0] != 123 {
+		t.Errorf("got %v, want %v", args, []interface{}{123})
+	}
 }
 
 func TestExists_WithNilExpression(t *testing.T) {
@@ -39,8 +47,12 @@ func TestExists_WithNilExpression(t *testing.T) {
 	exp := Exists(nil)
 
 	sql, args := exp.Build(dialect)
-	assert.Equal(t, "0=1", sql) // EXISTS (NULL) → always false
-	assert.Nil(t, args)
+	if sql != "0=1" { // EXISTS (NULL) → always false
+		t.Errorf("got %q, want %q", sql, "0=1")
+	}
+	if args != nil {
+		t.Errorf("got %v, want nil", args)
+	}
 }
 
 func TestNotExists_WithNilExpression(t *testing.T) {
@@ -49,8 +61,12 @@ func TestNotExists_WithNilExpression(t *testing.T) {
 	exp := NotExists(nil)
 
 	sql, args := exp.Build(dialect)
-	assert.Equal(t, "", sql) // NOT EXISTS (NULL) → always true (empty WHERE clause)
-	assert.Nil(t, args)
+	if sql != "" { // NOT EXISTS (NULL) → always true (empty WHERE clause)
+		t.Errorf("got %q, want %q", sql, "")
+	}
+	if args != nil {
+		t.Errorf("got %v, want nil", args)
+	}
 }
 
 func TestExists_WithEmptyExpression(t *testing.T) {
@@ -61,8 +77,12 @@ func TestExists_WithEmptyExpression(t *testing.T) {
 	exp := Exists(sub)
 
 	sql, args := exp.Build(dialect)
-	assert.Equal(t, "0=1", sql) // EXISTS (empty) → always false
-	assert.Nil(t, args)
+	if sql != "0=1" { // EXISTS (empty) → always false
+		t.Errorf("got %q, want %q", sql, "0=1")
+	}
+	if args != nil {
+		t.Errorf("got %v, want nil", args)
+	}
 }
 
 func TestNotExists_WithEmptyExpression(t *testing.T) {
@@ -72,8 +92,12 @@ func TestNotExists_WithEmptyExpression(t *testing.T) {
 	exp := NotExists(sub)
 
 	sql, args := exp.Build(dialect)
-	assert.Equal(t, "", sql) // NOT EXISTS (empty) → always true
-	assert.Nil(t, args)
+	if sql != "" { // NOT EXISTS (empty) → always true
+		t.Errorf("got %q, want %q", sql, "")
+	}
+	if args != nil {
+		t.Errorf("got %v, want nil", args)
+	}
 }
 
 func TestExists_WithHashExp(t *testing.T) {
@@ -85,11 +109,21 @@ func TestExists_WithHashExp(t *testing.T) {
 
 	sql, args := exp.Build(dialect)
 	// HashExp keys are sorted: status, user_id
-	assert.Contains(t, sql, `EXISTS (`)
-	assert.Contains(t, sql, `"status" = ?`)
-	assert.Contains(t, sql, `"user_id" = ?`)
-	assert.Contains(t, sql, ` AND `)
-	assert.Equal(t, []interface{}{"active", 123}, args)
+	if !strings.Contains(sql, `EXISTS (`) {
+		t.Errorf("%q does not contain %q", sql, `EXISTS (`)
+	}
+	if !strings.Contains(sql, `"status" = ?`) {
+		t.Errorf("%q does not contain %q", sql, `"status" = ?`)
+	}
+	if !strings.Contains(sql, `"user_id" = ?`) {
+		t.Errorf("%q does not contain %q", sql, `"user_id" = ?`)
+	}
+	if !strings.Contains(sql, ` AND `) {
+		t.Errorf("%q does not contain %q", sql, ` AND `)
+	}
+	if len(args) != 2 || args[0] != "active" || args[1] != 123 {
+		t.Errorf("got %v, want %v", args, []interface{}{"active", 123})
+	}
 }
 
 func TestExists_WithComplexExpression(t *testing.T) {
@@ -103,11 +137,21 @@ func TestExists_WithComplexExpression(t *testing.T) {
 	exp := Exists(sub)
 
 	sql, args := exp.Build(dialect)
-	assert.Contains(t, sql, `EXISTS (`)
-	assert.Contains(t, sql, `"user_id" = ?`)
-	assert.Contains(t, sql, `"amount" > ?`)
-	assert.Contains(t, sql, `) AND (`)
-	assert.Equal(t, []interface{}{123, 100}, args)
+	if !strings.Contains(sql, `EXISTS (`) {
+		t.Errorf("%q does not contain %q", sql, `EXISTS (`)
+	}
+	if !strings.Contains(sql, `"user_id" = ?`) {
+		t.Errorf("%q does not contain %q", sql, `"user_id" = ?`)
+	}
+	if !strings.Contains(sql, `"amount" > ?`) {
+		t.Errorf("%q does not contain %q", sql, `"amount" > ?`)
+	}
+	if !strings.Contains(sql, `) AND (`) {
+		t.Errorf("%q does not contain %q", sql, `) AND (`)
+	}
+	if len(args) != 2 || args[0] != 123 || args[1] != 100 {
+		t.Errorf("got %v, want %v", args, []interface{}{123, 100})
+	}
 }
 
 func TestNotExists_WithComplexExpression(t *testing.T) {
@@ -120,10 +164,18 @@ func TestNotExists_WithComplexExpression(t *testing.T) {
 	exp := NotExists(sub)
 
 	sql, args := exp.Build(dialect)
-	assert.Contains(t, sql, `NOT EXISTS (`)
-	assert.Contains(t, sql, `"status" = ?`)
-	assert.Contains(t, sql, `) OR (`)
-	assert.Equal(t, []interface{}{"pending", "failed"}, args)
+	if !strings.Contains(sql, `NOT EXISTS (`) {
+		t.Errorf("%q does not contain %q", sql, `NOT EXISTS (`)
+	}
+	if !strings.Contains(sql, `"status" = ?`) {
+		t.Errorf("%q does not contain %q", sql, `"status" = ?`)
+	}
+	if !strings.Contains(sql, `) OR (`) {
+		t.Errorf("%q does not contain %q", sql, `) OR (`)
+	}
+	if len(args) != 2 || args[0] != "pending" || args[1] != "failed" {
+		t.Errorf("got %v, want %v", args, []interface{}{"pending", "failed"})
+	}
 }
 
 func TestExists_MySQL(t *testing.T) {
@@ -133,8 +185,13 @@ func TestExists_MySQL(t *testing.T) {
 	exp := Exists(sub)
 
 	sql, args := exp.Build(dialect)
-	assert.Equal(t, `EXISTS (SELECT 1 FROM `+"`orders`"+` WHERE `+"`user_id`"+` = ?)`, sql)
-	assert.Equal(t, []interface{}{456}, args)
+	want := "EXISTS (SELECT 1 FROM `orders` WHERE `user_id` = ?)"
+	if sql != want {
+		t.Errorf("got %q, want %q", sql, want)
+	}
+	if len(args) != 1 || args[0] != 456 {
+		t.Errorf("got %v, want %v", args, []interface{}{456})
+	}
 }
 
 func TestNotExists_MySQL(t *testing.T) {
@@ -144,8 +201,13 @@ func TestNotExists_MySQL(t *testing.T) {
 	exp := NotExists(sub)
 
 	sql, args := exp.Build(dialect)
-	assert.Equal(t, `NOT EXISTS (SELECT 1 FROM `+"`orders`"+`)`, sql)
-	assert.Nil(t, args)
+	want := "NOT EXISTS (SELECT 1 FROM `orders`)"
+	if sql != want {
+		t.Errorf("got %q, want %q", sql, want)
+	}
+	if args != nil {
+		t.Errorf("got %v, want nil", args)
+	}
 }
 
 func TestExists_SQLite(t *testing.T) {
@@ -155,8 +217,13 @@ func TestExists_SQLite(t *testing.T) {
 	exp := Exists(sub)
 
 	sql, args := exp.Build(dialect)
-	assert.Equal(t, `EXISTS (SELECT 1 FROM "orders" WHERE "user_id" = ?)`, sql)
-	assert.Equal(t, []interface{}{789}, args)
+	want := `EXISTS (SELECT 1 FROM "orders" WHERE "user_id" = ?)`
+	if sql != want {
+		t.Errorf("got %q, want %q", sql, want)
+	}
+	if len(args) != 1 || args[0] != 789 {
+		t.Errorf("got %v, want %v", args, []interface{}{789})
+	}
 }
 
 func TestNotExists_SQLite(t *testing.T) {
@@ -166,8 +233,13 @@ func TestNotExists_SQLite(t *testing.T) {
 	exp := NotExists(sub)
 
 	sql, args := exp.Build(dialect)
-	assert.Equal(t, `NOT EXISTS (SELECT 1 FROM "orders")`, sql)
-	assert.Nil(t, args)
+	want := `NOT EXISTS (SELECT 1 FROM "orders")`
+	if sql != want {
+		t.Errorf("got %q, want %q", sql, want)
+	}
+	if args != nil {
+		t.Errorf("got %v, want nil", args)
+	}
 }
 
 func TestExists_MultipleParameters(t *testing.T) {
@@ -177,30 +249,47 @@ func TestExists_MultipleParameters(t *testing.T) {
 	exp := Exists(sub)
 
 	sql, args := exp.Build(dialect)
-	assert.Equal(t, `EXISTS (SELECT 1 FROM orders WHERE user_id = ? AND total > ? AND status = ?)`, sql)
-	assert.Equal(t, []interface{}{123, 100.50, "completed"}, args)
+	want := `EXISTS (SELECT 1 FROM orders WHERE user_id = ? AND total > ? AND status = ?)`
+	if sql != want {
+		t.Errorf("got %q, want %q", sql, want)
+	}
+	if len(args) != 3 || args[0] != 123 || args[1] != 100.50 || args[2] != "completed" {
+		t.Errorf("got %v, want %v", args, []interface{}{123, 100.50, "completed"})
+	}
 }
 
 func TestExists_Type(t *testing.T) {
 	// Verify that Exists returns an Expression interface
 	var exp Expression
 	exp = Exists(NewExp("SELECT 1"))
-	assert.NotNil(t, exp)
+	if exp == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify underlying type
 	existsExp, ok := exp.(*ExistsExp)
-	assert.True(t, ok)
-	assert.False(t, existsExp.Not)
+	if !ok {
+		t.Fatal("expected *ExistsExp type assertion to succeed")
+	}
+	if existsExp.Not {
+		t.Error("expected false: existsExp.Not should be false for Exists()")
+	}
 }
 
 func TestNotExists_Type(t *testing.T) {
 	// Verify that NotExists returns an Expression interface
 	var exp Expression
 	exp = NotExists(NewExp("SELECT 1"))
-	assert.NotNil(t, exp)
+	if exp == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify underlying type
 	existsExp, ok := exp.(*ExistsExp)
-	assert.True(t, ok)
-	assert.True(t, existsExp.Not)
+	if !ok {
+		t.Fatal("expected *ExistsExp type assertion to succeed")
+	}
+	if !existsExp.Not {
+		t.Error("expected true: existsExp.Not should be true for NotExists()")
+	}
 }

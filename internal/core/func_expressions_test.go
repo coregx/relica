@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/coregx/relica/internal/dialects"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestCase_Simple(t *testing.T) {
@@ -22,8 +21,20 @@ func TestCase_Simple(t *testing.T) {
 
 	sql, args := expr.Build(dialect)
 
-	assert.Equal(t, `CASE "status" WHEN ? THEN ? WHEN ? THEN ? ELSE ? END AS "status_code"`, sql)
-	assert.Equal(t, []interface{}{"active", 1, "inactive", 0, -1}, args)
+	if sql != `CASE "status" WHEN ? THEN ? WHEN ? THEN ? ELSE ? END AS "status_code"` {
+		t.Errorf("got %v, want %v", sql, `CASE "status" WHEN ? THEN ? WHEN ? THEN ? ELSE ? END AS "status_code"`)
+	}
+	want := []interface{}{"active", 1, "inactive", 0, -1}
+	if len(args) != len(want) {
+		t.Errorf("got %v, want %v", args, want)
+	} else {
+		for i := range want {
+			if args[i] != want[i] {
+				t.Errorf("got %v, want %v", args, want)
+				break
+			}
+		}
+	}
 }
 
 func TestCase_SimpleWithoutElse(t *testing.T) {
@@ -35,8 +46,20 @@ func TestCase_SimpleWithoutElse(t *testing.T) {
 
 	sql, args := expr.Build(dialect)
 
-	assert.Equal(t, `CASE "type" WHEN ? THEN ? WHEN ? THEN ? END`, sql)
-	assert.Equal(t, []interface{}{"A", "Alpha", "B", "Beta"}, args)
+	if sql != `CASE "type" WHEN ? THEN ? WHEN ? THEN ? END` {
+		t.Errorf("got %v, want %v", sql, `CASE "type" WHEN ? THEN ? WHEN ? THEN ? END`)
+	}
+	want := []interface{}{"A", "Alpha", "B", "Beta"}
+	if len(args) != len(want) {
+		t.Errorf("got %v, want %v", args, want)
+	} else {
+		for i := range want {
+			if args[i] != want[i] {
+				t.Errorf("got %v, want %v", args, want)
+				break
+			}
+		}
+	}
 }
 
 func TestCase_SimpleWithoutAlias(t *testing.T) {
@@ -48,8 +71,20 @@ func TestCase_SimpleWithoutAlias(t *testing.T) {
 
 	sql, args := expr.Build(dialect)
 
-	assert.Equal(t, "CASE `status` WHEN ? THEN ? ELSE ? END", sql)
-	assert.Equal(t, []interface{}{"active", 1, 0}, args)
+	if sql != "CASE `status` WHEN ? THEN ? ELSE ? END" {
+		t.Errorf("got %v, want %v", sql, "CASE `status` WHEN ? THEN ? ELSE ? END")
+	}
+	want := []interface{}{"active", 1, 0}
+	if len(args) != len(want) {
+		t.Errorf("got %v, want %v", args, want)
+	} else {
+		for i := range want {
+			if args[i] != want[i] {
+				t.Errorf("got %v, want %v", args, want)
+				break
+			}
+		}
+	}
 }
 
 func TestCaseWhen_Searched(t *testing.T) {
@@ -63,8 +98,20 @@ func TestCaseWhen_Searched(t *testing.T) {
 
 	sql, args := expr.Build(dialect)
 
-	assert.Equal(t, `CASE WHEN age < 18 THEN ? WHEN age >= 18 AND age < 65 THEN ? ELSE ? END AS "age_group"`, sql)
-	assert.Equal(t, []interface{}{"minor", "adult", "senior"}, args)
+	if sql != `CASE WHEN age < 18 THEN ? WHEN age >= 18 AND age < 65 THEN ? ELSE ? END AS "age_group"` {
+		t.Errorf("got %v, want %v", sql, `CASE WHEN age < 18 THEN ? WHEN age >= 18 AND age < 65 THEN ? ELSE ? END AS "age_group"`)
+	}
+	want := []interface{}{"minor", "adult", "senior"}
+	if len(args) != len(want) {
+		t.Errorf("got %v, want %v", args, want)
+	} else {
+		for i := range want {
+			if args[i] != want[i] {
+				t.Errorf("got %v, want %v", args, want)
+				break
+			}
+		}
+	}
 }
 
 func TestCaseWhen_Empty(t *testing.T) {
@@ -73,8 +120,12 @@ func TestCaseWhen_Empty(t *testing.T) {
 	expr := CaseWhen()
 	sql, args := expr.Build(dialect)
 
-	assert.Equal(t, "", sql)
-	assert.Nil(t, args)
+	if sql != "" {
+		t.Errorf("got %v, want %v", sql, "")
+	}
+	if args != nil {
+		t.Errorf("expected nil, got %v", args)
+	}
 }
 
 func TestCoalesce_Columns(t *testing.T) {
@@ -83,8 +134,12 @@ func TestCoalesce_Columns(t *testing.T) {
 	expr := Coalesce("nickname", "first_name", "username").As("display_name")
 	sql, args := expr.Build(dialect)
 
-	assert.Equal(t, `COALESCE("nickname", "first_name", "username") AS "display_name"`, sql)
-	assert.Empty(t, args)
+	if sql != `COALESCE("nickname", "first_name", "username") AS "display_name"` {
+		t.Errorf("got %v, want %v", sql, `COALESCE("nickname", "first_name", "username") AS "display_name"`)
+	}
+	if len(args) != 0 {
+		t.Errorf("expected empty, got %d", len(args))
+	}
 }
 
 func TestCoalesce_WithLiteral(t *testing.T) {
@@ -93,8 +148,12 @@ func TestCoalesce_WithLiteral(t *testing.T) {
 	expr := Coalesce("nickname", "'Anonymous'").As("display_name")
 	sql, args := expr.Build(dialect)
 
-	assert.Equal(t, `COALESCE("nickname", 'Anonymous') AS "display_name"`, sql)
-	assert.Empty(t, args)
+	if sql != `COALESCE("nickname", 'Anonymous') AS "display_name"` {
+		t.Errorf("got %v, want %v", sql, `COALESCE("nickname", 'Anonymous') AS "display_name"`)
+	}
+	if len(args) != 0 {
+		t.Errorf("expected empty, got %d", len(args))
+	}
 }
 
 func TestCoalesce_WithValue(t *testing.T) {
@@ -103,8 +162,13 @@ func TestCoalesce_WithValue(t *testing.T) {
 	expr := Coalesce("price", 0)
 	sql, args := expr.Build(dialect)
 
-	assert.Equal(t, "COALESCE(`price`, ?)", sql)
-	assert.Equal(t, []interface{}{0}, args)
+	if sql != "COALESCE(`price`, ?)" {
+		t.Errorf("got %v, want %v", sql, "COALESCE(`price`, ?)")
+	}
+	want := []interface{}{0}
+	if len(args) != len(want) || args[0] != want[0] {
+		t.Errorf("got %v, want %v", args, want)
+	}
 }
 
 func TestCoalesce_Empty(t *testing.T) {
@@ -113,8 +177,12 @@ func TestCoalesce_Empty(t *testing.T) {
 	expr := Coalesce()
 	sql, args := expr.Build(dialect)
 
-	assert.Equal(t, "", sql)
-	assert.Nil(t, args)
+	if sql != "" {
+		t.Errorf("got %v, want %v", sql, "")
+	}
+	if args != nil {
+		t.Errorf("expected nil, got %v", args)
+	}
 }
 
 func TestNullIf_Columns(t *testing.T) {
@@ -123,8 +191,12 @@ func TestNullIf_Columns(t *testing.T) {
 	expr := NullIf("email", "backup_email").As("primary_email")
 	sql, args := expr.Build(dialect)
 
-	assert.Equal(t, `NULLIF("email", "backup_email") AS "primary_email"`, sql)
-	assert.Empty(t, args)
+	if sql != `NULLIF("email", "backup_email") AS "primary_email"` {
+		t.Errorf("got %v, want %v", sql, `NULLIF("email", "backup_email") AS "primary_email"`)
+	}
+	if len(args) != 0 {
+		t.Errorf("expected empty, got %d", len(args))
+	}
 }
 
 func TestNullIf_WithLiteral(t *testing.T) {
@@ -133,8 +205,12 @@ func TestNullIf_WithLiteral(t *testing.T) {
 	expr := NullIf("email", "''").As("valid_email")
 	sql, args := expr.Build(dialect)
 
-	assert.Equal(t, `NULLIF("email", '') AS "valid_email"`, sql)
-	assert.Empty(t, args)
+	if sql != `NULLIF("email", '') AS "valid_email"` {
+		t.Errorf("got %v, want %v", sql, `NULLIF("email", '') AS "valid_email"`)
+	}
+	if len(args) != 0 {
+		t.Errorf("expected empty, got %d", len(args))
+	}
 }
 
 func TestNullIf_WithValue(t *testing.T) {
@@ -143,8 +219,13 @@ func TestNullIf_WithValue(t *testing.T) {
 	expr := NullIf("count", 0)
 	sql, args := expr.Build(dialect)
 
-	assert.Equal(t, "NULLIF(`count`, ?)", sql)
-	assert.Equal(t, []interface{}{0}, args)
+	if sql != "NULLIF(`count`, ?)" {
+		t.Errorf("got %v, want %v", sql, "NULLIF(`count`, ?)")
+	}
+	want := []interface{}{0}
+	if len(args) != len(want) || args[0] != want[0] {
+		t.Errorf("got %v, want %v", args, want)
+	}
 }
 
 func TestGreatest_Postgres(t *testing.T) {
@@ -153,8 +234,12 @@ func TestGreatest_Postgres(t *testing.T) {
 	expr := Greatest("price", "discount_price", "sale_price").As("max_price")
 	sql, args := expr.Build(dialect)
 
-	assert.Equal(t, `GREATEST("price", "discount_price", "sale_price") AS "max_price"`, sql)
-	assert.Empty(t, args)
+	if sql != `GREATEST("price", "discount_price", "sale_price") AS "max_price"` {
+		t.Errorf("got %v, want %v", sql, `GREATEST("price", "discount_price", "sale_price") AS "max_price"`)
+	}
+	if len(args) != 0 {
+		t.Errorf("expected empty, got %d", len(args))
+	}
 }
 
 func TestGreatest_MySQL(t *testing.T) {
@@ -163,8 +248,12 @@ func TestGreatest_MySQL(t *testing.T) {
 	expr := Greatest("a", "b", "c")
 	sql, args := expr.Build(dialect)
 
-	assert.Equal(t, "GREATEST(`a`, `b`, `c`)", sql)
-	assert.Empty(t, args)
+	if sql != "GREATEST(`a`, `b`, `c`)" {
+		t.Errorf("got %v, want %v", sql, "GREATEST(`a`, `b`, `c`)")
+	}
+	if len(args) != 0 {
+		t.Errorf("expected empty, got %d", len(args))
+	}
 }
 
 func TestGreatest_SQLite_FallbackToMAX(t *testing.T) {
@@ -174,8 +263,12 @@ func TestGreatest_SQLite_FallbackToMAX(t *testing.T) {
 	sql, args := expr.Build(dialect)
 
 	// SQLite doesn't have GREATEST, so we use MAX
-	assert.Equal(t, `MAX("col1", "col2") AS "max_val"`, sql)
-	assert.Empty(t, args)
+	if sql != `MAX("col1", "col2") AS "max_val"` {
+		t.Errorf("got %v, want %v", sql, `MAX("col1", "col2") AS "max_val"`)
+	}
+	if len(args) != 0 {
+		t.Errorf("expected empty, got %d", len(args))
+	}
 }
 
 func TestLeast_Postgres(t *testing.T) {
@@ -184,8 +277,12 @@ func TestLeast_Postgres(t *testing.T) {
 	expr := Least("price", "discount_price").As("min_price")
 	sql, args := expr.Build(dialect)
 
-	assert.Equal(t, `LEAST("price", "discount_price") AS "min_price"`, sql)
-	assert.Empty(t, args)
+	if sql != `LEAST("price", "discount_price") AS "min_price"` {
+		t.Errorf("got %v, want %v", sql, `LEAST("price", "discount_price") AS "min_price"`)
+	}
+	if len(args) != 0 {
+		t.Errorf("expected empty, got %d", len(args))
+	}
 }
 
 func TestLeast_SQLite_FallbackToMIN(t *testing.T) {
@@ -195,8 +292,12 @@ func TestLeast_SQLite_FallbackToMIN(t *testing.T) {
 	sql, args := expr.Build(dialect)
 
 	// SQLite doesn't have LEAST, so we use MIN
-	assert.Equal(t, `MIN("col1", "col2")`, sql)
-	assert.Empty(t, args)
+	if sql != `MIN("col1", "col2")` {
+		t.Errorf("got %v, want %v", sql, `MIN("col1", "col2")`)
+	}
+	if len(args) != 0 {
+		t.Errorf("expected empty, got %d", len(args))
+	}
 }
 
 func TestGreatest_WithValues(t *testing.T) {
@@ -205,8 +306,13 @@ func TestGreatest_WithValues(t *testing.T) {
 	expr := Greatest("price", 100)
 	sql, args := expr.Build(dialect)
 
-	assert.Equal(t, `GREATEST("price", ?)`, sql)
-	assert.Equal(t, []interface{}{100}, args)
+	if sql != `GREATEST("price", ?)` {
+		t.Errorf("got %v, want %v", sql, `GREATEST("price", ?)`)
+	}
+	want := []interface{}{100}
+	if len(args) != len(want) || args[0] != want[0] {
+		t.Errorf("got %v, want %v", args, want)
+	}
 }
 
 func TestGreatest_Empty(t *testing.T) {
@@ -215,8 +321,12 @@ func TestGreatest_Empty(t *testing.T) {
 	expr := Greatest()
 	sql, args := expr.Build(dialect)
 
-	assert.Equal(t, "", sql)
-	assert.Nil(t, args)
+	if sql != "" {
+		t.Errorf("got %v, want %v", sql, "")
+	}
+	if args != nil {
+		t.Errorf("expected nil, got %v", args)
+	}
 }
 
 func TestConcat_Postgres(t *testing.T) {
@@ -226,8 +336,12 @@ func TestConcat_Postgres(t *testing.T) {
 	sql, args := expr.Build(dialect)
 
 	// PostgreSQL uses || operator
-	assert.Equal(t, `"first_name" || ' ' || "last_name" AS "full_name"`, sql)
-	assert.Empty(t, args)
+	if sql != `"first_name" || ' ' || "last_name" AS "full_name"` {
+		t.Errorf("got %v, want %v", sql, `"first_name" || ' ' || "last_name" AS "full_name"`)
+	}
+	if len(args) != 0 {
+		t.Errorf("expected empty, got %d", len(args))
+	}
 }
 
 func TestConcat_MySQL(t *testing.T) {
@@ -237,8 +351,12 @@ func TestConcat_MySQL(t *testing.T) {
 	sql, args := expr.Build(dialect)
 
 	// MySQL uses CONCAT function
-	assert.Equal(t, "CONCAT(`first_name`, ' ', `last_name`) AS `full_name`", sql)
-	assert.Empty(t, args)
+	if sql != "CONCAT(`first_name`, ' ', `last_name`) AS `full_name`" {
+		t.Errorf("got %v, want %v", sql, "CONCAT(`first_name`, ' ', `last_name`) AS `full_name`")
+	}
+	if len(args) != 0 {
+		t.Errorf("expected empty, got %d", len(args))
+	}
 }
 
 func TestConcat_SQLite(t *testing.T) {
@@ -248,8 +366,12 @@ func TestConcat_SQLite(t *testing.T) {
 	sql, args := expr.Build(dialect)
 
 	// SQLite uses || operator
-	assert.Equal(t, `"a" || "b" || "c"`, sql)
-	assert.Empty(t, args)
+	if sql != `"a" || "b" || "c"` {
+		t.Errorf("got %v, want %v", sql, `"a" || "b" || "c"`)
+	}
+	if len(args) != 0 {
+		t.Errorf("expected empty, got %d", len(args))
+	}
 }
 
 func TestConcat_WithValues(t *testing.T) {
@@ -258,8 +380,13 @@ func TestConcat_WithValues(t *testing.T) {
 	expr := Concat("prefix", 123, "suffix")
 	sql, args := expr.Build(dialect)
 
-	assert.Equal(t, `"prefix" || ? || "suffix"`, sql)
-	assert.Equal(t, []interface{}{123}, args)
+	if sql != `"prefix" || ? || "suffix"` {
+		t.Errorf("got %v, want %v", sql, `"prefix" || ? || "suffix"`)
+	}
+	want := []interface{}{123}
+	if len(args) != len(want) || args[0] != want[0] {
+		t.Errorf("got %v, want %v", args, want)
+	}
 }
 
 func TestConcat_Empty(t *testing.T) {
@@ -268,8 +395,12 @@ func TestConcat_Empty(t *testing.T) {
 	expr := Concat()
 	sql, args := expr.Build(dialect)
 
-	assert.Equal(t, "", sql)
-	assert.Nil(t, args)
+	if sql != "" {
+		t.Errorf("got %v, want %v", sql, "")
+	}
+	if args != nil {
+		t.Errorf("expected nil, got %v", args)
+	}
 }
 
 func TestCoalesce_WithNestedExpression(t *testing.T) {
@@ -281,8 +412,12 @@ func TestCoalesce_WithNestedExpression(t *testing.T) {
 
 	sql, args := expr.Build(dialect)
 
-	assert.Equal(t, `COALESCE(NULLIF("email", ''), 'no-email') AS "safe_email"`, sql)
-	assert.Empty(t, args)
+	if sql != `COALESCE(NULLIF("email", ''), 'no-email') AS "safe_email"` {
+		t.Errorf("got %v, want %v", sql, `COALESCE(NULLIF("email", ''), 'no-email') AS "safe_email"`)
+	}
+	if len(args) != 0 {
+		t.Errorf("expected empty, got %d", len(args))
+	}
 }
 
 func TestCase_MultipleDialects(t *testing.T) {
@@ -302,7 +437,9 @@ func TestCase_MultipleDialects(t *testing.T) {
 			expr := Case("status").When("active", 1)
 
 			sql, _ := expr.Build(dialect)
-			assert.Equal(t, tt.want, sql)
+			if sql != tt.want {
+				t.Errorf("got %v, want %v", sql, tt.want)
+			}
 		})
 	}
 }
@@ -340,7 +477,9 @@ func TestCase_TableAlias(t *testing.T) {
 			dialect := dialects.GetDialect(tt.dialect)
 			expr := Case(tt.col).When("a", 1).When("b", 2)
 			sql, _ := expr.Build(dialect)
-			assert.Equal(t, tt.want, sql)
+			if sql != tt.want {
+				t.Errorf("got %v, want %v", sql, tt.want)
+			}
 		})
 	}
 }
@@ -369,8 +508,13 @@ func TestCoalesce_TableAlias(t *testing.T) {
 			dialect := dialects.GetDialect(tt.dialect)
 			expr := Coalesce("u.nickname", "u.name", 42)
 			sql, args := expr.Build(dialect)
-			assert.Equal(t, tt.want, sql)
-			assert.Equal(t, []interface{}{42}, args)
+			if sql != tt.want {
+				t.Errorf("got %v, want %v", sql, tt.want)
+			}
+			want := []interface{}{42}
+			if len(args) != len(want) || args[0] != want[0] {
+				t.Errorf("got %v, want %v", args, want)
+			}
 		})
 	}
 }
@@ -381,8 +525,13 @@ func TestNullIf_TableAlias(t *testing.T) {
 
 	expr := NullIf("u.score", 0)
 	sql, args := expr.Build(dialect)
-	assert.Equal(t, `NULLIF("u"."score", ?)`, sql)
-	assert.Equal(t, []interface{}{0}, args)
+	if sql != `NULLIF("u"."score", ?)` {
+		t.Errorf("got %v, want %v", sql, `NULLIF("u"."score", ?)`)
+	}
+	want := []interface{}{0}
+	if len(args) != len(want) || args[0] != want[0] {
+		t.Errorf("got %v, want %v", args, want)
+	}
 }
 
 // TestGreatest_TableAlias tests GREATEST with table-aliased column names
@@ -391,7 +540,9 @@ func TestGreatest_TableAlias(t *testing.T) {
 
 	expr := Greatest("p.price", "p.sale_price", "p.wholesale_price")
 	sql, _ := expr.Build(dialect)
-	assert.Equal(t, `GREATEST("p"."price", "p"."sale_price", "p"."wholesale_price")`, sql)
+	if sql != `GREATEST("p"."price", "p"."sale_price", "p"."wholesale_price")` {
+		t.Errorf("got %v, want %v", sql, `GREATEST("p"."price", "p"."sale_price", "p"."wholesale_price")`)
+	}
 }
 
 // TestLeast_TableAlias tests LEAST with table-aliased column names
@@ -400,7 +551,9 @@ func TestLeast_TableAlias(t *testing.T) {
 
 	expr := Least("o.subtotal", "o.discount_total")
 	sql, _ := expr.Build(dialect)
-	assert.Equal(t, "LEAST(`o`.`subtotal`, `o`.`discount_total`)", sql)
+	if sql != "LEAST(`o`.`subtotal`, `o`.`discount_total`)" {
+		t.Errorf("got %v, want %v", sql, "LEAST(`o`.`subtotal`, `o`.`discount_total`)")
+	}
 }
 
 // TestConcat_TableAlias tests CONCAT with table-aliased column names
@@ -427,7 +580,9 @@ func TestConcat_TableAlias(t *testing.T) {
 			dialect := dialects.GetDialect(tt.dialect)
 			expr := Concat("u.first_name", "u.last_name")
 			sql, _ := expr.Build(dialect)
-			assert.Equal(t, tt.want, sql)
+			if sql != tt.want {
+				t.Errorf("got %v, want %v", sql, tt.want)
+			}
 		})
 	}
 }

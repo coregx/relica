@@ -3,8 +3,6 @@ package core
 import (
 	"database/sql"
 	"testing"
-
-	_ "modernc.org/sqlite"
 )
 
 const (
@@ -39,7 +37,7 @@ type UserWithIgnored struct {
 }
 
 func setupTestDB(t *testing.T) *sql.DB {
-	db, err := sql.Open("sqlite", ":memory:")
+	db, err := sql.Open("memdb", ":memory:")
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
@@ -56,15 +54,22 @@ func setupTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("Failed to create table: %v", err)
 	}
 
-	// Insert test data
-	_, err = db.Exec(`
-		INSERT INTO users (id, name, email) VALUES
-		(1, 'Alice', 'alice@example.com'),
-		(2, 'Bob', 'bob@example.com'),
-		(3, 'Charlie', 'charlie@example.com')
-	`)
-	if err != nil {
-		t.Fatalf("Failed to insert test data: %v", err)
+	// Insert test data row by row (memdb driver does not support multi-row VALUES).
+	inserts := []struct {
+		id    int
+		name  string
+		email string
+	}{
+		{1, "Alice", "alice@example.com"},
+		{2, "Bob", "bob@example.com"},
+		{3, "Charlie", "charlie@example.com"},
+	}
+	for _, row := range inserts {
+		_, err = db.Exec(`INSERT INTO users (id, name, email) VALUES (?, ?, ?)`,
+			row.id, row.name, row.email)
+		if err != nil {
+			t.Fatalf("Failed to insert test data for %s: %v", row.name, err)
+		}
 	}
 
 	return db

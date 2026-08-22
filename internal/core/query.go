@@ -843,6 +843,11 @@ func (q *Query) BindParams(params Params) *Query {
 	return q
 }
 
+// ToSQL returns the SQL string and parameters without executing the query.
+func (q *Query) ToSQL() (string, []interface{}) {
+	return q.sql, q.params
+}
+
 // SQL returns the SQL query string.
 func (q *Query) SQL() string {
 	return q.sql

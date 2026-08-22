@@ -2,13 +2,12 @@ package core
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/coregx/relica/internal/dialects"
 	"github.com/coregx/relica/internal/util"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // ============================================================================
@@ -89,9 +88,15 @@ func TestBuildUpsertUpdateCols_NoFieldsSpecified(t *testing.T) {
 
 	result := mq.buildUpsertUpdateCols(dataMap, pkCols, nil)
 
-	assert.ElementsMatch(t, []string{"name", "email"}, result)
+	// result should contain "name" and "email" but not "id"
+	want := map[string]bool{"name": true, "email": true}
+	if len(result) != len(want) {
+		t.Errorf("expected length %d, got %d", len(want), len(result))
+	}
 	for _, col := range result {
-		assert.NotEqual(t, "id", col, "PK should not be in update cols")
+		if col == "id" {
+			t.Errorf("PK should not be in update cols: expected different, both %v", col)
+		}
 	}
 }
 
@@ -103,7 +108,9 @@ func TestBuildUpsertUpdateCols_SpecificFieldsWithPK(t *testing.T) {
 
 	result := mq.buildUpsertUpdateCols(dataMap, pkCols, []string{"name", "id"})
 
-	assert.Equal(t, []string{"name"}, result)
+	if len(result) != 1 || result[0] != "name" {
+		t.Errorf("got %v, want %v", result, []string{"name"})
+	}
 }
 
 func TestBuildUpsertUpdateCols_SingleSpecificField(t *testing.T) {
@@ -113,7 +120,9 @@ func TestBuildUpsertUpdateCols_SingleSpecificField(t *testing.T) {
 
 	result := mq.buildUpsertUpdateCols(dataMap, pkCols, []string{"email"})
 
-	assert.Equal(t, []string{"email"}, result)
+	if len(result) != 1 || result[0] != "email" {
+		t.Errorf("got %v, want %v", result, []string{"email"})
+	}
 }
 
 func TestBuildUpsertUpdateCols_CompositePK(t *testing.T) {
@@ -123,7 +132,9 @@ func TestBuildUpsertUpdateCols_CompositePK(t *testing.T) {
 
 	result := mq.buildUpsertUpdateCols(dataMap, pkCols, nil)
 
-	assert.Equal(t, []string{"qty"}, result)
+	if len(result) != 1 || result[0] != "qty" {
+		t.Errorf("got %v, want %v", result, []string{"qty"})
+	}
 }
 
 // ============================================================================
@@ -135,7 +146,9 @@ func TestModelUpsert_SQL_PostgreSQL_AllFields(t *testing.T) {
 	user := upsertUser{ID: 1, Name: "Alice", Email: "alice@example.com", Status: "active"}
 
 	dataMap, err := util.StructToMap(&user)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	pkCols := []string{"id"}
 	mq := &ModelQuery{exclude: make(map[string]bool)}
@@ -144,14 +157,30 @@ func TestModelUpsert_SQL_PostgreSQL_AllFields(t *testing.T) {
 	qb := &QueryBuilder{db: db}
 	q := qb.Upsert("users", dataMap).OnConflict(pkCols...).DoUpdate(updateCols...).Build()
 
-	require.NotNil(t, q)
-	assert.Contains(t, q.sql, `INSERT INTO "users"`)
-	assert.Contains(t, q.sql, `ON CONFLICT ("id")`)
-	assert.Contains(t, q.sql, "DO UPDATE SET")
-	assert.Contains(t, q.sql, `"name" = EXCLUDED."name"`)
-	assert.Contains(t, q.sql, `"email" = EXCLUDED."email"`)
-	assert.Contains(t, q.sql, `"status" = EXCLUDED."status"`)
-	assert.NotContains(t, q.sql, `"id" = EXCLUDED."id"`)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
+	if !strings.Contains(q.sql, `INSERT INTO "users"`) {
+		t.Errorf("%q does not contain %q", q.sql, `INSERT INTO "users"`)
+	}
+	if !strings.Contains(q.sql, `ON CONFLICT ("id")`) {
+		t.Errorf("%q does not contain %q", q.sql, `ON CONFLICT ("id")`)
+	}
+	if !strings.Contains(q.sql, "DO UPDATE SET") {
+		t.Errorf("%q does not contain %q", q.sql, "DO UPDATE SET")
+	}
+	if !strings.Contains(q.sql, `"name" = EXCLUDED."name"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"name" = EXCLUDED."name"`)
+	}
+	if !strings.Contains(q.sql, `"email" = EXCLUDED."email"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"email" = EXCLUDED."email"`)
+	}
+	if !strings.Contains(q.sql, `"status" = EXCLUDED."status"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"status" = EXCLUDED."status"`)
+	}
+	if strings.Contains(q.sql, `"id" = EXCLUDED."id"`) {
+		t.Errorf("%q should not contain %q", q.sql, `"id" = EXCLUDED."id"`)
+	}
 }
 
 func TestModelUpsert_SQL_MySQL_AllFields(t *testing.T) {
@@ -159,7 +188,9 @@ func TestModelUpsert_SQL_MySQL_AllFields(t *testing.T) {
 	user := upsertUser{ID: 2, Name: "Bob", Email: "bob@example.com", Status: "pending"}
 
 	dataMap, err := util.StructToMap(&user)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	pkCols := []string{"id"}
 	mq := &ModelQuery{exclude: make(map[string]bool)}
@@ -168,12 +199,24 @@ func TestModelUpsert_SQL_MySQL_AllFields(t *testing.T) {
 	qb := &QueryBuilder{db: db}
 	q := qb.Upsert("users", dataMap).OnConflict(pkCols...).DoUpdate(updateCols...).Build()
 
-	require.NotNil(t, q)
-	assert.Contains(t, q.sql, "INSERT INTO `users`")
-	assert.Contains(t, q.sql, "ON DUPLICATE KEY UPDATE")
-	assert.Contains(t, q.sql, "`name` = VALUES(`name`)")
-	assert.Contains(t, q.sql, "`email` = VALUES(`email`)")
-	assert.Contains(t, q.sql, "`status` = VALUES(`status`)")
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
+	if !strings.Contains(q.sql, "INSERT INTO `users`") {
+		t.Errorf("%q does not contain %q", q.sql, "INSERT INTO `users`")
+	}
+	if !strings.Contains(q.sql, "ON DUPLICATE KEY UPDATE") {
+		t.Errorf("%q does not contain %q", q.sql, "ON DUPLICATE KEY UPDATE")
+	}
+	if !strings.Contains(q.sql, "`name` = VALUES(`name`)") {
+		t.Errorf("%q does not contain %q", q.sql, "`name` = VALUES(`name`)")
+	}
+	if !strings.Contains(q.sql, "`email` = VALUES(`email`)") {
+		t.Errorf("%q does not contain %q", q.sql, "`email` = VALUES(`email`)")
+	}
+	if !strings.Contains(q.sql, "`status` = VALUES(`status`)") {
+		t.Errorf("%q does not contain %q", q.sql, "`status` = VALUES(`status`)")
+	}
 }
 
 func TestModelUpsert_SQL_SQLite_AllFields(t *testing.T) {
@@ -181,7 +224,9 @@ func TestModelUpsert_SQL_SQLite_AllFields(t *testing.T) {
 	user := upsertUser{ID: 3, Name: "Carol", Email: "carol@example.com", Status: "active"}
 
 	dataMap, err := util.StructToMap(&user)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	pkCols := []string{"id"}
 	mq := &ModelQuery{exclude: make(map[string]bool)}
@@ -190,11 +235,21 @@ func TestModelUpsert_SQL_SQLite_AllFields(t *testing.T) {
 	qb := &QueryBuilder{db: db}
 	q := qb.Upsert("users", dataMap).OnConflict(pkCols...).DoUpdate(updateCols...).Build()
 
-	require.NotNil(t, q)
-	assert.Contains(t, q.sql, `INSERT INTO "users"`)
-	assert.Contains(t, q.sql, `ON CONFLICT ("id")`)
-	assert.Contains(t, q.sql, "DO UPDATE SET")
-	assert.Contains(t, q.sql, `"name" = excluded."name"`)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
+	if !strings.Contains(q.sql, `INSERT INTO "users"`) {
+		t.Errorf("%q does not contain %q", q.sql, `INSERT INTO "users"`)
+	}
+	if !strings.Contains(q.sql, `ON CONFLICT ("id")`) {
+		t.Errorf("%q does not contain %q", q.sql, `ON CONFLICT ("id")`)
+	}
+	if !strings.Contains(q.sql, "DO UPDATE SET") {
+		t.Errorf("%q does not contain %q", q.sql, "DO UPDATE SET")
+	}
+	if !strings.Contains(q.sql, `"name" = excluded."name"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"name" = excluded."name"`)
+	}
 }
 
 func TestModelUpsert_SQL_SelectiveFields(t *testing.T) {
@@ -234,7 +289,9 @@ func TestModelUpsert_SQL_SelectiveFields(t *testing.T) {
 			user := upsertUser{ID: 1, Name: "Alice", Email: "alice@example.com", Status: "active"}
 
 			dataMap, err := util.StructToMap(&user)
-			require.NoError(t, err)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 
 			pkCols := []string{"id"}
 			mq := &ModelQuery{exclude: make(map[string]bool)}
@@ -244,11 +301,19 @@ func TestModelUpsert_SQL_SelectiveFields(t *testing.T) {
 			qb := &QueryBuilder{db: db}
 			q := qb.Upsert("users", dataMap).OnConflict(pkCols...).DoUpdate(updateCols...).Build()
 
-			require.NotNil(t, q)
-			assert.Contains(t, q.sql, tt.updateCol)
-			assert.Contains(t, q.sql, tt.expectSQL)
+			if q == nil {
+				t.Fatal("expected non-nil")
+			}
+			if !strings.Contains(q.sql, tt.updateCol) {
+				t.Errorf("%q does not contain %q", q.sql, tt.updateCol)
+			}
+			if !strings.Contains(q.sql, tt.expectSQL) {
+				t.Errorf("%q does not contain %q", q.sql, tt.expectSQL)
+			}
 			for _, ne := range tt.notExpect {
-				assert.NotContains(t, q.sql, ne)
+				if strings.Contains(q.sql, ne) {
+					t.Errorf("%q should not contain %q", q.sql, ne)
+				}
 			}
 		})
 	}
@@ -259,7 +324,9 @@ func TestModelUpsert_SQL_ExplicitPKTag(t *testing.T) {
 	post := upsertPost{PostID: 10, Content: "Hello", Views: 5}
 
 	dataMap, err := util.StructToMap(&post)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	pkCols := []string{"post_id"}
 	mq := &ModelQuery{exclude: make(map[string]bool)}
@@ -268,11 +335,21 @@ func TestModelUpsert_SQL_ExplicitPKTag(t *testing.T) {
 	qb := &QueryBuilder{db: db}
 	q := qb.Upsert("posts", dataMap).OnConflict(pkCols...).DoUpdate(updateCols...).Build()
 
-	require.NotNil(t, q)
-	assert.Contains(t, q.sql, `ON CONFLICT ("post_id")`)
-	assert.Contains(t, q.sql, `"content" = EXCLUDED."content"`)
-	assert.Contains(t, q.sql, `"views" = EXCLUDED."views"`)
-	assert.NotContains(t, q.sql, `"post_id" = EXCLUDED."post_id"`)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
+	if !strings.Contains(q.sql, `ON CONFLICT ("post_id")`) {
+		t.Errorf("%q does not contain %q", q.sql, `ON CONFLICT ("post_id")`)
+	}
+	if !strings.Contains(q.sql, `"content" = EXCLUDED."content"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"content" = EXCLUDED."content"`)
+	}
+	if !strings.Contains(q.sql, `"views" = EXCLUDED."views"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"views" = EXCLUDED."views"`)
+	}
+	if strings.Contains(q.sql, `"post_id" = EXCLUDED."post_id"`) {
+		t.Errorf("%q should not contain %q", q.sql, `"post_id" = EXCLUDED."post_id"`)
+	}
 }
 
 // ============================================================================
@@ -286,8 +363,12 @@ func TestModelUpsert_Error_EmptyTable(t *testing.T) {
 	mq := newTestMQ(db, &user, "")
 	err := mq.Upsert()
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "table name not specified")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "table name not specified") {
+		t.Errorf("%q does not contain %q", err.Error(), "table name not specified")
+	}
 }
 
 func TestModelUpsert_Error_NoPrimaryKey(t *testing.T) {
@@ -297,8 +378,12 @@ func TestModelUpsert_Error_NoPrimaryKey(t *testing.T) {
 	mq := newTestMQ(db, &thing, "things")
 	err := mq.Upsert()
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "primary key not found")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "primary key not found") {
+		t.Errorf("%q does not contain %q", err.Error(), "primary key not found")
+	}
 }
 
 // ============================================================================
@@ -315,12 +400,24 @@ func TestDiffFields_SomeFieldsChanged(t *testing.T) {
 	mq := newTestMQ(db, &current, "users")
 
 	changed, err := mq.diffFields(&original)
-	require.NoError(t, err)
-	assert.Len(t, changed, 2)
-	assert.Equal(t, "Alice Updated", changed["name"])
-	assert.Equal(t, "inactive", changed["status"])
-	assert.NotContains(t, changed, "id")    // PK excluded
-	assert.NotContains(t, changed, "email") // Unchanged
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(changed) != 2 {
+		t.Errorf("expected length %d, got %d", 2, len(changed))
+	}
+	if changed["name"] != "Alice Updated" {
+		t.Errorf("got %v, want %v", changed["name"], "Alice Updated")
+	}
+	if changed["status"] != "inactive" {
+		t.Errorf("got %v, want %v", changed["status"], "inactive")
+	}
+	if _, ok := changed["id"]; ok {
+		t.Errorf("%q should not contain %q", changed, "id")
+	}
+	if _, ok := changed["email"]; ok {
+		t.Errorf("%q should not contain %q", changed, "email")
+	}
 }
 
 func TestDiffFields_NoFieldsChanged(t *testing.T) {
@@ -331,8 +428,12 @@ func TestDiffFields_NoFieldsChanged(t *testing.T) {
 	mq := newTestMQ(db, &current, "users")
 
 	changed, err := mq.diffFields(&original)
-	require.NoError(t, err)
-	assert.Empty(t, changed)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(changed) != 0 {
+		t.Errorf("expected empty, got %d", len(changed))
+	}
 }
 
 func TestDiffFields_AllNonPKFieldsChanged(t *testing.T) {
@@ -343,12 +444,24 @@ func TestDiffFields_AllNonPKFieldsChanged(t *testing.T) {
 	mq := newTestMQ(db, &current, "users")
 
 	changed, err := mq.diffFields(&original)
-	require.NoError(t, err)
-	assert.Len(t, changed, 3) // name, email, status
-	assert.Equal(t, "Bob", changed["name"])
-	assert.Equal(t, "bob@example.com", changed["email"])
-	assert.Equal(t, "inactive", changed["status"])
-	assert.NotContains(t, changed, "id") // PK never included
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(changed) != 3 { // name, email, status
+		t.Errorf("expected length %d, got %d", 3, len(changed))
+	}
+	if changed["name"] != "Bob" {
+		t.Errorf("got %v, want %v", changed["name"], "Bob")
+	}
+	if changed["email"] != "bob@example.com" {
+		t.Errorf("got %v, want %v", changed["email"], "bob@example.com")
+	}
+	if changed["status"] != "inactive" {
+		t.Errorf("got %v, want %v", changed["status"], "inactive")
+	}
+	if _, ok := changed["id"]; ok {
+		t.Errorf("%q should not contain %q", changed, "id")
+	}
 }
 
 func TestDiffFields_TimeFieldChanged(t *testing.T) {
@@ -362,9 +475,15 @@ func TestDiffFields_TimeFieldChanged(t *testing.T) {
 	mq := newTestMQ(db, &current, "users")
 
 	changed, err := mq.diffFields(&original)
-	require.NoError(t, err)
-	assert.Len(t, changed, 1)
-	assert.Equal(t, t2, changed["created_at"])
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(changed) != 1 {
+		t.Errorf("expected length %d, got %d", 1, len(changed))
+	}
+	if changed["created_at"] != t2 {
+		t.Errorf("got %v, want %v", changed["created_at"], t2)
+	}
 }
 
 func TestDiffFields_TimeFieldUnchanged(t *testing.T) {
@@ -377,8 +496,12 @@ func TestDiffFields_TimeFieldUnchanged(t *testing.T) {
 	mq := newTestMQ(db, &current, "users")
 
 	changed, err := mq.diffFields(&original)
-	require.NoError(t, err)
-	assert.Empty(t, changed)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(changed) != 0 {
+		t.Errorf("expected empty, got %d", len(changed))
+	}
 }
 
 func TestDiffFields_TypeMismatch_Error(t *testing.T) {
@@ -395,8 +518,12 @@ func TestDiffFields_TypeMismatch_Error(t *testing.T) {
 	mq := newTestMQ(db, &current, "users")
 
 	_, err := mq.diffFields(&other)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "does not match model type")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "does not match model type") {
+		t.Errorf("%q does not contain %q", err.Error(), "does not match model type")
+	}
 }
 
 func TestDiffFields_OriginalNotStruct_Error(t *testing.T) {
@@ -407,8 +534,12 @@ func TestDiffFields_OriginalNotStruct_Error(t *testing.T) {
 
 	notStruct := 42
 	_, err := mq.diffFields(&notStruct)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "original is not a struct")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "original is not a struct") {
+		t.Errorf("%q does not contain %q", err.Error(), "original is not a struct")
+	}
 }
 
 func TestDiffFields_OriginalPassedByValue(t *testing.T) {
@@ -421,9 +552,15 @@ func TestDiffFields_OriginalPassedByValue(t *testing.T) {
 	mq := newTestMQ(db, &current, "users")
 
 	changed, err := mq.diffFields(original)
-	require.NoError(t, err)
-	assert.Len(t, changed, 1)
-	assert.Equal(t, "Bob", changed["name"])
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(changed) != 1 {
+		t.Errorf("expected length %d, got %d", 1, len(changed))
+	}
+	if changed["name"] != "Bob" {
+		t.Errorf("got %v, want %v", changed["name"], "Bob")
+	}
 }
 
 // ============================================================================
@@ -439,8 +576,12 @@ func TestUpdateChanged_EmptyTable_Error(t *testing.T) {
 	mq := newTestMQ(db, &current, "")
 
 	err := mq.UpdateChanged(&original)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "table name not specified")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "table name not specified") {
+		t.Errorf("%q does not contain %q", err.Error(), "table name not specified")
+	}
 }
 
 func TestUpdateChanged_TypeMismatch_Error(t *testing.T) {
@@ -457,8 +598,12 @@ func TestUpdateChanged_TypeMismatch_Error(t *testing.T) {
 	mq := newTestMQ(db, &current, "users")
 
 	err := mq.UpdateChanged(&other)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "does not match model type")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "does not match model type") {
+		t.Errorf("%q does not contain %q", err.Error(), "does not match model type")
+	}
 }
 
 func TestUpdateChanged_NoPrimaryKey_Error(t *testing.T) {
@@ -475,8 +620,12 @@ func TestUpdateChanged_NoPrimaryKey_Error(t *testing.T) {
 	mq := newTestMQ(db, &current, "nopk")
 
 	err := mq.UpdateChanged(&original)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "primary key not found")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "primary key not found") {
+		t.Errorf("%q does not contain %q", err.Error(), "primary key not found")
+	}
 }
 
 // TestUpdateChanged_NothingChanged_NilNoQuery verifies that when nothing
@@ -490,8 +639,12 @@ func TestUpdateChanged_NothingChanged_NilNoQuery(t *testing.T) {
 	mq := newTestMQ(db, &current, "users")
 
 	changed, err := mq.diffFields(&original)
-	require.NoError(t, err)
-	assert.Empty(t, changed, "no fields should be reported as changed — no query will execute")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(changed) != 0 {
+		t.Errorf("no fields should be reported as changed — no query will execute: expected empty, got %d", len(changed))
+	}
 }
 
 // ============================================================================
@@ -504,8 +657,12 @@ func TestColumnFromField_WithTag(t *testing.T) {
 	}
 	t2 := reflect.TypeOf(sample{})
 	col, skip := columnFromField(t2.Field(0))
-	assert.False(t, skip)
-	assert.Equal(t, "name", col)
+	if skip {
+		t.Error("expected false")
+	}
+	if col != "name" {
+		t.Errorf("got %v, want %v", col, "name")
+	}
 }
 
 func TestColumnFromField_WithSkipTag(t *testing.T) {
@@ -514,7 +671,9 @@ func TestColumnFromField_WithSkipTag(t *testing.T) {
 	}
 	t2 := reflect.TypeOf(sample{})
 	_, skip := columnFromField(t2.Field(0))
-	assert.True(t, skip)
+	if !skip {
+		t.Error("expected true")
+	}
 }
 
 func TestColumnFromField_NoTag(t *testing.T) {
@@ -523,8 +682,12 @@ func TestColumnFromField_NoTag(t *testing.T) {
 	}
 	t2 := reflect.TypeOf(sample{})
 	col, skip := columnFromField(t2.Field(0))
-	assert.False(t, skip)
-	assert.Equal(t, "MyField", col)
+	if skip {
+		t.Error("expected false")
+	}
+	if col != "MyField" {
+		t.Errorf("got %v, want %v", col, "MyField")
+	}
 }
 
 func TestColumnFromField_PKCompositeTag(t *testing.T) {
@@ -534,8 +697,12 @@ func TestColumnFromField_PKCompositeTag(t *testing.T) {
 	}
 	t2 := reflect.TypeOf(sample{})
 	col, skip := columnFromField(t2.Field(0))
-	assert.False(t, skip)
-	assert.Equal(t, "tenant_id", col)
+	if skip {
+		t.Error("expected false")
+	}
+	if col != "tenant_id" {
+		t.Errorf("got %v, want %v", col, "tenant_id")
+	}
 }
 
 // ============================================================================
@@ -547,8 +714,12 @@ func TestBuildPKSet_SinglePK(t *testing.T) {
 		Columns: []string{"id"},
 	}
 	set := buildPKSet(pkInfo)
-	assert.True(t, set["id"])
-	assert.False(t, set["name"])
+	if !set["id"] {
+		t.Error("expected true")
+	}
+	if set["name"] {
+		t.Error("expected false")
+	}
 }
 
 func TestBuildPKSet_CompositePK(t *testing.T) {
@@ -556,12 +727,20 @@ func TestBuildPKSet_CompositePK(t *testing.T) {
 		Columns: []string{"order_id", "product_id"},
 	}
 	set := buildPKSet(pkInfo)
-	assert.True(t, set["order_id"])
-	assert.True(t, set["product_id"])
-	assert.False(t, set["qty"])
+	if !set["order_id"] {
+		t.Error("expected true")
+	}
+	if !set["product_id"] {
+		t.Error("expected true")
+	}
+	if set["qty"] {
+		t.Error("expected false")
+	}
 }
 
 func TestBuildPKSet_Nil(t *testing.T) {
 	set := buildPKSet(nil)
-	assert.Empty(t, set)
+	if len(set) != 0 {
+		t.Errorf("expected empty, got %d", len(set))
+	}
 }

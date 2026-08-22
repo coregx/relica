@@ -5,8 +5,6 @@ import (
 	"testing"
 
 	"github.com/coregx/relica/internal/dialects"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // mockDB creates a minimal DB for SQL generation testing
@@ -27,18 +25,32 @@ func TestUpsertQuery_PostgreSQL_DoUpdate(t *testing.T) {
 	}).OnConflict("id").DoUpdate("name", "email")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify SQL structure
 	sql := q.sql
-	assert.Contains(t, sql, `INSERT INTO "users"`)
-	assert.Contains(t, sql, `ON CONFLICT ("id")`)
-	assert.Contains(t, sql, "DO UPDATE SET")
-	assert.Contains(t, sql, `"name" = EXCLUDED."name"`)
-	assert.Contains(t, sql, `"email" = EXCLUDED."email"`)
+	if !strings.Contains(sql, `INSERT INTO "users"`) {
+		t.Errorf("%q does not contain %q", sql, `INSERT INTO "users"`)
+	}
+	if !strings.Contains(sql, `ON CONFLICT ("id")`) {
+		t.Errorf("%q does not contain %q", sql, `ON CONFLICT ("id")`)
+	}
+	if !strings.Contains(sql, "DO UPDATE SET") {
+		t.Errorf("%q does not contain %q", sql, "DO UPDATE SET")
+	}
+	if !strings.Contains(sql, `"name" = EXCLUDED."name"`) {
+		t.Errorf("%q does not contain %q", sql, `"name" = EXCLUDED."name"`)
+	}
+	if !strings.Contains(sql, `"email" = EXCLUDED."email"`) {
+		t.Errorf("%q does not contain %q", sql, `"email" = EXCLUDED."email"`)
+	}
 
 	// Verify parameters
-	assert.Len(t, q.params, 3)
+	if len(q.params) != 3 {
+		t.Errorf("expected length %d, got %d", 3, len(q.params))
+	}
 }
 
 func TestUpsertQuery_PostgreSQL_DoNothing(t *testing.T) {
@@ -51,12 +63,20 @@ func TestUpsertQuery_PostgreSQL_DoNothing(t *testing.T) {
 	}).OnConflict("id").DoNothing()
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	sql := q.sql
-	assert.Contains(t, sql, `INSERT INTO "users"`)
-	assert.Contains(t, sql, `ON CONFLICT ("id") DO NOTHING`)
-	assert.NotContains(t, sql, "UPDATE")
+	if !strings.Contains(sql, `INSERT INTO "users"`) {
+		t.Errorf("%q does not contain %q", sql, `INSERT INTO "users"`)
+	}
+	if !strings.Contains(sql, `ON CONFLICT ("id") DO NOTHING`) {
+		t.Errorf("%q does not contain %q", sql, `ON CONFLICT ("id") DO NOTHING`)
+	}
+	if strings.Contains(sql, "UPDATE") {
+		t.Errorf("%q should not contain %q", sql, "UPDATE")
+	}
 }
 
 func TestUpsertQuery_PostgreSQL_AutoUpdateColumns(t *testing.T) {
@@ -72,14 +92,24 @@ func TestUpsertQuery_PostgreSQL_AutoUpdateColumns(t *testing.T) {
 	}).OnConflict("id")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	sql := q.sql
-	assert.Contains(t, sql, `ON CONFLICT ("id") DO UPDATE SET`)
+	if !strings.Contains(sql, `ON CONFLICT ("id") DO UPDATE SET`) {
+		t.Errorf("%q does not contain %q", sql, `ON CONFLICT ("id") DO UPDATE SET`)
+	}
 	// Should update email and name, but not id
-	assert.Contains(t, sql, `"email" = EXCLUDED."email"`)
-	assert.Contains(t, sql, `"name" = EXCLUDED."name"`)
-	assert.NotContains(t, sql, `"id" = EXCLUDED."id"`)
+	if !strings.Contains(sql, `"email" = EXCLUDED."email"`) {
+		t.Errorf("%q does not contain %q", sql, `"email" = EXCLUDED."email"`)
+	}
+	if !strings.Contains(sql, `"name" = EXCLUDED."name"`) {
+		t.Errorf("%q does not contain %q", sql, `"name" = EXCLUDED."name"`)
+	}
+	if strings.Contains(sql, `"id" = EXCLUDED."id"`) {
+		t.Errorf("%q should not contain %q", sql, `"id" = EXCLUDED."id"`)
+	}
 }
 
 func TestUpsertQuery_MySQL_DoUpdate(t *testing.T) {
@@ -92,15 +122,25 @@ func TestUpsertQuery_MySQL_DoUpdate(t *testing.T) {
 	}).OnConflict("id").DoUpdate("name")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	sql := q.sql
-	assert.Contains(t, sql, "INSERT INTO `users`")
-	assert.Contains(t, sql, "ON DUPLICATE KEY UPDATE")
-	assert.Contains(t, sql, "`name` = VALUES(`name`)")
+	if !strings.Contains(sql, "INSERT INTO `users`") {
+		t.Errorf("%q does not contain %q", sql, "INSERT INTO `users`")
+	}
+	if !strings.Contains(sql, "ON DUPLICATE KEY UPDATE") {
+		t.Errorf("%q does not contain %q", sql, "ON DUPLICATE KEY UPDATE")
+	}
+	if !strings.Contains(sql, "`name` = VALUES(`name`)") {
+		t.Errorf("%q does not contain %q", sql, "`name` = VALUES(`name`)")
+	}
 
 	// Verify placeholders
-	assert.Equal(t, 2, strings.Count(sql, "?"))
+	if got := strings.Count(sql, "?"); got != 2 {
+		t.Errorf("got %v, want %v", got, 2)
+	}
 }
 
 func TestUpsertQuery_MySQL_AutoUpdateColumns(t *testing.T) {
@@ -114,12 +154,20 @@ func TestUpsertQuery_MySQL_AutoUpdateColumns(t *testing.T) {
 	}).OnConflict("id")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	sql := q.sql
-	assert.Contains(t, sql, "ON DUPLICATE KEY UPDATE")
-	assert.Contains(t, sql, "`email` = VALUES(`email`)")
-	assert.Contains(t, sql, "`name` = VALUES(`name`)")
+	if !strings.Contains(sql, "ON DUPLICATE KEY UPDATE") {
+		t.Errorf("%q does not contain %q", sql, "ON DUPLICATE KEY UPDATE")
+	}
+	if !strings.Contains(sql, "`email` = VALUES(`email`)") {
+		t.Errorf("%q does not contain %q", sql, "`email` = VALUES(`email`)")
+	}
+	if !strings.Contains(sql, "`name` = VALUES(`name`)") {
+		t.Errorf("%q does not contain %q", sql, "`name` = VALUES(`name`)")
+	}
 }
 
 func TestUpsertQuery_SQLite_DoUpdate(t *testing.T) {
@@ -133,14 +181,26 @@ func TestUpsertQuery_SQLite_DoUpdate(t *testing.T) {
 	}).OnConflict("id").DoUpdate("name", "email")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	sql := q.sql
-	assert.Contains(t, sql, `INSERT INTO "users"`)
-	assert.Contains(t, sql, `ON CONFLICT ("id")`)
-	assert.Contains(t, sql, "DO UPDATE SET")
-	assert.Contains(t, sql, `"name" = excluded."name"`)
-	assert.Contains(t, sql, `"email" = excluded."email"`)
+	if !strings.Contains(sql, `INSERT INTO "users"`) {
+		t.Errorf("%q does not contain %q", sql, `INSERT INTO "users"`)
+	}
+	if !strings.Contains(sql, `ON CONFLICT ("id")`) {
+		t.Errorf("%q does not contain %q", sql, `ON CONFLICT ("id")`)
+	}
+	if !strings.Contains(sql, "DO UPDATE SET") {
+		t.Errorf("%q does not contain %q", sql, "DO UPDATE SET")
+	}
+	if !strings.Contains(sql, `"name" = excluded."name"`) {
+		t.Errorf("%q does not contain %q", sql, `"name" = excluded."name"`)
+	}
+	if !strings.Contains(sql, `"email" = excluded."email"`) {
+		t.Errorf("%q does not contain %q", sql, `"email" = excluded."email"`)
+	}
 }
 
 func TestUpsertQuery_SQLite_DoNothing(t *testing.T) {
@@ -153,12 +213,20 @@ func TestUpsertQuery_SQLite_DoNothing(t *testing.T) {
 	}).OnConflict("id").DoNothing()
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	sql := q.sql
-	assert.Contains(t, sql, `INSERT INTO "users"`)
-	assert.Contains(t, sql, `ON CONFLICT ("id") DO NOTHING`)
-	assert.NotContains(t, sql, "UPDATE")
+	if !strings.Contains(sql, `INSERT INTO "users"`) {
+		t.Errorf("%q does not contain %q", sql, `INSERT INTO "users"`)
+	}
+	if !strings.Contains(sql, `ON CONFLICT ("id") DO NOTHING`) {
+		t.Errorf("%q does not contain %q", sql, `ON CONFLICT ("id") DO NOTHING`)
+	}
+	if strings.Contains(sql, "UPDATE") {
+		t.Errorf("%q should not contain %q", sql, "UPDATE")
+	}
 }
 
 func TestUpsertQuery_MultipleConflictColumns(t *testing.T) {
@@ -191,10 +259,14 @@ func TestUpsertQuery_MultipleConflictColumns(t *testing.T) {
 			}).OnConflict("email", "username").DoUpdate("name")
 
 			q := query.Build()
-			require.NotNil(t, q)
+			if q == nil {
+				t.Fatal("expected non-nil")
+			}
 
 			for _, expected := range tt.expectSQL {
-				assert.Contains(t, q.sql, expected)
+				if !strings.Contains(q.sql, expected) {
+					t.Errorf("%q does not contain %q", q.sql, expected)
+				}
 			}
 		})
 	}
@@ -212,10 +284,22 @@ func TestUpsertQuery_ParameterOrdering(t *testing.T) {
 	}).OnConflict("aaa").DoUpdate("mmm", "zzz")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Parameters should be ordered: aaa, mmm, zzz
-	assert.Equal(t, []interface{}{"first", "middle", "last"}, q.params)
+	want := []interface{}{"first", "middle", "last"}
+	if got := q.params; len(got) != len(want) {
+		t.Errorf("got %v, want %v", got, want)
+	} else {
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("got %v, want %v", got, want)
+				break
+			}
+		}
+	}
 
 	// SQL should have columns in alphabetical order
 	sql := q.sql
@@ -223,8 +307,12 @@ func TestUpsertQuery_ParameterOrdering(t *testing.T) {
 	mIdx := strings.Index(sql, "mmm")
 	zIdx := strings.Index(sql, "zzz")
 
-	assert.Less(t, aIdx, mIdx, "aaa should come before mmm")
-	assert.Less(t, mIdx, zIdx, "mmm should come before zzz")
+	if aIdx >= mIdx {
+		t.Errorf("expected %v > %v", mIdx, aIdx)
+	}
+	if mIdx >= zIdx {
+		t.Errorf("expected %v > %v", zIdx, mIdx)
+	}
 }
 
 func TestFilterKeys(t *testing.T) {
@@ -263,7 +351,16 @@ func TestFilterKeys(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := filterKeys(tt.keys, tt.exclude)
-			assert.Equal(t, tt.expected, result)
+			if len(result) != len(tt.expected) {
+				t.Errorf("got %v, want %v", result, tt.expected)
+				return
+			}
+			for i := range tt.expected {
+				if result[i] != tt.expected[i] {
+					t.Errorf("got %v, want %v", result, tt.expected)
+					break
+				}
+			}
 		})
 	}
 }

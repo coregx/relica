@@ -2,10 +2,8 @@ package util
 
 import (
 	"reflect"
+	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // ─── parseDBTag ────────────────────────────────────────────────────────────────
@@ -79,8 +77,12 @@ func TestParseDBTag(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			col, isPK, _ := parseDBTag(tt.tag)
-			assert.Equal(t, tt.wantCol, col)
-			assert.Equal(t, tt.wantIsPK, isPK)
+			if col != tt.wantCol {
+				t.Errorf("got %v, want %v", col, tt.wantCol)
+			}
+			if isPK != tt.wantIsPK {
+				t.Errorf("got %v, want %v", isPK, tt.wantIsPK)
+			}
 		})
 	}
 }
@@ -135,7 +137,9 @@ func TestIsPrimaryKeyZero_AllTypes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := IsPrimaryKeyZero(tt.value)
-			assert.Equal(t, tt.want, got)
+			if got != tt.want {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
 		})
 	}
 }
@@ -144,27 +148,37 @@ func TestIsPrimaryKeyZero_AllTypes(t *testing.T) {
 func TestIsPrimaryKeyZero_Pointer(t *testing.T) {
 	t.Run("nil pointer is zero", func(t *testing.T) {
 		var p *int64
-		assert.True(t, IsPrimaryKeyZero(reflect.ValueOf(p)))
+		if !IsPrimaryKeyZero(reflect.ValueOf(p)) {
+			t.Error("expected true")
+		}
 	})
 
 	t.Run("pointer to zero int64 is zero", func(t *testing.T) {
 		v := int64(0)
-		assert.True(t, IsPrimaryKeyZero(reflect.ValueOf(&v)))
+		if !IsPrimaryKeyZero(reflect.ValueOf(&v)) {
+			t.Error("expected true")
+		}
 	})
 
 	t.Run("pointer to non-zero int64 is not zero", func(t *testing.T) {
 		v := int64(42)
-		assert.False(t, IsPrimaryKeyZero(reflect.ValueOf(&v)))
+		if IsPrimaryKeyZero(reflect.ValueOf(&v)) {
+			t.Error("expected false")
+		}
 	})
 
 	t.Run("pointer to zero int is zero", func(t *testing.T) {
 		v := int(0)
-		assert.True(t, IsPrimaryKeyZero(reflect.ValueOf(&v)))
+		if !IsPrimaryKeyZero(reflect.ValueOf(&v)) {
+			t.Error("expected true")
+		}
 	})
 
 	t.Run("pointer to non-zero uint is not zero", func(t *testing.T) {
 		v := uint(7)
-		assert.False(t, IsPrimaryKeyZero(reflect.ValueOf(&v)))
+		if IsPrimaryKeyZero(reflect.ValueOf(&v)) {
+			t.Error("expected false")
+		}
 	})
 }
 
@@ -246,10 +260,16 @@ func TestSetPrimaryKeyValue_AllIntTypes(t *testing.T) {
 			field := tt.setup()
 			err := SetPrimaryKeyValue(field, tt.id)
 			if tt.wantErr {
-				require.Error(t, err)
+				if err == nil {
+					t.Fatal("expected error")
+				}
 			} else {
-				require.NoError(t, err)
-				assert.Equal(t, tt.id, field.Int())
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if got := field.Int(); got != tt.id {
+					t.Errorf("got %v, want %v", got, tt.id)
+				}
 			}
 		})
 	}
@@ -343,10 +363,16 @@ func TestSetPrimaryKeyValue_AllUintTypes(t *testing.T) {
 			field := tt.setup()
 			err := SetPrimaryKeyValue(field, tt.id)
 			if tt.wantErr {
-				require.Error(t, err)
+				if err == nil {
+					t.Fatal("expected error")
+				}
 			} else {
-				require.NoError(t, err)
-				assert.Equal(t, uint64(tt.id), field.Uint())
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if got := field.Uint(); got != uint64(tt.id) {
+					t.Errorf("got %v, want %v", got, uint64(tt.id))
+				}
 			}
 		})
 	}
@@ -357,25 +383,41 @@ func TestSetPrimaryKeyValue_PointerField(t *testing.T) {
 	t.Run("nil pointer to int64 is allocated and set", func(t *testing.T) {
 		var p *int64
 		field := reflect.ValueOf(&p).Elem()
-		require.NoError(t, SetPrimaryKeyValue(field, 42))
-		require.NotNil(t, p)
-		assert.Equal(t, int64(42), *p)
+		if err := SetPrimaryKeyValue(field, 42); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if p == nil {
+			t.Fatal("expected non-nil")
+		}
+		if *p != int64(42) {
+			t.Errorf("got %v, want %v", *p, int64(42))
+		}
 	})
 
 	t.Run("nil pointer to int32 is allocated and set", func(t *testing.T) {
 		var p *int32
 		field := reflect.ValueOf(&p).Elem()
-		require.NoError(t, SetPrimaryKeyValue(field, 7))
-		require.NotNil(t, p)
-		assert.Equal(t, int32(7), *p)
+		if err := SetPrimaryKeyValue(field, 7); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if p == nil {
+			t.Fatal("expected non-nil")
+		}
+		if *p != int32(7) {
+			t.Errorf("got %v, want %v", *p, int32(7))
+		}
 	})
 
 	t.Run("existing non-nil pointer is overwritten", func(t *testing.T) {
 		existing := int64(100)
 		p := &existing
 		field := reflect.ValueOf(&p).Elem()
-		require.NoError(t, SetPrimaryKeyValue(field, 999))
-		assert.Equal(t, int64(999), *p)
+		if err := SetPrimaryKeyValue(field, 999); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if *p != int64(999) {
+			t.Errorf("got %v, want %v", *p, int64(999))
+		}
 	})
 }
 
@@ -383,8 +425,12 @@ func TestSetPrimaryKeyValue_PointerField(t *testing.T) {
 func TestSetPrimaryKeyValue_ErrorCases(t *testing.T) {
 	t.Run("invalid reflect.Value returns error", func(t *testing.T) {
 		err := SetPrimaryKeyValue(reflect.Value{}, 1)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid field")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), "invalid field") {
+			t.Errorf("expected error containing %q, got %v", "invalid field", err)
+		}
 	})
 
 	t.Run("non-settable field returns error", func(t *testing.T) {
@@ -393,32 +439,48 @@ func TestSetPrimaryKeyValue_ErrorCases(t *testing.T) {
 		// Field obtained from non-pointer value is not settable.
 		field := reflect.ValueOf(s).Field(0)
 		err := SetPrimaryKeyValue(field, 1)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not settable")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), "not settable") {
+			t.Errorf("expected error containing %q, got %v", "not settable", err)
+		}
 	})
 
 	t.Run("unsupported type string returns error", func(t *testing.T) {
 		var s string
 		field := reflect.ValueOf(&s).Elem()
 		err := SetPrimaryKeyValue(field, 1)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "unsupported type")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), "unsupported type") {
+			t.Errorf("expected error containing %q, got %v", "unsupported type", err)
+		}
 	})
 
 	t.Run("unsupported type float64 returns error", func(t *testing.T) {
 		var f float64
 		field := reflect.ValueOf(&f).Elem()
 		err := SetPrimaryKeyValue(field, 1)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "unsupported type")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), "unsupported type") {
+			t.Errorf("expected error containing %q, got %v", "unsupported type", err)
+		}
 	})
 
 	t.Run("unsupported type bool returns error", func(t *testing.T) {
 		var b bool
 		field := reflect.ValueOf(&b).Elem()
 		err := SetPrimaryKeyValue(field, 1)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "unsupported type")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), "unsupported type") {
+			t.Errorf("expected error containing %q, got %v", "unsupported type", err)
+		}
 	})
 }
 
@@ -434,9 +496,16 @@ func TestFindPrimaryKeyFields_AllPriorities(t *testing.T) {
 		}
 		a := Article{ID: 5}
 		info, err := FindPrimaryKeyFields(reflect.ValueOf(a))
-		require.NoError(t, err)
-		assert.Equal(t, []string{"id"}, info.Columns) // legacy: column = lowercase field name
-		assert.Equal(t, int64(5), info.Values[0].Int())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := []string{"id"}
+		if len(info.Columns) != len(want) || info.Columns[0] != want[0] {
+			t.Errorf("got %v, want %v", info.Columns, want)
+		}
+		if info.Values[0].Int() != int64(5) {
+			t.Errorf("got %v, want %v", info.Values[0].Int(), int64(5))
+		}
 	})
 
 	t.Run("composite PK with db:col,pk syntax", func(t *testing.T) {
@@ -447,12 +516,32 @@ func TestFindPrimaryKeyFields_AllPriorities(t *testing.T) {
 		}
 		oi := OrderItem{OrderID: 1, ItemID: 2, Qty: 3}
 		info, err := FindPrimaryKeyFields(reflect.ValueOf(oi))
-		require.NoError(t, err)
-		assert.True(t, info.IsComposite())
-		assert.False(t, info.IsSingle())
-		assert.Equal(t, []string{"order_id", "item_id"}, info.Columns)
-		assert.Equal(t, int64(1), info.Values[0].Int())
-		assert.Equal(t, int64(2), info.Values[1].Int())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !info.IsComposite() {
+			t.Error("expected true")
+		}
+		if info.IsSingle() {
+			t.Error("expected false")
+		}
+		want := []string{"order_id", "item_id"}
+		if len(info.Columns) != len(want) {
+			t.Errorf("got %v, want %v", info.Columns, want)
+		} else {
+			for i := range want {
+				if info.Columns[i] != want[i] {
+					t.Errorf("got %v, want %v", info.Columns, want)
+					break
+				}
+			}
+		}
+		if info.Values[0].Int() != int64(1) {
+			t.Errorf("got %v, want %v", info.Values[0].Int(), int64(1))
+		}
+		if info.Values[1].Int() != int64(2) {
+			t.Errorf("got %v, want %v", info.Values[1].Int(), int64(2))
+		}
 	})
 
 	t.Run("fallback to field named ID", func(t *testing.T) {
@@ -462,10 +551,18 @@ func TestFindPrimaryKeyFields_AllPriorities(t *testing.T) {
 		}
 		p := Product{ID: 99}
 		info, err := FindPrimaryKeyFields(reflect.ValueOf(p))
-		require.NoError(t, err)
-		assert.True(t, info.IsSingle())
-		assert.Equal(t, []string{"id"}, info.Columns)
-		assert.Equal(t, int64(99), info.Values[0].Int())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !info.IsSingle() {
+			t.Error("expected true")
+		}
+		if len(info.Columns) != 1 || info.Columns[0] != "id" {
+			t.Errorf("got %v, want %v", info.Columns, []string{"id"})
+		}
+		if info.Values[0].Int() != int64(99) {
+			t.Errorf("got %v, want %v", info.Values[0].Int(), int64(99))
+		}
 	})
 
 	t.Run("fallback to field named Id", func(t *testing.T) {
@@ -475,9 +572,15 @@ func TestFindPrimaryKeyFields_AllPriorities(t *testing.T) {
 		}
 		w := Widget{Id: 77}
 		info, err := FindPrimaryKeyFields(reflect.ValueOf(w))
-		require.NoError(t, err)
-		assert.Equal(t, []string{"id"}, info.Columns)
-		assert.Equal(t, int64(77), info.Values[0].Int())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(info.Columns) != 1 || info.Columns[0] != "id" {
+			t.Errorf("got %v, want %v", info.Columns, []string{"id"})
+		}
+		if info.Values[0].Int() != int64(77) {
+			t.Errorf("got %v, want %v", info.Values[0].Int(), int64(77))
+		}
 	})
 
 	t.Run("ID field with custom db tag uses tag column name", func(t *testing.T) {
@@ -487,8 +590,12 @@ func TestFindPrimaryKeyFields_AllPriorities(t *testing.T) {
 		}
 		o := Order{ID: 55}
 		info, err := FindPrimaryKeyFields(reflect.ValueOf(o))
-		require.NoError(t, err)
-		assert.Equal(t, []string{"order_id"}, info.Columns)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(info.Columns) != 1 || info.Columns[0] != "order_id" {
+			t.Errorf("got %v, want %v", info.Columns, []string{"order_id"})
+		}
 	})
 
 	t.Run("skip field with db:-", func(t *testing.T) {
@@ -498,9 +605,15 @@ func TestFindPrimaryKeyFields_AllPriorities(t *testing.T) {
 		}
 		g := Ghost{Hidden: 1, ID: 10}
 		info, err := FindPrimaryKeyFields(reflect.ValueOf(g))
-		require.NoError(t, err)
-		assert.Equal(t, []string{"id"}, info.Columns)
-		assert.Equal(t, int64(10), info.Values[0].Int())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(info.Columns) != 1 || info.Columns[0] != "id" {
+			t.Errorf("got %v, want %v", info.Columns, []string{"id"})
+		}
+		if info.Values[0].Int() != int64(10) {
+			t.Errorf("got %v, want %v", info.Values[0].Int(), int64(10))
+		}
 	})
 
 	t.Run("no PK found returns error", func(t *testing.T) {
@@ -509,22 +622,34 @@ func TestFindPrimaryKeyFields_AllPriorities(t *testing.T) {
 			Email string `db:"email"`
 		}
 		_, err := FindPrimaryKeyFields(reflect.ValueOf(NoPK{}))
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "no primary key found")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), "no primary key found") {
+			t.Errorf("expected error containing %q, got %v", "no primary key found", err)
+		}
 	})
 
 	t.Run("nil pointer returns error", func(t *testing.T) {
 		type S struct{ ID int }
 		var s *S
 		_, err := FindPrimaryKeyFields(reflect.ValueOf(s))
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "nil pointer")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), "nil pointer") {
+			t.Errorf("expected error containing %q, got %v", "nil pointer", err)
+		}
 	})
 
 	t.Run("non-struct returns error", func(t *testing.T) {
 		_, err := FindPrimaryKeyFields(reflect.ValueOf(42))
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not a struct")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), "not a struct") {
+			t.Errorf("expected error containing %q, got %v", "not a struct", err)
+		}
 	})
 
 	t.Run("pointer to struct is dereferenced", func(t *testing.T) {
@@ -533,9 +658,15 @@ func TestFindPrimaryKeyFields_AllPriorities(t *testing.T) {
 		}
 		thing := &Thing{ID: 13}
 		info, err := FindPrimaryKeyFields(reflect.ValueOf(thing))
-		require.NoError(t, err)
-		assert.Equal(t, []string{"id"}, info.Columns)
-		assert.Equal(t, int64(13), info.Values[0].Int())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(info.Columns) != 1 || info.Columns[0] != "id" {
+			t.Errorf("got %v, want %v", info.Columns, []string{"id"})
+		}
+		if info.Values[0].Int() != int64(13) {
+			t.Errorf("got %v, want %v", info.Values[0].Int(), int64(13))
+		}
 	})
 
 	t.Run("unexported fields are skipped", func(t *testing.T) {
@@ -546,10 +677,14 @@ func TestFindPrimaryKeyFields_AllPriorities(t *testing.T) {
 		}
 		h := HasUnexported{ID: 21}
 		info, err := FindPrimaryKeyFields(reflect.ValueOf(h))
-		require.NoError(t, err)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		// ID fallback: field name "ID" has db tag "id", so composite pkFields will
 		// not include it (no ,pk), but idFieldIndex will be set.
-		assert.Equal(t, []string{"id"}, info.Columns)
+		if len(info.Columns) != 1 || info.Columns[0] != "id" {
+			t.Errorf("got %v, want %v", info.Columns, []string{"id"})
+		}
 	})
 
 	t.Run("composite PK fields returned in declaration order", func(t *testing.T) {
@@ -561,8 +696,20 @@ func TestFindPrimaryKeyFields_AllPriorities(t *testing.T) {
 		}
 		mp := MultiPK{Z: 1, A: 2, M: 3}
 		info, err := FindPrimaryKeyFields(reflect.ValueOf(mp))
-		require.NoError(t, err)
-		assert.Equal(t, []string{"z_col", "a_col", "m_col"}, info.Columns)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := []string{"z_col", "a_col", "m_col"}
+		if len(info.Columns) != len(want) {
+			t.Errorf("got %v, want %v", info.Columns, want)
+		} else {
+			for i := range want {
+				if info.Columns[i] != want[i] {
+					t.Errorf("got %v, want %v", info.Columns, want)
+					break
+				}
+			}
+		}
 	})
 }
 
@@ -572,26 +719,42 @@ func TestFindPrimaryKeyFields_AllPriorities(t *testing.T) {
 func TestPrimaryKeyInfo_IsSingle_IsComposite(t *testing.T) {
 	t.Run("single column", func(t *testing.T) {
 		pk := &PrimaryKeyInfo{Columns: []string{"id"}}
-		assert.True(t, pk.IsSingle())
-		assert.False(t, pk.IsComposite())
+		if !pk.IsSingle() {
+			t.Error("expected true")
+		}
+		if pk.IsComposite() {
+			t.Error("expected false")
+		}
 	})
 
 	t.Run("two columns — composite", func(t *testing.T) {
 		pk := &PrimaryKeyInfo{Columns: []string{"order_id", "item_id"}}
-		assert.False(t, pk.IsSingle())
-		assert.True(t, pk.IsComposite())
+		if pk.IsSingle() {
+			t.Error("expected false")
+		}
+		if !pk.IsComposite() {
+			t.Error("expected true")
+		}
 	})
 
 	t.Run("three columns — composite", func(t *testing.T) {
 		pk := &PrimaryKeyInfo{Columns: []string{"a", "b", "c"}}
-		assert.False(t, pk.IsSingle())
-		assert.True(t, pk.IsComposite())
+		if pk.IsSingle() {
+			t.Error("expected false")
+		}
+		if !pk.IsComposite() {
+			t.Error("expected true")
+		}
 	})
 
 	t.Run("empty columns — neither single nor composite", func(t *testing.T) {
 		pk := &PrimaryKeyInfo{Columns: []string{}}
-		assert.False(t, pk.IsSingle())
-		assert.False(t, pk.IsComposite())
+		if pk.IsSingle() {
+			t.Error("expected false")
+		}
+		if pk.IsComposite() {
+			t.Error("expected false")
+		}
 	})
 }
 
@@ -606,8 +769,12 @@ func TestFindPrimaryKeyField_Extended(t *testing.T) {
 		}
 		c := CPK{A: 1, B: 2}
 		_, _, err := FindPrimaryKeyField(reflect.ValueOf(c))
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "composite primary keys not supported")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), "composite primary keys not supported") {
+			t.Errorf("expected error containing %q, got %v", "composite primary keys not supported", err)
+		}
 	})
 
 	t.Run("no PK found propagates error", func(t *testing.T) {
@@ -615,14 +782,18 @@ func TestFindPrimaryKeyField_Extended(t *testing.T) {
 			Name string `db:"name"`
 		}
 		_, _, err := FindPrimaryKeyField(reflect.ValueOf(NoPK{}))
-		require.Error(t, err)
+		if err == nil {
+			t.Fatal("expected error")
+		}
 	})
 
 	t.Run("nil pointer propagates error", func(t *testing.T) {
 		type S struct{ ID int }
 		var s *S
 		_, _, err := FindPrimaryKeyField(reflect.ValueOf(s))
-		require.Error(t, err)
+		if err == nil {
+			t.Fatal("expected error")
+		}
 	})
 
 	t.Run("valid single PK by ID fallback", func(t *testing.T) {
@@ -632,9 +803,15 @@ func TestFindPrimaryKeyField_Extended(t *testing.T) {
 		}
 		p := Product{ID: 42}
 		field, val, err := FindPrimaryKeyField(reflect.ValueOf(p))
-		require.NoError(t, err)
-		assert.Equal(t, "ID", field.Name)
-		assert.Equal(t, int64(42), val.Int())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if field.Name != "ID" {
+			t.Errorf("got %v, want %v", field.Name, "ID")
+		}
+		if val.Int() != int64(42) {
+			t.Errorf("got %v, want %v", val.Int(), int64(42))
+		}
 	})
 
 	t.Run("valid single PK by db:pk tag", func(t *testing.T) {
@@ -644,9 +821,15 @@ func TestFindPrimaryKeyField_Extended(t *testing.T) {
 		}
 		tg := Tag{MyID: 7}
 		field, val, err := FindPrimaryKeyField(reflect.ValueOf(tg))
-		require.NoError(t, err)
-		assert.Equal(t, "MyID", field.Name)
-		assert.Equal(t, int64(7), val.Int())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if field.Name != "MyID" {
+			t.Errorf("got %v, want %v", field.Name, "MyID")
+		}
+		if val.Int() != int64(7) {
+			t.Errorf("got %v, want %v", val.Int(), int64(7))
+		}
 	})
 }
 
@@ -660,7 +843,17 @@ func TestModelToColumns(t *testing.T) {
 			Name string `db:"username"`
 		}
 		cols := ModelToColumns(User{})
-		assert.Equal(t, map[string]string{"ID": "id", "Name": "username"}, cols)
+		want := map[string]string{"ID": "id", "Name": "username"}
+		if len(cols) != len(want) {
+			t.Errorf("got %v, want %v", cols, want)
+		} else {
+			for k, v := range want {
+				if cols[k] != v {
+					t.Errorf("got %v, want %v", cols, want)
+					break
+				}
+			}
+		}
 	})
 
 	t.Run("pointer to struct", func(t *testing.T) {
@@ -669,7 +862,17 @@ func TestModelToColumns(t *testing.T) {
 			Name string `db:"name"`
 		}
 		cols := ModelToColumns(&User{})
-		assert.Equal(t, map[string]string{"ID": "id", "Name": "name"}, cols)
+		want := map[string]string{"ID": "id", "Name": "name"}
+		if len(cols) != len(want) {
+			t.Errorf("got %v, want %v", cols, want)
+		} else {
+			for k, v := range want {
+				if cols[k] != v {
+					t.Errorf("got %v, want %v", cols, want)
+					break
+				}
+			}
+		}
 	})
 
 	t.Run("fields without db tags are excluded", func(t *testing.T) {
@@ -678,9 +881,20 @@ func TestModelToColumns(t *testing.T) {
 			Plain string // no tag
 		}
 		cols := ModelToColumns(Mixed{})
-		assert.Equal(t, map[string]string{"ID": "id"}, cols)
-		_, hasPlain := cols["Plain"]
-		assert.False(t, hasPlain)
+		want := map[string]string{"ID": "id"}
+		if len(cols) != len(want) {
+			t.Errorf("got %v, want %v", cols, want)
+		} else {
+			for k, v := range want {
+				if cols[k] != v {
+					t.Errorf("got %v, want %v", cols, want)
+					break
+				}
+			}
+		}
+		if _, hasPlain := cols["Plain"]; hasPlain {
+			t.Error("expected false")
+		}
 	})
 
 	t.Run("db:- fields are excluded", func(t *testing.T) {
@@ -689,9 +903,20 @@ func TestModelToColumns(t *testing.T) {
 			Ignored string `db:"-"`
 		}
 		cols := ModelToColumns(WithSkip{})
-		assert.Equal(t, map[string]string{"ID": "id"}, cols)
-		_, hasIgnored := cols["Ignored"]
-		assert.False(t, hasIgnored)
+		want := map[string]string{"ID": "id"}
+		if len(cols) != len(want) {
+			t.Errorf("got %v, want %v", cols, want)
+		} else {
+			for k, v := range want {
+				if cols[k] != v {
+					t.Errorf("got %v, want %v", cols, want)
+					break
+				}
+			}
+		}
+		if _, hasIgnored := cols["Ignored"]; hasIgnored {
+			t.Error("expected false")
+		}
 	})
 
 	t.Run("composite PK tag — column extracted correctly", func(t *testing.T) {
@@ -701,17 +926,29 @@ func TestModelToColumns(t *testing.T) {
 			Qty     int `db:"qty"`
 		}
 		cols := ModelToColumns(CPK{})
-		assert.Equal(t, map[string]string{
+		want := map[string]string{
 			"OrderID": "order_id",
 			"ItemID":  "item_id",
 			"Qty":     "qty",
-		}, cols)
+		}
+		if len(cols) != len(want) {
+			t.Errorf("got %v, want %v", cols, want)
+		} else {
+			for k, v := range want {
+				if cols[k] != v {
+					t.Errorf("got %v, want %v", cols, want)
+					break
+				}
+			}
+		}
 	})
 
 	t.Run("empty struct returns empty map", func(t *testing.T) {
 		type Empty struct{}
 		cols := ModelToColumns(Empty{})
-		assert.Empty(t, cols)
+		if len(cols) != 0 {
+			t.Errorf("expected empty, got %d", len(cols))
+		}
 	})
 
 	t.Run("struct with no db tags returns empty map", func(t *testing.T) {
@@ -720,7 +957,9 @@ func TestModelToColumns(t *testing.T) {
 			Name string
 		}
 		cols := ModelToColumns(NoTags{})
-		assert.Empty(t, cols)
+		if len(cols) != 0 {
+			t.Errorf("expected empty, got %d", len(cols))
+		}
 	})
 }
 
@@ -775,9 +1014,15 @@ func TestParseDBTag_AutoIncrement(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			col, isPK, isAutoInc := parseDBTag(tt.tag)
-			assert.Equal(t, tt.wantCol, col)
-			assert.Equal(t, tt.wantIsPK, isPK)
-			assert.Equal(t, tt.wantAutoInc, isAutoInc)
+			if col != tt.wantCol {
+				t.Errorf("got %v, want %v", col, tt.wantCol)
+			}
+			if isPK != tt.wantIsPK {
+				t.Errorf("got %v, want %v", isPK, tt.wantIsPK)
+			}
+			if isAutoInc != tt.wantAutoInc {
+				t.Errorf("got %v, want %v", isAutoInc, tt.wantAutoInc)
+			}
 		})
 	}
 }
@@ -793,10 +1038,18 @@ func TestFindPrimaryKeyFields_AutoIncrement(t *testing.T) {
 			Name string `db:"name"`
 		}
 		info, err := FindPrimaryKeyFields(reflect.ValueOf(WithStringPK{}))
-		require.NoError(t, err)
-		assert.True(t, info.IsSingle())
-		assert.True(t, info.AutoIncrement)
-		assert.Equal(t, []string{"id"}, info.Columns)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !info.IsSingle() {
+			t.Error("expected true")
+		}
+		if !info.AutoIncrement {
+			t.Error("expected true")
+		}
+		if len(info.Columns) != 1 || info.Columns[0] != "id" {
+			t.Errorf("got %v, want %v", info.Columns, []string{"id"})
+		}
 	})
 
 	t.Run("int PK without autoincrement tag sets AutoIncrement=false", func(t *testing.T) {
@@ -805,8 +1058,12 @@ func TestFindPrimaryKeyFields_AutoIncrement(t *testing.T) {
 			Name string `db:"name"`
 		}
 		info, err := FindPrimaryKeyFields(reflect.ValueOf(WithIntPK{}))
-		require.NoError(t, err)
-		assert.False(t, info.AutoIncrement)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if info.AutoIncrement {
+			t.Error("expected false")
+		}
 	})
 
 	t.Run("int PK with autoincrement tag sets AutoIncrement=true", func(t *testing.T) {
@@ -815,8 +1072,12 @@ func TestFindPrimaryKeyFields_AutoIncrement(t *testing.T) {
 			Name string `db:"name"`
 		}
 		info, err := FindPrimaryKeyFields(reflect.ValueOf(WithIntAutoInc{}))
-		require.NoError(t, err)
-		assert.True(t, info.AutoIncrement)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !info.AutoIncrement {
+			t.Error("expected true")
+		}
 	})
 
 	t.Run("composite PK with autoincrement tag — AutoIncrement=false (not supported)", func(t *testing.T) {
@@ -825,9 +1086,15 @@ func TestFindPrimaryKeyFields_AutoIncrement(t *testing.T) {
 			B int `db:"b_id,pk"`
 		}
 		info, err := FindPrimaryKeyFields(reflect.ValueOf(CPKWithAutoInc{}))
-		require.NoError(t, err)
-		assert.True(t, info.IsComposite())
-		assert.False(t, info.AutoIncrement, "composite PK must not set AutoIncrement")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !info.IsComposite() {
+			t.Error("expected true")
+		}
+		if info.AutoIncrement {
+			t.Error("composite PK must not set AutoIncrement: expected false")
+		}
 	})
 
 	t.Run("legacy db:pk tag without autoincrement — AutoIncrement=false", func(t *testing.T) {
@@ -836,8 +1103,12 @@ func TestFindPrimaryKeyFields_AutoIncrement(t *testing.T) {
 			Name string
 		}
 		info, err := FindPrimaryKeyFields(reflect.ValueOf(LegacyPK{}))
-		require.NoError(t, err)
-		assert.False(t, info.AutoIncrement)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if info.AutoIncrement {
+			t.Error("expected false")
+		}
 	})
 }
 
@@ -860,7 +1131,9 @@ func TestIsPrimaryKeyZero_StringType(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := IsPrimaryKeyZero(reflect.ValueOf(tt.value))
-			assert.Equal(t, tt.want, got)
+			if got != tt.want {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
 		})
 	}
 }

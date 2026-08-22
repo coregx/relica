@@ -1,12 +1,11 @@
 package optimizer
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/coregx/relica/internal/analyzer"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestNewDatabaseHints(t *testing.T) {
@@ -23,8 +22,12 @@ func TestNewDatabaseHints(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			hints := NewDatabaseHints(tt.database)
-			require.NotNil(t, hints)
-			assert.Equal(t, tt.database, hints.database)
+			if hints == nil {
+				t.Fatal("expected non-nil")
+			}
+			if got := hints.database; got != tt.database {
+				t.Errorf("got %v, want %v", got, tt.database)
+			}
 		})
 	}
 }
@@ -44,19 +47,29 @@ func TestPostgreSQLHints_FullScan(t *testing.T) {
 	suggestions := hints.SuggestPostgreSQLHints(analysis)
 
 	// Should suggest ANALYZE
-	assert.Greater(t, len(suggestions), 0, "Should suggest at least one optimization")
+	if len(suggestions) <= 0 {
+		t.Error("Should suggest at least one optimization")
+	}
 
 	// Find ANALYZE suggestion
 	var analyzeFound bool
 	for _, s := range suggestions {
 		if s.Type == SuggestionPostgresAnalyze {
 			analyzeFound = true
-			assert.Equal(t, SeverityInfo, s.Severity)
-			assert.Contains(t, s.SQL, "ANALYZE")
-			assert.Contains(t, s.Message, "ANALYZE")
+			if s.Severity != SeverityInfo {
+				t.Errorf("got %v, want %v", s.Severity, SeverityInfo)
+			}
+			if !strings.Contains(s.SQL, "ANALYZE") {
+				t.Errorf("%q does not contain %q", s.SQL, "ANALYZE")
+			}
+			if !strings.Contains(s.Message, "ANALYZE") {
+				t.Errorf("%q does not contain %q", s.Message, "ANALYZE")
+			}
 		}
 	}
-	assert.True(t, analyzeFound, "Should suggest ANALYZE for full scan")
+	if !analyzeFound {
+		t.Error("Should suggest ANALYZE for full scan")
+	}
 }
 
 func TestPostgreSQLHints_ParallelQuery(t *testing.T) {
@@ -78,12 +91,20 @@ func TestPostgreSQLHints_ParallelQuery(t *testing.T) {
 	for _, s := range suggestions {
 		if s.Type == SuggestionPostgresParallel {
 			parallelFound = true
-			assert.Equal(t, SeverityInfo, s.Severity)
-			assert.Contains(t, s.SQL, "max_parallel_workers_per_gather")
-			assert.Contains(t, s.Message, "parallel")
+			if s.Severity != SeverityInfo {
+				t.Errorf("got %v, want %v", s.Severity, SeverityInfo)
+			}
+			if !strings.Contains(s.SQL, "max_parallel_workers_per_gather") {
+				t.Errorf("%q does not contain %q", s.SQL, "max_parallel_workers_per_gather")
+			}
+			if !strings.Contains(s.Message, "parallel") {
+				t.Errorf("%q does not contain %q", s.Message, "parallel")
+			}
 		}
 	}
-	assert.True(t, parallelFound, "Should suggest parallel query for large scans")
+	if !parallelFound {
+		t.Error("Should suggest parallel query for large scans")
+	}
 }
 
 func TestPostgreSQLHints_CacheHitRatio(t *testing.T) {
@@ -130,15 +151,23 @@ func TestPostgreSQLHints_CacheHitRatio(t *testing.T) {
 			for _, s := range suggestions {
 				if s.Type == SuggestionPostgresCacheHit {
 					cacheHintFound = true
-					assert.Equal(t, SeverityWarning, s.Severity)
-					assert.Contains(t, s.Message, "cache hit ratio")
+					if s.Severity != SeverityWarning {
+						t.Errorf("got %v, want %v", s.Severity, SeverityWarning)
+					}
+					if !strings.Contains(s.Message, "cache hit ratio") {
+						t.Errorf("%q does not contain %q", s.Message, "cache hit ratio")
+					}
 				}
 			}
 
 			if tt.expectWarn {
-				assert.True(t, cacheHintFound, "Should warn about low cache hit ratio")
+				if !cacheHintFound {
+					t.Error("Should warn about low cache hit ratio")
+				}
 			} else {
-				assert.False(t, cacheHintFound, "Should not warn about good cache hit ratio")
+				if cacheHintFound {
+					t.Error("Should not warn about good cache hit ratio")
+				}
 			}
 		})
 	}
@@ -168,12 +197,20 @@ func TestMySQLHints_IndexHint(t *testing.T) {
 	for _, s := range suggestions {
 		if s.Type == SuggestionMySQLIndexHint {
 			indexHintFound = true
-			assert.Equal(t, SeverityInfo, s.Severity)
-			assert.Contains(t, s.Message, "USE INDEX")
-			assert.Contains(t, s.Message, "idx_users_email")
+			if s.Severity != SeverityInfo {
+				t.Errorf("got %v, want %v", s.Severity, SeverityInfo)
+			}
+			if !strings.Contains(s.Message, "USE INDEX") {
+				t.Errorf("%q does not contain %q", s.Message, "USE INDEX")
+			}
+			if !strings.Contains(s.Message, "idx_users_email") {
+				t.Errorf("%q does not contain %q", s.Message, "idx_users_email")
+			}
 		}
 	}
-	assert.True(t, indexHintFound, "Should suggest USE INDEX hint")
+	if !indexHintFound {
+		t.Error("Should suggest USE INDEX hint")
+	}
 }
 
 func TestMySQLHints_OptimizeTable(t *testing.T) {
@@ -220,15 +257,23 @@ func TestMySQLHints_OptimizeTable(t *testing.T) {
 			for _, s := range suggestions {
 				if s.Type == SuggestionMySQLOptimize {
 					optimizeFound = true
-					assert.Equal(t, SeverityInfo, s.Severity)
-					assert.Contains(t, s.SQL, "OPTIMIZE TABLE")
+					if s.Severity != SeverityInfo {
+						t.Errorf("got %v, want %v", s.Severity, SeverityInfo)
+					}
+					if !strings.Contains(s.SQL, "OPTIMIZE TABLE") {
+						t.Errorf("%q does not contain %q", s.SQL, "OPTIMIZE TABLE")
+					}
 				}
 			}
 
 			if tt.expectOpt {
-				assert.True(t, optimizeFound, "Should suggest OPTIMIZE TABLE")
+				if !optimizeFound {
+					t.Error("Should suggest OPTIMIZE TABLE")
+				}
 			} else {
-				assert.False(t, optimizeFound, "Should not suggest OPTIMIZE TABLE")
+				if optimizeFound {
+					t.Error("Should not suggest OPTIMIZE TABLE")
+				}
 			}
 		})
 	}
@@ -250,11 +295,17 @@ func TestMySQLHints_BufferPool(t *testing.T) {
 	for _, s := range suggestions {
 		if s.Type == SuggestionMySQLBufferPool {
 			bufferFound = true
-			assert.Equal(t, SeverityInfo, s.Severity)
-			assert.Contains(t, s.Message, "buffer pool")
+			if s.Severity != SeverityInfo {
+				t.Errorf("got %v, want %v", s.Severity, SeverityInfo)
+			}
+			if !strings.Contains(s.Message, "buffer pool") {
+				t.Errorf("%q does not contain %q", s.Message, "buffer pool")
+			}
 		}
 	}
-	assert.True(t, bufferFound, "Should suggest buffer pool tuning for large scans")
+	if !bufferFound {
+		t.Error("Should suggest buffer pool tuning for large scans")
+	}
 }
 
 func TestSQLiteHints_Analyze(t *testing.T) {
@@ -275,11 +326,17 @@ func TestSQLiteHints_Analyze(t *testing.T) {
 	for _, s := range suggestions {
 		if s.Type == SuggestionSQLiteAnalyze {
 			analyzeFound = true
-			assert.Equal(t, SeverityInfo, s.Severity)
-			assert.Contains(t, s.SQL, "ANALYZE")
+			if s.Severity != SeverityInfo {
+				t.Errorf("got %v, want %v", s.Severity, SeverityInfo)
+			}
+			if !strings.Contains(s.SQL, "ANALYZE") {
+				t.Errorf("%q does not contain %q", s.SQL, "ANALYZE")
+			}
 		}
 	}
-	assert.True(t, analyzeFound, "Should suggest ANALYZE for full scan")
+	if !analyzeFound {
+		t.Error("Should suggest ANALYZE for full scan")
+	}
 }
 
 func TestSQLiteHints_Vacuum(t *testing.T) {
@@ -300,11 +357,17 @@ func TestSQLiteHints_Vacuum(t *testing.T) {
 	for _, s := range suggestions {
 		if s.Type == SuggestionSQLiteVacuum {
 			vacuumFound = true
-			assert.Equal(t, SeverityInfo, s.Severity)
-			assert.Contains(t, s.SQL, "VACUUM")
+			if s.Severity != SeverityInfo {
+				t.Errorf("got %v, want %v", s.Severity, SeverityInfo)
+			}
+			if !strings.Contains(s.SQL, "VACUUM") {
+				t.Errorf("%q does not contain %q", s.SQL, "VACUUM")
+			}
 		}
 	}
-	assert.True(t, vacuumFound, "Should suggest VACUUM for slow queries")
+	if !vacuumFound {
+		t.Error("Should suggest VACUUM for slow queries")
+	}
 }
 
 func TestSQLiteHints_WAL(t *testing.T) {
@@ -325,11 +388,17 @@ func TestSQLiteHints_WAL(t *testing.T) {
 	for _, s := range suggestions {
 		if s.Type == SuggestionSQLiteWAL {
 			walFound = true
-			assert.Equal(t, SeverityInfo, s.Severity)
-			assert.Contains(t, s.SQL, "WAL")
+			if s.Severity != SeverityInfo {
+				t.Errorf("got %v, want %v", s.Severity, SeverityInfo)
+			}
+			if !strings.Contains(s.SQL, "WAL") {
+				t.Errorf("%q does not contain %q", s.SQL, "WAL")
+			}
 		}
 	}
-	assert.True(t, walFound, "Should suggest WAL mode for large datasets")
+	if !walFound {
+		t.Error("Should suggest WAL mode for large datasets")
+	}
 }
 
 func TestGetAllHints(t *testing.T) {
@@ -393,8 +462,9 @@ func TestGetAllHints(t *testing.T) {
 			hints := NewDatabaseHints(tt.database)
 			suggestions := hints.GetAllHints(tt.analysis)
 
-			assert.GreaterOrEqual(t, len(suggestions), tt.expectMinCount,
-				"Should return at least %d suggestions", tt.expectMinCount)
+			if len(suggestions) < tt.expectMinCount {
+				t.Errorf("Should return at least %d suggestions: got %v >= %v", tt.expectMinCount, len(suggestions), tt.expectMinCount)
+			}
 
 			// Verify expected types are present
 			for _, expectedType := range tt.expectTypes {
@@ -405,7 +475,9 @@ func TestGetAllHints(t *testing.T) {
 						break
 					}
 				}
-				assert.True(t, found, "Should contain suggestion type: %s", expectedType)
+				if !found {
+					t.Errorf("Should contain suggestion type: %s", expectedType)
+				}
 			}
 		})
 	}

@@ -1,8 +1,8 @@
 # Relica Roadmap
 
-> **Current Version**: v0.12.0 (Released: July 3, 2026)
-> **Previous Release**: v0.11.1 (Released: June 19, 2026)
-> **Production Ready**: v1.0.0 (Target: Q3-Q4 2026)
+> **Current Version**: v0.16.0 (August 2026)
+> **Previous Release**: v0.15.0 (Released: August 5, 2026)
+> **Production Ready**: v1.0.0 (Target: Q4 2026)
 
 ---
 
@@ -14,87 +14,40 @@
 
 ---
 
-## 📍 Current State (v0.12.0)
+## 📍 Current State (v0.16.0)
 
-### ✅ Completed Features
+### ✅ What's New in v0.16.0
 
-- **CRUD Operations**: SELECT, INSERT, UPDATE, DELETE, UPSERT
-- **Struct Operations**: InsertStruct, BatchInsertStruct, UpdateStruct, Model() API
-- **Model() API Parity** (v0.7.0): Auto-populate ID, selective fields Insert/Update
-- **Named Placeholders** (v0.8.0): `{:name}` syntax with `Bind(Params{})`
-- **Quoting Syntax** (v0.8.0): `{{table}}` and `[[column]]` for dialect-aware quoting
-- **Row() / Column()** (v0.8.0): Scalar and single-column query helpers
-- **Transactional()** (v0.8.0): Auto commit/rollback with panic recovery
-- **Distinct()** (v0.8.0): SELECT DISTINCT support
-- **AndWhere() / OrWhere()** (v0.8.0): Dynamic WHERE clause building
-- **NullStringMap** (v0.9.0): Dynamic scanning without structs
-- **Query.Prepare() / Close()** (v0.9.0): Manual statement control
-- **Composite PK** (v0.9.0): `db:"col,pk"` syntax for composite primary keys
-- **Functional Expressions** (v0.9.0): CASE, COALESCE, NULLIF, GREATEST, LEAST, CONCAT
-- **AI Agent Documentation** (v0.9.1): AGENTS.md, llms.txt for AI coding assistants
-- **BatchInsert/BatchUpdate/Upsert Shortcuts** (v0.10.0): Direct methods on DB
-- **Named Placeholders in Fluent Builder** (v0.10.1): `{:name}` in Where/AndWhere/OrWhere
-- **Exists() / Count()** (v0.11.0): Query convenience methods on SelectQuery
-- **ToSQL()** (v0.11.0): Query preview without execution on Select/Update/Delete
-- **ErrNotFound** (v0.11.0): Sentinel error wrapping sql.ErrNoRows
-- **Error Classification** (v0.11.0): IsUniqueViolation, IsForeignKeyViolation, IsNotNullViolation, IsCheckViolation
-- **Model().Upsert()** (v0.11.0): Struct-based INSERT ON CONFLICT
-- **Model().UpdateChanged()** (v0.11.0): Dirty field detection via reflect
-- **Expression Table Alias Quoting** (v0.11.1): Correct `"table"."column"` quoting in all expression types
-- **Security: Full Identifier Quoting** (v0.12.0): All column names in INSERT/UPDATE/UPSERT/Model API properly quoted, null-byte defense
-- **Zero Panics** (v0.12.0): All public API panics replaced with stored errors
-- **API Pre-freeze** (v0.12.0): var→func exports, Tx symmetry, ToSQL on all types, Distinct(), Params(), ModelQuery.WithContext
-- **Correctness** (v0.12.0): HAVING renumber fix, validator on builder queries, named param validation, schema-qualified tables
-- **Enterprise Tests** (v0.12.0): Integration tests with reserved word columns on PostgreSQL, MySQL, SQLite
-- **Type-Safe Scanning**: Struct tags, reflection-based
-- **Transactions**: All isolation levels, context support
-- **Batch Operations**: 3.3x faster INSERT, 2.5x faster UPDATE
-- **Expression API**: Fluent WHERE clause builder (HashExp, comparison operators, LIKE, IN, BETWEEN, logical combinators)
-- **JOIN Operations**: INNER, LEFT, RIGHT, FULL, CROSS with hybrid API (string, Expression, nil)
-- **Sorting & Pagination**: ORDER BY, LIMIT, OFFSET
-- **Aggregate Functions**: COUNT, SUM, AVG, MIN, MAX with GROUP BY, HAVING
-- **Subqueries**: IN (SELECT...), EXISTS/NOT EXISTS, FROM subqueries, scalar subqueries
-- **Set Operations**: UNION, UNION ALL, INTERSECT, EXCEPT
-- **Common Table Expressions**: WITH clause, WITH RECURSIVE for hierarchical data
-- **Connection Management**: WrapDB() for integrating with external connection pools
-- **Multi-Database**: PostgreSQL, MySQL 8.0+, SQLite 3.25+ support
-- **Performance**: LRU statement cache (<60ns hit), zero allocations in hot paths
-- **Zero Dependencies**: Production code uses only Go standard library
-- **Enterprise Security** (v0.5.0): SQL injection prevention, audit logging, compliance
-- **Query Optimizer** (v0.5.0): 4-phase optimization with database-specific hints
-- **Query Analyzer** (v0.5.0): EXPLAIN integration for PostgreSQL, MySQL, SQLite
-- **SQL Logging & Tracing** (v0.5.0): Structured logging (slog), OpenTelemetry support
+- **AutoID — Native Dual-Key Pattern** (v0.16.0): Stripe-like prefixed IDs via `autoid:prefix` struct tag, `FindByPublicID()`, `BeforeInserter` interface, pluggable generators
+- **Truly Zero Dependencies** (v0.16.0): Empty go.mod — no require blocks. All test deps isolated in sub-modules. Tests use stdlib `testing` only
+- **Explain() / ExplainAnalyze() Exported** (v0.16.0): Query plan analysis via public API
+- **Query.ToSQL()** (v0.16.0): Consistent SQL preview on ALL query types including Insert
+- **Generic API** (v0.15.0): `One[T]`, `All[T]`, `Scalar[T]` free functions
+- **UUID PK Auto-Populate** (v0.15.0): `autoincrement` tag for server-generated string PKs via RETURNING
 
 ### 📊 Metrics
 
-- **Test Coverage**: 88%+ (1600+ tests)
-- **Dependencies**: 0 (production), 2 (tests only)
+- **Test Coverage**: 85%+
+- **Dependencies**: 0 (truly zero — empty go.mod)
 - **Lint**: 0 issues (golangci-lint)
-- **Performance**:
-  - Batch operations: 3.3x faster INSERT, 2.5x UPDATE
-  - N+1 queries: 3-18x faster (SQLite 6.6x, PostgreSQL 18x, MySQL 3x)
-  - Memory: 100x reduction with LIMIT, 2,500,000x with COUNT
-  - Subqueries: EXISTS 5x faster than IN (109ns vs 516ns)
-  - Set operations: UNION ALL 2-3x faster than UNION
-  - Wrapper calls: Zero overhead (0ns)
-- **Go Version**: 1.21+
+- **Go Version**: 1.25+
 
 ---
 
 ## 🚀 Upcoming Releases
 
-### v0.13.0 — Developer Experience & Community Growth
+### v0.17.0 — Go 1.27 + Generic Methods
 
-**Goal**: Make Relica the obvious choice for Go developers evaluating query builders.
+**Goal**: Leverage Go 1.27 generic methods for fluent type-safe API.
 
 **Planned**:
-- **Benchmark Suite vs Competitors** — Head-to-head comparison with GORM, sqlx, sqlc, Squirrel on real-world queries (TASK-501)
-- **Production-Ready Examples** — Complete application examples: REST API, CLI tool, background worker with Relica (TASK-502)
-- **SEO-Optimized Dev.to Article** — Technical deep-dive targeting "Go query builder" search traffic (TASK-600)
+- **Go 1.27 minimum** — bump from Go 1.25
+- **Generic methods on SelectQuery** — fluent API instead of free functions
+- **stdlib uuid** — replace internal UUID v7 generator with Go 1.27 stdlib `uuid.NewV7()`
 
-**Why this matters**: Relica has the features. Now it needs discoverability and proof points. Benchmarks validate the "lightweight & fast" claim. Examples lower the barrier to adoption.
+**In progress**: Separate research on method naming and API consistency (ADR pending). Current naming (`One`/`All`/`Scalar`, free functions vs methods, number of API styles) under review to ensure enterprise-grade consistency before API freeze.
 
-### v1.0.0 (Q3-Q4 2026) — Stability Release
+### v1.0.0 (Q4 2026) — Stability Release
 
 **Goal**: Production-ready stable release with long-term compatibility guarantee.
 
@@ -230,7 +183,16 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 - **v0.11.1** (2026-06-19) - Expression table alias quoting fix, golangci-lint zero issues
 - **v0.11.2** (2026-07-03) - Security: full identifier quoting, null-byte defense, func expression table aliases
 - **v0.12.0** (2026-07-03) - Enterprise audit: zero panics, API pre-freeze, correctness fixes, integration test infrastructure
-- **v1.0.0** (Target: Q3-Q4 2026) - Production stable release
+- **v0.12.1** (2026-07-05) - Transaction 3x performance (direct exec)
+- **v0.13.0** (2026-07-05) - SelectSub, EqCol, type-safe scalar subqueries
+- **v0.13.1** (2026-07-17) - ozzo-dbx parity: alias quoting, function guard, OFFSET/LIMIT, AndSelect
+- **v0.14.0** (2026-07-17) - OrderByExpr/GroupByExpr for raw SQL in ORDER/GROUP BY
+- **v0.14.1** (2026-07-17) - OrderBySub/GroupBySub type-safe expression ordering
+- **v0.14.2** (2026-07-17) - scanReturningID fix (One→Row for scalar PK)
+- **v0.14.3** (2026-07-17) - InsertStruct/BatchInsertStruct zero PK skip
+- **v0.15.0** (2026-08-05) - Generic One[T]/All[T]/Scalar[T], UUID PK autoincrement
+- **v0.16.0** (2026-08-07) - AutoID dual-key pattern, truly zero deps, Explain export, 85%+ coverage
+- **v1.0.0** (Target: Q4 2026) - Production stable release
 
 ---
 
@@ -243,5 +205,5 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 
 ---
 
-*Last Updated: 2026-07-03*
+*Last Updated: 2026-08-07*
 *Maintained by: Andrey Kolkov and CoreGX contributors*

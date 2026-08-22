@@ -1,10 +1,8 @@
 package core
 
 import (
+	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // TestSelectQuery_Aggregate_Count tests COUNT(*) aggregate function
@@ -16,11 +14,17 @@ func TestSelectQuery_Aggregate_Count(t *testing.T) {
 		From("users")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify SQL structure
-	assert.Equal(t, `SELECT COUNT(*) as total FROM "users"`, q.sql)
-	assert.Empty(t, q.params, "COUNT(*) should have no params")
+	if q.sql != `SELECT COUNT(*) as total FROM "users"` {
+		t.Errorf("got %v, want %v", q.sql, `SELECT COUNT(*) as total FROM "users"`)
+	}
+	if len(q.params) != 0 {
+		t.Errorf("COUNT(*) should have no params: got %d", len(q.params))
+	}
 }
 
 // TestSelectQuery_Aggregate_Sum tests SUM(column) aggregate function
@@ -32,11 +36,17 @@ func TestSelectQuery_Aggregate_Sum(t *testing.T) {
 		From("orders")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify SQL structure
-	assert.Equal(t, `SELECT SUM(price) as total_price FROM "orders"`, q.sql)
-	assert.Empty(t, q.params)
+	if q.sql != `SELECT SUM(price) as total_price FROM "orders"` {
+		t.Errorf("got %v, want %v", q.sql, `SELECT SUM(price) as total_price FROM "orders"`)
+	}
+	if len(q.params) != 0 {
+		t.Errorf("expected empty params, got %d", len(q.params))
+	}
 }
 
 // TestSelectQuery_Aggregate_Multiple tests multiple aggregate functions
@@ -48,13 +58,23 @@ func TestSelectQuery_Aggregate_Multiple(t *testing.T) {
 		From("orders")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify all aggregates are present
-	assert.Contains(t, q.sql, `COUNT(*) as cnt`)
-	assert.Contains(t, q.sql, `SUM(price) as total`)
-	assert.Contains(t, q.sql, `AVG(price) as avg_price`)
-	assert.Empty(t, q.params)
+	if !strings.Contains(q.sql, `COUNT(*) as cnt`) {
+		t.Errorf("%q does not contain %q", q.sql, `COUNT(*) as cnt`)
+	}
+	if !strings.Contains(q.sql, `SUM(price) as total`) {
+		t.Errorf("%q does not contain %q", q.sql, `SUM(price) as total`)
+	}
+	if !strings.Contains(q.sql, `AVG(price) as avg_price`) {
+		t.Errorf("%q does not contain %q", q.sql, `AVG(price) as avg_price`)
+	}
+	if len(q.params) != 0 {
+		t.Errorf("expected empty params, got %d", len(q.params))
+	}
 }
 
 // TestSelectQuery_Aggregate_MixedColumns tests mixing regular columns with aggregates
@@ -66,12 +86,20 @@ func TestSelectQuery_Aggregate_MixedColumns(t *testing.T) {
 		From("messages")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify column is quoted and aggregate is not
-	assert.Contains(t, q.sql, `"user_id"`)
-	assert.Contains(t, q.sql, `COUNT(*) as message_count`)
-	assert.Empty(t, q.params)
+	if !strings.Contains(q.sql, `"user_id"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"user_id"`)
+	}
+	if !strings.Contains(q.sql, `COUNT(*) as message_count`) {
+		t.Errorf("%q does not contain %q", q.sql, `COUNT(*) as message_count`)
+	}
+	if len(q.params) != 0 {
+		t.Errorf("expected empty params, got %d", len(q.params))
+	}
 }
 
 // TestSelectQuery_GroupBy_Single tests GROUP BY with single column
@@ -84,18 +112,28 @@ func TestSelectQuery_GroupBy_Single(t *testing.T) {
 		GroupBy("user_id")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify SQL structure
-	assert.Contains(t, q.sql, `GROUP BY "user_id"`)
-	assert.Empty(t, q.params)
+	if !strings.Contains(q.sql, `GROUP BY "user_id"`) {
+		t.Errorf("%q does not contain %q", q.sql, `GROUP BY "user_id"`)
+	}
+	if len(q.params) != 0 {
+		t.Errorf("expected empty params, got %d", len(q.params))
+	}
 
 	// Verify clause order: SELECT ... FROM ... GROUP BY
 	selectIdx := indexOf(q.sql, "SELECT")
 	fromIdx := indexOf(q.sql, "FROM")
 	groupIdx := indexOf(q.sql, "GROUP BY")
-	assert.Less(t, selectIdx, fromIdx, "SELECT should come before FROM")
-	assert.Less(t, fromIdx, groupIdx, "FROM should come before GROUP BY")
+	if selectIdx >= fromIdx {
+		t.Errorf("expected SELECT before FROM")
+	}
+	if fromIdx >= groupIdx {
+		t.Errorf("expected FROM before GROUP BY")
+	}
 }
 
 // TestSelectQuery_GroupBy_Multiple tests GROUP BY with multiple columns
@@ -108,11 +146,17 @@ func TestSelectQuery_GroupBy_Multiple(t *testing.T) {
 		GroupBy("user_id", "status")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify both columns are in GROUP BY
-	assert.Contains(t, q.sql, `GROUP BY "user_id", "status"`)
-	assert.Empty(t, q.params)
+	if !strings.Contains(q.sql, `GROUP BY "user_id", "status"`) {
+		t.Errorf("%q does not contain %q", q.sql, `GROUP BY "user_id", "status"`)
+	}
+	if len(q.params) != 0 {
+		t.Errorf("expected empty params, got %d", len(q.params))
+	}
 }
 
 // TestSelectQuery_GroupBy_Chainable tests GroupBy is chainable
@@ -126,10 +170,14 @@ func TestSelectQuery_GroupBy_Chainable(t *testing.T) {
 		GroupBy("status")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify both columns are in GROUP BY
-	assert.Contains(t, q.sql, `GROUP BY "user_id", "status"`)
+	if !strings.Contains(q.sql, `GROUP BY "user_id", "status"`) {
+		t.Errorf("%q does not contain %q", q.sql, `GROUP BY "user_id", "status"`)
+	}
 }
 
 // TestSelectQuery_GroupBy_WithTablePrefix tests GROUP BY with table.column format
@@ -142,10 +190,14 @@ func TestSelectQuery_GroupBy_WithTablePrefix(t *testing.T) {
 		GroupBy("m.user_id")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify table prefix is quoted correctly: "m"."user_id"
-	assert.Contains(t, q.sql, `GROUP BY "m"."user_id"`)
+	if !strings.Contains(q.sql, `GROUP BY "m"."user_id"`) {
+		t.Errorf("%q does not contain %q", q.sql, `GROUP BY "m"."user_id"`)
+	}
 }
 
 // TestSelectQuery_Having_String tests HAVING clause with string condition
@@ -159,16 +211,25 @@ func TestSelectQuery_Having_String(t *testing.T) {
 		Having("COUNT(*) > ?", 100)
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify SQL structure
-	assert.Contains(t, q.sql, `HAVING COUNT(*) > $1`)
-	assert.Equal(t, []interface{}{100}, q.params)
+	if !strings.Contains(q.sql, `HAVING COUNT(*) > $1`) {
+		t.Errorf("%q does not contain %q", q.sql, `HAVING COUNT(*) > $1`)
+	}
+	want := []interface{}{100}
+	if len(q.params) != len(want) || q.params[0] != want[0] {
+		t.Errorf("got %v, want %v", q.params, want)
+	}
 
 	// Verify clause order: GROUP BY ... HAVING
 	groupIdx := indexOf(q.sql, "GROUP BY")
 	havingIdx := indexOf(q.sql, "HAVING")
-	assert.Less(t, groupIdx, havingIdx, "GROUP BY should come before HAVING")
+	if groupIdx >= havingIdx {
+		t.Errorf("expected GROUP BY before HAVING")
+	}
 }
 
 // TestSelectQuery_Having_Multiple tests multiple HAVING clauses (combined with AND)
@@ -183,11 +244,18 @@ func TestSelectQuery_Having_Multiple(t *testing.T) {
 		Having("SUM(size) < ?", 10000)
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify both conditions are combined with AND
-	assert.Contains(t, q.sql, `HAVING COUNT(*) > $1 AND SUM(size) < $2`)
-	assert.Equal(t, []interface{}{100, 10000}, q.params)
+	if !strings.Contains(q.sql, `HAVING COUNT(*) > $1 AND SUM(size) < $2`) {
+		t.Errorf("%q does not contain %q", q.sql, `HAVING COUNT(*) > $1 AND SUM(size) < $2`)
+	}
+	want := []interface{}{100, 10000}
+	if len(q.params) != 2 || q.params[0] != want[0] || q.params[1] != want[1] {
+		t.Errorf("got %v, want %v", q.params, want)
+	}
 }
 
 // TestSelectQuery_Having_Expression tests HAVING with Expression
@@ -207,11 +275,18 @@ func TestSelectQuery_Having_Expression(t *testing.T) {
 		Having(expr)
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify HAVING clause with column expression
-	assert.Contains(t, q.sql, `HAVING "user_id" > $1`)
-	assert.Equal(t, []interface{}{100}, q.params)
+	if !strings.Contains(q.sql, `HAVING "user_id" > $1`) {
+		t.Errorf("%q does not contain %q", q.sql, `HAVING "user_id" > $1`)
+	}
+	want := []interface{}{100}
+	if len(q.params) != 1 || q.params[0] != want[0] {
+		t.Errorf("got %v, want %v", q.params, want)
+	}
 }
 
 // TestSelectQuery_GroupBy_Having_Combined tests complete GROUP BY + HAVING query
@@ -265,10 +340,22 @@ func TestSelectQuery_GroupBy_Having_Combined(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			query := tt.setup()
 			q := query.Build()
-			require.NotNil(t, q)
+			if q == nil {
+				t.Fatal("expected non-nil")
+			}
 
-			assert.Equal(t, tt.wantSQL, q.sql)
-			assert.Equal(t, tt.wantArgs, q.params)
+			if q.sql != tt.wantSQL {
+				t.Errorf("got %v, want %v", q.sql, tt.wantSQL)
+			}
+			if len(q.params) != len(tt.wantArgs) {
+				t.Errorf("got %v, want %v", q.params, tt.wantArgs)
+			} else {
+				for i := range tt.wantArgs {
+					if q.params[i] != tt.wantArgs[i] {
+						t.Errorf("param[%d]: got %v, want %v", i, q.params[i], tt.wantArgs[i])
+					}
+				}
+			}
 		})
 	}
 }
@@ -285,22 +372,39 @@ func TestSelectQuery_Aggregate_WithJoin(t *testing.T) {
 		Having("COUNT(m.id) > ?", 10)
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify SQL structure with JOIN
-	assert.Contains(t, q.sql, `INNER JOIN "messages" AS "m"`)
-	assert.Contains(t, q.sql, `GROUP BY "u"."name"`)
-	assert.Contains(t, q.sql, `HAVING COUNT(m.id) > $1`)
-	assert.Equal(t, []interface{}{10}, q.params)
+	if !strings.Contains(q.sql, `INNER JOIN "messages" AS "m"`) {
+		t.Errorf("%q does not contain %q", q.sql, `INNER JOIN "messages" AS "m"`)
+	}
+	if !strings.Contains(q.sql, `GROUP BY "u"."name"`) {
+		t.Errorf("%q does not contain %q", q.sql, `GROUP BY "u"."name"`)
+	}
+	if !strings.Contains(q.sql, `HAVING COUNT(m.id) > $1`) {
+		t.Errorf("%q does not contain %q", q.sql, `HAVING COUNT(m.id) > $1`)
+	}
+	want := []interface{}{10}
+	if len(q.params) != 1 || q.params[0] != want[0] {
+		t.Errorf("got %v, want %v", q.params, want)
+	}
 
 	// Verify clause order: FROM ... JOIN ... GROUP BY ... HAVING
 	fromIdx := indexOf(q.sql, "FROM")
 	joinIdx := indexOf(q.sql, "INNER JOIN")
 	groupIdx := indexOf(q.sql, "GROUP BY")
 	havingIdx := indexOf(q.sql, "HAVING")
-	assert.Less(t, fromIdx, joinIdx)
-	assert.Less(t, joinIdx, groupIdx)
-	assert.Less(t, groupIdx, havingIdx)
+	if fromIdx >= joinIdx {
+		t.Errorf("expected FROM before INNER JOIN")
+	}
+	if joinIdx >= groupIdx {
+		t.Errorf("expected INNER JOIN before GROUP BY")
+	}
+	if groupIdx >= havingIdx {
+		t.Errorf("expected GROUP BY before HAVING")
+	}
 }
 
 // TestSelectQuery_Aggregate_WithOrderBy tests aggregates with ORDER BY (Phase 2 feature)
@@ -316,23 +420,42 @@ func TestSelectQuery_Aggregate_WithOrderBy(t *testing.T) {
 		Limit(10)
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify SQL structure with ORDER BY and LIMIT
-	assert.Contains(t, q.sql, `GROUP BY "user_id"`)
-	assert.Contains(t, q.sql, `HAVING COUNT(*) > $1`)
-	assert.Contains(t, q.sql, `ORDER BY "cnt" DESC`)
-	assert.Contains(t, q.sql, `LIMIT 10`)
-	assert.Equal(t, []interface{}{100}, q.params)
+	if !strings.Contains(q.sql, `GROUP BY "user_id"`) {
+		t.Errorf("%q does not contain %q", q.sql, `GROUP BY "user_id"`)
+	}
+	if !strings.Contains(q.sql, `HAVING COUNT(*) > $1`) {
+		t.Errorf("%q does not contain %q", q.sql, `HAVING COUNT(*) > $1`)
+	}
+	if !strings.Contains(q.sql, `ORDER BY "cnt" DESC`) {
+		t.Errorf("%q does not contain %q", q.sql, `ORDER BY "cnt" DESC`)
+	}
+	if !strings.Contains(q.sql, `LIMIT 10`) {
+		t.Errorf("%q does not contain %q", q.sql, `LIMIT 10`)
+	}
+	want := []interface{}{100}
+	if len(q.params) != 1 || q.params[0] != want[0] {
+		t.Errorf("got %v, want %v", q.params, want)
+	}
 
 	// Verify clause order: GROUP BY ... HAVING ... ORDER BY ... LIMIT
 	groupIdx := indexOf(q.sql, "GROUP BY")
 	havingIdx := indexOf(q.sql, "HAVING")
 	orderIdx := indexOf(q.sql, "ORDER BY")
 	limitIdx := indexOf(q.sql, "LIMIT")
-	assert.Less(t, groupIdx, havingIdx)
-	assert.Less(t, havingIdx, orderIdx)
-	assert.Less(t, orderIdx, limitIdx)
+	if groupIdx >= havingIdx {
+		t.Errorf("expected GROUP BY before HAVING")
+	}
+	if havingIdx >= orderIdx {
+		t.Errorf("expected HAVING before ORDER BY")
+	}
+	if orderIdx >= limitIdx {
+		t.Errorf("expected ORDER BY before LIMIT")
+	}
 }
 
 // TestSelectQuery_Aggregate_CompleteQuery tests all features combined (JOIN + WHERE + GROUP BY + HAVING + ORDER BY + LIMIT)
@@ -350,7 +473,9 @@ func TestSelectQuery_Aggregate_CompleteQuery(t *testing.T) {
 		Limit(50)
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify complete SQL structure
 	expectedSQL := `SELECT "u"."name", COUNT(m.id) as message_count, SUM(m.size) as total_size ` +
@@ -360,8 +485,13 @@ func TestSelectQuery_Aggregate_CompleteQuery(t *testing.T) {
 		`HAVING COUNT(m.id) > $2 ` +
 		`ORDER BY "message_count" DESC ` +
 		`LIMIT 50`
-	assert.Equal(t, expectedSQL, q.sql)
-	assert.Equal(t, []interface{}{1, 100}, q.params)
+	if q.sql != expectedSQL {
+		t.Errorf("got %v, want %v", q.sql, expectedSQL)
+	}
+	want := []interface{}{1, 100}
+	if len(q.params) != 2 || q.params[0] != want[0] || q.params[1] != want[1] {
+		t.Errorf("got %v, want %v", q.params, want)
+	}
 
 	// Verify correct clause order
 	fromIdx := indexOf(q.sql, "FROM")
@@ -372,12 +502,24 @@ func TestSelectQuery_Aggregate_CompleteQuery(t *testing.T) {
 	orderIdx := indexOf(q.sql, "ORDER BY")
 	limitIdx := indexOf(q.sql, "LIMIT")
 
-	assert.Less(t, fromIdx, joinIdx, "FROM before JOIN")
-	assert.Less(t, joinIdx, whereIdx, "JOIN before WHERE")
-	assert.Less(t, whereIdx, groupIdx, "WHERE before GROUP BY")
-	assert.Less(t, groupIdx, havingIdx, "GROUP BY before HAVING")
-	assert.Less(t, havingIdx, orderIdx, "HAVING before ORDER BY")
-	assert.Less(t, orderIdx, limitIdx, "ORDER BY before LIMIT")
+	if fromIdx >= joinIdx {
+		t.Errorf("FROM before JOIN")
+	}
+	if joinIdx >= whereIdx {
+		t.Errorf("JOIN before WHERE")
+	}
+	if whereIdx >= groupIdx {
+		t.Errorf("WHERE before GROUP BY")
+	}
+	if groupIdx >= havingIdx {
+		t.Errorf("GROUP BY before HAVING")
+	}
+	if havingIdx >= orderIdx {
+		t.Errorf("HAVING before ORDER BY")
+	}
+	if orderIdx >= limitIdx {
+		t.Errorf("ORDER BY before LIMIT")
+	}
 }
 
 // TestSelectQuery_Aggregate_PostgreSQL_Quoting tests PostgreSQL-specific quoting for aggregates
@@ -391,12 +533,20 @@ func TestSelectQuery_Aggregate_PostgreSQL_Quoting(t *testing.T) {
 		Having("COUNT(*) > ?", 100)
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// PostgreSQL uses double quotes for identifiers and $1 for placeholders
-	assert.Contains(t, q.sql, `"user_id"`)
-	assert.Contains(t, q.sql, `"messages"`)
-	assert.Contains(t, q.sql, `$1`)
+	if !strings.Contains(q.sql, `"user_id"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"user_id"`)
+	}
+	if !strings.Contains(q.sql, `"messages"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"messages"`)
+	}
+	if !strings.Contains(q.sql, `$1`) {
+		t.Errorf("%q does not contain %q", q.sql, `$1`)
+	}
 }
 
 // TestSelectQuery_Aggregate_MySQL_Quoting tests MySQL-specific quoting for aggregates
@@ -410,12 +560,20 @@ func TestSelectQuery_Aggregate_MySQL_Quoting(t *testing.T) {
 		Having("COUNT(*) > ?", 100)
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// MySQL uses backticks for identifiers and ? for placeholders
-	assert.Contains(t, q.sql, "`user_id`")
-	assert.Contains(t, q.sql, "`messages`")
-	assert.Contains(t, q.sql, "?")
+	if !strings.Contains(q.sql, "`user_id`") {
+		t.Errorf("%q does not contain %q", q.sql, "`user_id`")
+	}
+	if !strings.Contains(q.sql, "`messages`") {
+		t.Errorf("%q does not contain %q", q.sql, "`messages`")
+	}
+	if !strings.Contains(q.sql, "?") {
+		t.Errorf("%q does not contain %q", q.sql, "?")
+	}
 }
 
 // TestSelectQuery_Aggregate_SQLite_Quoting tests SQLite-specific quoting for aggregates
@@ -429,12 +587,20 @@ func TestSelectQuery_Aggregate_SQLite_Quoting(t *testing.T) {
 		Having("COUNT(*) > ?", 100)
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// SQLite uses double quotes for identifiers and ? for placeholders
-	assert.Contains(t, q.sql, `"user_id"`)
-	assert.Contains(t, q.sql, `"messages"`)
-	assert.Contains(t, q.sql, "?")
+	if !strings.Contains(q.sql, `"user_id"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"user_id"`)
+	}
+	if !strings.Contains(q.sql, `"messages"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"messages"`)
+	}
+	if !strings.Contains(q.sql, "?") {
+		t.Errorf("%q does not contain %q", q.sql, "?")
+	}
 }
 
 // TestSelectQuery_GroupBy_NoAggregate tests GROUP BY without aggregate (valid but unusual)
@@ -447,10 +613,15 @@ func TestSelectQuery_GroupBy_NoAggregate(t *testing.T) {
 		GroupBy("user_id")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Valid SQL: SELECT DISTINCT-like behavior
-	assert.Equal(t, `SELECT "user_id" FROM "messages" GROUP BY "user_id"`, q.sql)
+	want := `SELECT "user_id" FROM "messages" GROUP BY "user_id"`
+	if q.sql != want {
+		t.Errorf("got %v, want %v", q.sql, want)
+	}
 }
 
 // TestSelectQuery_Having_WithWhere tests HAVING combined with WHERE (different filters)
@@ -465,18 +636,33 @@ func TestSelectQuery_Having_WithWhere(t *testing.T) {
 		Having("COUNT(*) > ?", 100) // Filters groups AFTER aggregation
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify WHERE comes before GROUP BY, HAVING comes after
-	assert.Contains(t, q.sql, `WHERE status = $1`)
-	assert.Contains(t, q.sql, `GROUP BY "user_id"`)
-	assert.Contains(t, q.sql, `HAVING COUNT(*) > $2`)
-	assert.Equal(t, []interface{}{1, 100}, q.params)
+	if !strings.Contains(q.sql, `WHERE status = $1`) {
+		t.Errorf("%q does not contain %q", q.sql, `WHERE status = $1`)
+	}
+	if !strings.Contains(q.sql, `GROUP BY "user_id"`) {
+		t.Errorf("%q does not contain %q", q.sql, `GROUP BY "user_id"`)
+	}
+	if !strings.Contains(q.sql, `HAVING COUNT(*) > $2`) {
+		t.Errorf("%q does not contain %q", q.sql, `HAVING COUNT(*) > $2`)
+	}
+	want := []interface{}{1, 100}
+	if len(q.params) != 2 || q.params[0] != want[0] || q.params[1] != want[1] {
+		t.Errorf("got %v, want %v", q.params, want)
+	}
 
 	// Verify clause order
 	whereIdx := indexOf(q.sql, "WHERE")
 	groupIdx := indexOf(q.sql, "GROUP BY")
 	havingIdx := indexOf(q.sql, "HAVING")
-	assert.Less(t, whereIdx, groupIdx, "WHERE before GROUP BY")
-	assert.Less(t, groupIdx, havingIdx, "GROUP BY before HAVING")
+	if whereIdx >= groupIdx {
+		t.Errorf("expected WHERE before GROUP BY")
+	}
+	if groupIdx >= havingIdx {
+		t.Errorf("expected GROUP BY before HAVING")
+	}
 }

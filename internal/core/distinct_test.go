@@ -1,10 +1,8 @@
 package core
 
 import (
+	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // TestSelectQuery_Distinct tests that Distinct() adds the DISTINCT keyword.
@@ -17,12 +15,20 @@ func TestSelectQuery_Distinct_True(t *testing.T) {
 		Distinct()
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify SQL contains DISTINCT keyword
-	assert.Contains(t, q.sql, `SELECT DISTINCT "category"`)
-	assert.Contains(t, q.sql, `FROM "products"`)
-	assert.Empty(t, q.params, "DISTINCT should have no params")
+	if !strings.Contains(q.sql, `SELECT DISTINCT "category"`) {
+		t.Errorf("%q does not contain %q", q.sql, `SELECT DISTINCT "category"`)
+	}
+	if !strings.Contains(q.sql, `FROM "products"`) {
+		t.Errorf("%q does not contain %q", q.sql, `FROM "products"`)
+	}
+	if len(q.params) != 0 {
+		t.Errorf("DISTINCT should have no params, got %d", len(q.params))
+	}
 }
 
 // TestSelectQuery_Distinct_False tests that without Distinct() there is no DISTINCT keyword.
@@ -34,12 +40,20 @@ func TestSelectQuery_Distinct_False(t *testing.T) {
 		From("users")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify SQL does NOT contain DISTINCT
-	assert.NotContains(t, q.sql, "DISTINCT")
-	assert.Contains(t, q.sql, `SELECT "name"`)
-	assert.Contains(t, q.sql, `FROM "users"`)
+	if strings.Contains(q.sql, "DISTINCT") {
+		t.Errorf("%q should not contain %q", q.sql, "DISTINCT")
+	}
+	if !strings.Contains(q.sql, `SELECT "name"`) {
+		t.Errorf("%q does not contain %q", q.sql, `SELECT "name"`)
+	}
+	if !strings.Contains(q.sql, `FROM "users"`) {
+		t.Errorf("%q does not contain %q", q.sql, `FROM "users"`)
+	}
 }
 
 // TestSelectQuery_Distinct_Default tests default behavior (no DISTINCT).
@@ -51,11 +65,17 @@ func TestSelectQuery_Distinct_Default(t *testing.T) {
 		From("contacts")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// By default, DISTINCT should not be present
-	assert.NotContains(t, q.sql, "DISTINCT")
-	assert.Contains(t, q.sql, `SELECT "email"`)
+	if strings.Contains(q.sql, "DISTINCT") {
+		t.Errorf("%q should not contain %q", q.sql, "DISTINCT")
+	}
+	if !strings.Contains(q.sql, `SELECT "email"`) {
+		t.Errorf("%q does not contain %q", q.sql, `SELECT "email"`)
+	}
 }
 
 // TestSelectQuery_Distinct_MultipleColumns tests DISTINCT with multiple columns.
@@ -68,10 +88,16 @@ func TestSelectQuery_Distinct_MultipleColumns(t *testing.T) {
 		Distinct()
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, q.sql, `SELECT DISTINCT "country", "city"`)
-	assert.Contains(t, q.sql, `FROM "locations"`)
+	if !strings.Contains(q.sql, `SELECT DISTINCT "country", "city"`) {
+		t.Errorf("%q does not contain %q", q.sql, `SELECT DISTINCT "country", "city"`)
+	}
+	if !strings.Contains(q.sql, `FROM "locations"`) {
+		t.Errorf("%q does not contain %q", q.sql, `FROM "locations"`)
+	}
 }
 
 // TestSelectQuery_Distinct_Wildcard tests DISTINCT with wildcard selector.
@@ -84,10 +110,16 @@ func TestSelectQuery_Distinct_Wildcard(t *testing.T) {
 		Distinct()
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, q.sql, `SELECT DISTINCT *`)
-	assert.Contains(t, q.sql, `FROM "logs"`)
+	if !strings.Contains(q.sql, `SELECT DISTINCT *`) {
+		t.Errorf("%q does not contain %q", q.sql, `SELECT DISTINCT *`)
+	}
+	if !strings.Contains(q.sql, `FROM "logs"`) {
+		t.Errorf("%q does not contain %q", q.sql, `FROM "logs"`)
+	}
 }
 
 // TestSelectQuery_Distinct_WithWhere tests DISTINCT with WHERE clause.
@@ -101,13 +133,25 @@ func TestSelectQuery_Distinct_WithWhere(t *testing.T) {
 		Distinct()
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, q.sql, `SELECT DISTINCT "status"`)
-	assert.Contains(t, q.sql, `FROM "orders"`)
-	assert.Contains(t, q.sql, `WHERE`)
-	assert.Len(t, q.params, 1)
-	assert.Equal(t, 100, q.params[0])
+	if !strings.Contains(q.sql, `SELECT DISTINCT "status"`) {
+		t.Errorf("%q does not contain %q", q.sql, `SELECT DISTINCT "status"`)
+	}
+	if !strings.Contains(q.sql, `FROM "orders"`) {
+		t.Errorf("%q does not contain %q", q.sql, `FROM "orders"`)
+	}
+	if !strings.Contains(q.sql, `WHERE`) {
+		t.Errorf("%q does not contain %q", q.sql, `WHERE`)
+	}
+	if len(q.params) != 1 {
+		t.Errorf("expected length %d, got %d", 1, len(q.params))
+	}
+	if q.params[0] != 100 {
+		t.Errorf("got %v, want %v", q.params[0], 100)
+	}
 }
 
 // TestSelectQuery_Distinct_WithOrderBy tests DISTINCT with ORDER BY.
@@ -121,10 +165,16 @@ func TestSelectQuery_Distinct_WithOrderBy(t *testing.T) {
 		OrderBy("department ASC")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, q.sql, `SELECT DISTINCT "department"`)
-	assert.Contains(t, q.sql, `ORDER BY "department" ASC`)
+	if !strings.Contains(q.sql, `SELECT DISTINCT "department"`) {
+		t.Errorf("%q does not contain %q", q.sql, `SELECT DISTINCT "department"`)
+	}
+	if !strings.Contains(q.sql, `ORDER BY "department" ASC`) {
+		t.Errorf("%q does not contain %q", q.sql, `ORDER BY "department" ASC`)
+	}
 }
 
 // TestSelectQuery_Distinct_WithLimit tests DISTINCT with LIMIT.
@@ -138,10 +188,16 @@ func TestSelectQuery_Distinct_WithLimit(t *testing.T) {
 		Limit(10)
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, q.sql, `SELECT DISTINCT "tag"`)
-	assert.Contains(t, q.sql, `LIMIT 10`)
+	if !strings.Contains(q.sql, `SELECT DISTINCT "tag"`) {
+		t.Errorf("%q does not contain %q", q.sql, `SELECT DISTINCT "tag"`)
+	}
+	if !strings.Contains(q.sql, `LIMIT 10`) {
+		t.Errorf("%q does not contain %q", q.sql, `LIMIT 10`)
+	}
 }
 
 // TestSelectQuery_Distinct_WithJoin tests DISTINCT with JOIN.
@@ -155,10 +211,16 @@ func TestSelectQuery_Distinct_WithJoin(t *testing.T) {
 		Distinct()
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, q.sql, `SELECT DISTINCT "u"."country"`)
-	assert.Contains(t, q.sql, `INNER JOIN`)
+	if !strings.Contains(q.sql, `SELECT DISTINCT "u"."country"`) {
+		t.Errorf("%q does not contain %q", q.sql, `SELECT DISTINCT "u"."country"`)
+	}
+	if !strings.Contains(q.sql, `INNER JOIN`) {
+		t.Errorf("%q does not contain %q", q.sql, `INNER JOIN`)
+	}
 }
 
 // TestSelectQuery_Distinct_Toggle tests that Distinct() enables DISTINCT and a fresh query without it has none.
@@ -172,16 +234,24 @@ func TestSelectQuery_Distinct_Toggle(t *testing.T) {
 		Distinct()
 
 	q := query.Build()
-	require.NotNil(t, q)
-	assert.Contains(t, q.sql, "DISTINCT")
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
+	if !strings.Contains(q.sql, "DISTINCT") {
+		t.Errorf("%q does not contain %q", q.sql, "DISTINCT")
+	}
 
 	// Without Distinct() — no DISTINCT keyword
 	query2 := qb.Select("role").
 		From("users")
 
 	q2 := query2.Build()
-	require.NotNil(t, q2)
-	assert.NotContains(t, q2.sql, "DISTINCT")
+	if q2 == nil {
+		t.Fatal("expected non-nil")
+	}
+	if strings.Contains(q2.sql, "DISTINCT") {
+		t.Errorf("%q should not contain %q", q2.sql, "DISTINCT")
+	}
 }
 
 // TestSelectQuery_Distinct_Chainable tests that Distinct() returns SelectQuery.
@@ -198,12 +268,22 @@ func TestSelectQuery_Distinct_Chainable(t *testing.T) {
 		Limit(5)
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, q.sql, `SELECT DISTINCT "type"`)
-	assert.Contains(t, q.sql, `WHERE`)
-	assert.Contains(t, q.sql, `ORDER BY`)
-	assert.Contains(t, q.sql, `LIMIT 5`)
+	if !strings.Contains(q.sql, `SELECT DISTINCT "type"`) {
+		t.Errorf("%q does not contain %q", q.sql, `SELECT DISTINCT "type"`)
+	}
+	if !strings.Contains(q.sql, `WHERE`) {
+		t.Errorf("%q does not contain %q", q.sql, `WHERE`)
+	}
+	if !strings.Contains(q.sql, `ORDER BY`) {
+		t.Errorf("%q does not contain %q", q.sql, `ORDER BY`)
+	}
+	if !strings.Contains(q.sql, `LIMIT 5`) {
+		t.Errorf("%q does not contain %q", q.sql, `LIMIT 5`)
+	}
 }
 
 // TestSelectQuery_Distinct_WithAggregate tests DISTINCT with aggregate functions.
@@ -216,10 +296,14 @@ func TestSelectQuery_Distinct_WithAggregate(t *testing.T) {
 		Distinct()
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// DISTINCT should be in SELECT clause even with aggregate
-	assert.Contains(t, q.sql, `SELECT DISTINCT COUNT(DISTINCT user_id)`)
+	if !strings.Contains(q.sql, `SELECT DISTINCT COUNT(DISTINCT user_id)`) {
+		t.Errorf("%q does not contain %q", q.sql, `SELECT DISTINCT COUNT(DISTINCT user_id)`)
+	}
 }
 
 // TestSelectQuery_Distinct_PostgreSQL tests PostgreSQL dialect.
@@ -232,11 +316,17 @@ func TestSelectQuery_Distinct_PostgreSQL(t *testing.T) {
 		Distinct()
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// PostgreSQL uses double quotes
-	assert.Contains(t, q.sql, `SELECT DISTINCT "category"`)
-	assert.Contains(t, q.sql, `FROM "products"`)
+	if !strings.Contains(q.sql, `SELECT DISTINCT "category"`) {
+		t.Errorf("%q does not contain %q", q.sql, `SELECT DISTINCT "category"`)
+	}
+	if !strings.Contains(q.sql, `FROM "products"`) {
+		t.Errorf("%q does not contain %q", q.sql, `FROM "products"`)
+	}
 }
 
 // TestSelectQuery_Distinct_MySQL tests MySQL dialect.
@@ -249,11 +339,17 @@ func TestSelectQuery_Distinct_MySQL(t *testing.T) {
 		Distinct()
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// MySQL uses backticks
-	assert.Contains(t, q.sql, "SELECT DISTINCT `brand`")
-	assert.Contains(t, q.sql, "FROM `products`")
+	if !strings.Contains(q.sql, "SELECT DISTINCT `brand`") {
+		t.Errorf("%q does not contain %q", q.sql, "SELECT DISTINCT `brand`")
+	}
+	if !strings.Contains(q.sql, "FROM `products`") {
+		t.Errorf("%q does not contain %q", q.sql, "FROM `products`")
+	}
 }
 
 // TestSelectQuery_Distinct_SQLite tests SQLite dialect.
@@ -266,11 +362,17 @@ func TestSelectQuery_Distinct_SQLite(t *testing.T) {
 		Distinct()
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// SQLite uses double quotes (like PostgreSQL)
-	assert.Contains(t, q.sql, `SELECT DISTINCT "color"`)
-	assert.Contains(t, q.sql, `FROM "items"`)
+	if !strings.Contains(q.sql, `SELECT DISTINCT "color"`) {
+		t.Errorf("%q does not contain %q", q.sql, `SELECT DISTINCT "color"`)
+	}
+	if !strings.Contains(q.sql, `FROM "items"`) {
+		t.Errorf("%q does not contain %q", q.sql, `FROM "items"`)
+	}
 }
 
 // TestSelectQuery_Distinct_ComplexQuery tests DISTINCT in a complex query.
@@ -289,21 +391,43 @@ func TestSelectQuery_Distinct_ComplexQuery(t *testing.T) {
 		Offset(20)
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify all clauses are present
-	assert.Contains(t, q.sql, `SELECT DISTINCT "u"."country", "u"."city"`)
-	assert.Contains(t, q.sql, `FROM "users" AS "u"`)
-	assert.Contains(t, q.sql, `INNER JOIN "orders" AS "o"`)
-	assert.Contains(t, q.sql, `WHERE`)
-	assert.Contains(t, q.sql, `ORDER BY "u"."country" ASC, "u"."city" ASC`)
-	assert.Contains(t, q.sql, `LIMIT 100`)
-	assert.Contains(t, q.sql, `OFFSET 20`)
+	if !strings.Contains(q.sql, `SELECT DISTINCT "u"."country", "u"."city"`) {
+		t.Errorf("%q does not contain %q", q.sql, `SELECT DISTINCT "u"."country", "u"."city"`)
+	}
+	if !strings.Contains(q.sql, `FROM "users" AS "u"`) {
+		t.Errorf("%q does not contain %q", q.sql, `FROM "users" AS "u"`)
+	}
+	if !strings.Contains(q.sql, `INNER JOIN "orders" AS "o"`) {
+		t.Errorf("%q does not contain %q", q.sql, `INNER JOIN "orders" AS "o"`)
+	}
+	if !strings.Contains(q.sql, `WHERE`) {
+		t.Errorf("%q does not contain %q", q.sql, `WHERE`)
+	}
+	if !strings.Contains(q.sql, `ORDER BY "u"."country" ASC, "u"."city" ASC`) {
+		t.Errorf("%q does not contain %q", q.sql, `ORDER BY "u"."country" ASC, "u"."city" ASC`)
+	}
+	if !strings.Contains(q.sql, `LIMIT 100`) {
+		t.Errorf("%q does not contain %q", q.sql, `LIMIT 100`)
+	}
+	if !strings.Contains(q.sql, `OFFSET 20`) {
+		t.Errorf("%q does not contain %q", q.sql, `OFFSET 20`)
+	}
 
 	// Verify parameters
-	assert.Len(t, q.params, 2)
-	assert.Equal(t, "completed", q.params[0])
-	assert.Equal(t, 50, q.params[1])
+	if len(q.params) != 2 {
+		t.Errorf("expected length %d, got %d", 2, len(q.params))
+	}
+	if q.params[0] != "completed" {
+		t.Errorf("got %v, want %v", q.params[0], "completed")
+	}
+	if q.params[1] != 50 {
+		t.Errorf("got %v, want %v", q.params[1], 50)
+	}
 
 	// Verify clause order: SELECT < FROM < JOIN < WHERE < ORDER BY < LIMIT < OFFSET
 	selectIdx := indexOf(q.sql, "SELECT DISTINCT")
@@ -314,12 +438,24 @@ func TestSelectQuery_Distinct_ComplexQuery(t *testing.T) {
 	limitIdx := indexOf(q.sql, "LIMIT")
 	offsetIdx := indexOf(q.sql, "OFFSET")
 
-	assert.Less(t, selectIdx, fromIdx)
-	assert.Less(t, fromIdx, joinIdx)
-	assert.Less(t, joinIdx, whereIdx)
-	assert.Less(t, whereIdx, orderIdx)
-	assert.Less(t, orderIdx, limitIdx)
-	assert.Less(t, limitIdx, offsetIdx)
+	if selectIdx >= fromIdx {
+		t.Errorf("expected selectIdx < fromIdx, got %d >= %d", selectIdx, fromIdx)
+	}
+	if fromIdx >= joinIdx {
+		t.Errorf("expected fromIdx < joinIdx, got %d >= %d", fromIdx, joinIdx)
+	}
+	if joinIdx >= whereIdx {
+		t.Errorf("expected joinIdx < whereIdx, got %d >= %d", joinIdx, whereIdx)
+	}
+	if whereIdx >= orderIdx {
+		t.Errorf("expected whereIdx < orderIdx, got %d >= %d", whereIdx, orderIdx)
+	}
+	if orderIdx >= limitIdx {
+		t.Errorf("expected orderIdx < limitIdx, got %d >= %d", orderIdx, limitIdx)
+	}
+	if limitIdx >= offsetIdx {
+		t.Errorf("expected limitIdx < offsetIdx, got %d >= %d", limitIdx, offsetIdx)
+	}
 }
 
 // TestSelectQuery_Distinct_WithGroupBy tests DISTINCT with GROUP BY.
@@ -333,10 +469,16 @@ func TestSelectQuery_Distinct_WithGroupBy(t *testing.T) {
 		Distinct()
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, q.sql, `SELECT DISTINCT "category", COUNT(*) as cnt`)
-	assert.Contains(t, q.sql, `GROUP BY "category"`)
+	if !strings.Contains(q.sql, `SELECT DISTINCT "category", COUNT(*) as cnt`) {
+		t.Errorf("%q does not contain %q", q.sql, `SELECT DISTINCT "category", COUNT(*) as cnt`)
+	}
+	if !strings.Contains(q.sql, `GROUP BY "category"`) {
+		t.Errorf("%q does not contain %q", q.sql, `GROUP BY "category"`)
+	}
 }
 
 // TestSelectQuery_Distinct_WithSelectExpr tests DISTINCT with SelectExpr.
@@ -350,10 +492,16 @@ func TestSelectQuery_Distinct_WithSelectExpr(t *testing.T) {
 		Distinct()
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, q.sql, `SELECT DISTINCT "name", UPPER(email) as upper_email`)
-	assert.Contains(t, q.sql, `FROM "users"`)
+	if !strings.Contains(q.sql, `SELECT DISTINCT "name", UPPER(email) as upper_email`) {
+		t.Errorf("%q does not contain %q", q.sql, `SELECT DISTINCT "name", UPPER(email) as upper_email`)
+	}
+	if !strings.Contains(q.sql, `FROM "users"`) {
+		t.Errorf("%q does not contain %q", q.sql, `FROM "users"`)
+	}
 }
 
 // TestSelectQuery_Distinct_EmptySelect tests DISTINCT with default columns.
@@ -366,11 +514,17 @@ func TestSelectQuery_Distinct_EmptySelect(t *testing.T) {
 		Distinct()
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Should default to SELECT DISTINCT *
-	assert.Contains(t, q.sql, "SELECT DISTINCT *")
-	assert.Contains(t, q.sql, `FROM "users"`)
+	if !strings.Contains(q.sql, "SELECT DISTINCT *") {
+		t.Errorf("%q does not contain %q", q.sql, "SELECT DISTINCT *")
+	}
+	if !strings.Contains(q.sql, `FROM "users"`) {
+		t.Errorf("%q does not contain %q", q.sql, `FROM "users"`)
+	}
 }
 
 // TestSelectQuery_Distinct_WithAlias tests DISTINCT with column aliases.
@@ -383,8 +537,14 @@ func TestSelectQuery_Distinct_WithAlias(t *testing.T) {
 		Distinct()
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, q.sql, `SELECT DISTINCT "status" AS "order_status"`)
-	assert.Contains(t, q.sql, `FROM "orders"`)
+	if !strings.Contains(q.sql, `SELECT DISTINCT "status" AS "order_status"`) {
+		t.Errorf("%q does not contain %q", q.sql, `SELECT DISTINCT "status" AS "order_status"`)
+	}
+	if !strings.Contains(q.sql, `FROM "orders"`) {
+		t.Errorf("%q does not contain %q", q.sql, `FROM "orders"`)
+	}
 }

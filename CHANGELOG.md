@@ -6,6 +6,91 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.16.0] - 2026-08-07
+
+### Added
+
+- **AutoID — Native Dual-Key Pattern** — Stripe-like prefixed IDs via struct tags. First query builder in any ecosystem with native dual-key support.
+
+  ```go
+  type User struct {
+      ID       int64  `db:"id,pk"`
+      PublicID string `db:"public_id,autoid:usr"` // auto-generated "usr_019078fa-..."
+      Name     string `db:"name"`
+  }
+
+  user := User{Name: "Alice"}
+  db.Model(&user).Insert()
+  fmt.Println(user.PublicID) // "usr_019078fa-b37e-7abc-..."
+
+  var found User
+  db.Model(&found).FindByPublicID("usr_019078fa-b37e-7abc-...")
+  ```
+
+- **`autoid:prefix` struct tag** — declares a field as auto-generated external ID. UUID v7 by default, pluggable generators via `gen=name`. Prefix added automatically (`usr_`, `ord_`, etc.)
+- **`FindByPublicID(publicID string) error`** — one-liner lookup by external ID with automatic prefix validation. Returns `ErrAutoIDPrefixMismatch` if wrong prefix, `ErrNotFound` if not found
+- **`BeforeInserter` interface** — lifecycle hook called before Insert/Upsert. For timestamps, validation, custom ID strategies. Called before autoid generation
+- **`RegisterIDGenerator(name, fn)`** — register custom ID generators (ULID, Snowflake, etc.) for use with `gen=name` in autoid tag
+- **`ErrAutoIDPrefixMismatch`** — sentinel error for prefix validation in FindByPublicID. Works with `errors.Is()`
+- **`Query.ToSQL()`** — consistent SQL preview on all query types including Insert and NewQuery. Previously only available on Select/Update/Delete/Upsert/Batch
+- **Zero-dependency UUID v7 generator** — RFC 9562 compliant, ~300ns/op, stdlib only (`crypto/rand` + `time`)
+
+### Example
+
+```go
+// Define model with dual-key (1 line per model):
+type User struct {
+    ID       int64  `db:"id,pk"`
+    PublicID string `db:"public_id,autoid:usr"`
+    Name     string `db:"name"`
+}
+
+// Insert — auto-generates PublicID, auto-populates ID:
+user := User{Name: "Alice"}
+db.Model(&user).Insert()
+// user.ID = 42, user.PublicID = "usr_019078fa-b37e-7abc-..."
+
+// Lookup by public ID (one-liner):
+var found User
+db.Model(&found).FindByPublicID("usr_019078fa-b37e-7abc-...")
+
+// Prefix validation (safety):
+err := db.Model(&found).FindByPublicID("ord_019078fa-...")
+// errors.Is(err, relica.ErrAutoIDPrefixMismatch) == true
+
+// Pre-set ID for testing (not overwritten):
+user := User{PublicID: "usr_test-id", Name: "Test"}
+db.Model(&user).Insert() // PublicID stays "usr_test-id"
+
+// BeforeInserter hook:
+func (u *User) BeforeInsert() error {
+    u.CreatedAt = time.Now()
+    return nil
+}
+
+// Custom generator:
+relica.RegisterIDGenerator("ulid", func() string {
+    return ulid.Make().String()
+})
+type Event struct {
+    PublicID string `db:"public_id,autoid:evt,gen=ulid"`
+}
+
+// ToSQL on Insert (new):
+sql, params := db.Insert("users", data).ToSQL()
+
+// Explain (new export):
+plan, err := db.Select().From("users").Where(relica.Eq("id", 1)).Explain()
+```
+
+### Changed
+
+- **Truly zero dependencies** — go.mod has no `require` blocks. All test dependencies (testify, database drivers, modernc.org/sqlite) removed from main module and isolated in `test/` and `benchmark/` sub-modules. Tests rewritten to use Go stdlib `testing` only
+- **`Explain()` / `ExplainAnalyze()` exported** — query plan analysis now available through public API on `SelectQuery`
+- **`QueryPlan` type exported** — unified query plan structure for PostgreSQL, MySQL, SQLite EXPLAIN output
+
+---
+
 ## [0.15.0] - 2026-08-05
 
 ### Added
