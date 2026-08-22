@@ -80,3 +80,66 @@ func TestRow_ReturnsErrNotFound(t *testing.T) {
 		t.Errorf("Row() should return ErrNotFound, got: %v", err)
 	}
 }
+
+// Negative: Row() with data does NOT return ErrNotFound.
+func TestRow_WithData_NoError(t *testing.T) {
+	db := openCovDB(t)
+	seedCovTable(t, db)
+
+	var name string
+	err := db.NewQuery("SELECT name FROM cov_items WHERE id = 1").Row(&name)
+	if err != nil {
+		t.Fatalf("Row() with existing data should not error, got: %v", err)
+	}
+	if name != "alpha" {
+		t.Errorf("expected 'alpha', got %q", name)
+	}
+}
+
+// Negative: WithContext(nil) must not panic.
+func TestModelQuery_WithContext_Nil_NoPanic(t *testing.T) {
+	db := mockDBFull("postgres")
+
+	type User struct {
+		ID   int64  `db:"id,pk"`
+		Name string `db:"name"`
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("WithContext(nil) panicked: %v", r)
+		}
+	}()
+
+	mq := db.Model(&User{Name: "Test"})
+	mq2 := mq.WithContext(nil)
+	if mq2 == nil {
+		t.Error("WithContext(nil) should return non-nil ModelQuery")
+	}
+}
+
+// Negative: ModelQuery.WithContext does not share exclude map.
+func TestModelQuery_WithContext_ExcludeIndependent(t *testing.T) {
+	db := mockDBFull("postgres")
+
+	type User struct {
+		ID   int64  `db:"id,pk"`
+		Name string `db:"name"`
+	}
+
+	mq := db.Model(&User{Name: "Test"})
+	mq.exclude["name"] = true
+
+	ctx := context.Background()
+	mq2 := mq.WithContext(ctx)
+
+	// Modify original's exclude — should not affect mq2
+	mq.exclude["extra"] = true
+
+	if _, ok := mq2.exclude["extra"]; ok {
+		t.Error("WithContext copy shares exclude map with original — mutation leaked")
+	}
+	if _, ok := mq2.exclude["name"]; !ok {
+		t.Error("WithContext copy should have inherited 'name' exclusion")
+	}
+}
