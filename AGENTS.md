@@ -152,6 +152,202 @@ db.Model(&user).Insert()
 
 ---
 
+## JOIN Operations
+
+**All JOIN types are supported. Use `EqCol()` for type-safe ON conditions:**
+
+```go
+// INNER JOIN
+db.Select("u.name", "o.total").
+    From("users u").
+    InnerJoin("orders o", "o.user_id = u.id").
+    All(&results)
+
+// LEFT JOIN (include users without orders)
+db.Select("u.name", "COALESCE(SUM(o.total), 0) as total").
+    From("users u").
+    LeftJoin("orders o", "o.user_id = u.id").
+    GroupBy("u.id", "u.name").
+    All(&results)
+
+// Multiple JOINs
+db.Select("u.name", "o.total", "p.name as product").
+    From("users u").
+    InnerJoin("orders o", "o.user_id = u.id").
+    InnerJoin("products p", "p.id = o.product_id").
+    Where(relica.Eq("o.status", "paid")).
+    All(&results)
+
+// JOIN with Expression API (complex ON conditions)
+db.Select().
+    From("messages m").
+    InnerJoin("users u", relica.And(
+        relica.NewExp("m.user_id = u.id"),
+        relica.GreaterThan("u.status", 0),
+    )).
+    All(&results)
+
+// JOIN with EqCol (type-safe column-to-column)
+db.Select("u.name", "o.total").
+    From("users u").
+    InnerJoin("orders o", relica.EqCol("o.user_id", "u.id")).
+    All(&results)
+```
+
+### All JOIN Types
+
+| Method | SQL | Notes |
+|--------|-----|-------|
+| `InnerJoin(table, on)` | `INNER JOIN` | Most common |
+| `LeftJoin(table, on)` | `LEFT OUTER JOIN` | Include unmatched left rows |
+| `RightJoin(table, on)` | `RIGHT OUTER JOIN` | Include unmatched right rows |
+| `FullJoin(table, on)` | `FULL OUTER JOIN` | PostgreSQL, SQLite only (not MySQL) |
+| `CrossJoin(table)` | `CROSS JOIN` | Cartesian product, no ON |
+
+The `on` parameter accepts:
+- `string` — raw SQL condition: `"o.user_id = u.id"`
+- `Expression` — type-safe: `relica.EqCol("o.user_id", "u.id")`
+- `relica.And(...)` / `relica.Or(...)` — complex conditions
+
+---
+
+## Generic API (Go 1.21+)
+
+**Type-safe scan without manual variable declarations:**
+
+```go
+// One[T] — scan single row into struct
+user, err := relica.One[User](db.Select().From("users").Where(relica.Eq("id", 1)))
+
+// All[T] — scan multiple rows into slice
+users, err := relica.All[User](db.Select().From("users").OrderBy("name"))
+
+// Scalar[T] — scan single value (COUNT, MAX, etc.)
+count, err := relica.Scalar[int64](db.Select("COUNT(*)").From("users"))
+total, err := relica.Scalar[float64](db.Select("SUM(total)").From("orders"))
+name, err := relica.Scalar[string](db.Select("name").From("users").Where(relica.Eq("id", 1)))
+```
+
+**Important**: Generic functions are free functions in the `relica` package, not methods on SelectQuery.
+
+---
+
+## Batch Operations
+
+```go
+// BatchInsert — multi-row INSERT (3.3x faster than loop)
+batch := db.BatchInsert("users", []string{"name", "email"})
+for _, u := range users {
+    batch.Values(u.Name, u.Email)
+}
+_, err := batch.Execute()
+
+// BatchInsertStruct — batch from structs (auto-detects columns)
+users := []User{{Name: "Alice"}, {Name: "Bob"}}
+_, err := db.BatchInsertStruct("users", users)
+
+// BatchUpdate — multi-row UPDATE
+batch := db.BatchUpdate("users", []string{"name", "status"}, "id")
+for _, u := range users {
+    batch.Values(u.Name, u.Status, u.ID) // last value = WHERE id = ?
+}
+_, err := batch.Execute()
+
+// InsertStruct — single struct INSERT (auto-detects columns, skips zero PK)
+_, err := db.InsertStruct("users", user)
+```
+
+All batch operations work on both `DB` and `Tx`.
+
+---
+
+## Transactions
+
+```go
+// Transactional() — auto commit/rollback with panic recovery
+err := db.Transactional(ctx, func(tx *relica.Tx) error {
+    user := User{Name: "Alice"}
+    if err := tx.Model(&user).Insert(); err != nil {
+        return err // auto-rollback
+    }
+
+    order := Order{UserID: user.ID, Total: 99.99}
+    if err := tx.Model(&order).Insert(); err != nil {
+        return err // auto-rollback
+    }
+
+    return nil // auto-commit
+})
+
+// Manual transaction control
+tx, err := db.Begin(ctx)
+defer tx.Rollback() // safe: no-op after Commit
+
+err = tx.Model(&user).Insert()
+if err != nil {
+    return err // auto-rollback via defer
+}
+return tx.Commit()
+```
+
+**All methods available on Tx**: Select, Insert, Update, Delete, Model, BatchInsert, BatchUpdate, Upsert, InsertStruct, BatchInsertStruct, NewQuery.
+
+---
+
+## Ordering with Expressions
+
+```go
+// OrderBySub — type-safe expression in ORDER BY
+db.Select().From("tasks t").
+    OrderBySub(relica.CaseWhen().
+        When("t.due_date < CURRENT_DATE", 0).
+        When("t.due_date IS NULL", 3).
+        Else(1)).
+    All(&tasks)
+
+// GroupBySub — type-safe expression in GROUP BY
+db.Select("category", "COUNT(*)").
+    From("products").
+    GroupBySub(relica.CaseWhen().
+        When("price < 10", "budget").
+        When("price < 100", "mid").
+        Else("premium")).
+    All(&results)
+
+// OrderByExpr — raw SQL in ORDER BY (when builder doesn't fit)
+db.Select().From("users").
+    OrderByExpr("FIELD(status, 'active', 'pending', 'disabled')").
+    All(&users)
+```
+
+---
+
+## Primary Key Configuration
+
+```go
+// Integer PK (default, auto-populated on Insert)
+type User struct {
+    ID    int64  `db:"id,pk"`
+    Name  string `db:"name"`
+}
+
+// UUID/String PK (server-generated, requires autoincrement tag for RETURNING)
+type Post struct {
+    ID    string `db:"id,pk,autoincrement"`
+    Title string `db:"title"`
+}
+
+// Composite PK (no auto-populate)
+type OrderItem struct {
+    OrderID int `db:"order_id,pk"`
+    ItemID  int `db:"item_id,pk"`
+}
+```
+
+**PK detection priority**: `db:"col,pk"` tag → field named `ID` → field named `Id`.
+
+---
+
 ## Query Helpers
 
 ### Exists / Count
@@ -477,9 +673,17 @@ db.Model(&user).Update("status")
 | INSERT | `db.Model(&struct).Insert()` | `db.Insert(table, map)` |
 | UPDATE | `db.Model(&struct).Update()` | `db.Update(table).Set(map)` |
 | DELETE | `db.Model(&struct).Delete()` | - |
+| UPSERT | `db.Model(&struct).Upsert()` | Manual INSERT ON CONFLICT |
 | WHERE | `relica.Eq()`, `relica.And()`, `HashExp{}` | String concatenation |
 | Complex WHERE | `relica.And(relica.Or(...))` | Nested string conditions |
+| JOIN | `.InnerJoin(table, on)`, `.LeftJoin(table, on)` | Raw SQL joins |
+| JOIN ON | `relica.EqCol("a.col", "b.col")` | String conditions |
+| Single row | `relica.One[T](query)` or `query.One(&struct)` | Manual scan |
+| Multiple rows | `relica.All[T](query)` or `query.All(&slice)` | Manual loop |
+| Scalar value | `relica.Scalar[T](query)` or `query.Row(&val)` | `query.One(&val)` |
+| Batch INSERT | `db.BatchInsertStruct(table, slice)` | Loop of single inserts |
+| Transaction | `db.Transactional(ctx, func(tx) error)` | Manual Begin/Commit |
 
 ---
 
-*This guide is optimized for AI code generation accuracy.*
+*This guide is optimized for AI code generation accuracy. Updated: 2026-08-07.*

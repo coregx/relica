@@ -2,7 +2,7 @@
 
 > **Production-Ready Patterns for Relica**
 >
-> **Last Updated**: 2026-03-17
+> **Last Updated**: 2026-08-07
 
 > **🤖 AI Agents**: See [AGENTS.md](../../AGENTS.md) for correct API patterns. Prefer `Model()` API over `map[string]interface{}`.
 
@@ -567,6 +567,200 @@ func (r *UserRepository) SaveSettings(ctx context.Context, settings *UserSetting
 
 ---
 
+## 🔑 Primary Key Strategy
+
+Choosing the right primary key type is one of the most impactful decisions for long-term database performance. This section covers common strategies, their trade-offs, and recommended patterns with Relica.
+
+### The UUID v4 Problem
+
+> **Warning**: Random UUIDs (v4) as primary keys cause severe B-tree index fragmentation at scale. A single-row lookup can degrade from 20ms to 3.8 seconds at 200M+ rows due to 94,000+ disk block reads.
+
+**Why this happens**: B-tree indexes store keys in sorted order. Sequential keys (autoincrement, time-ordered) insert at the end — page fill rate stays ~94%. Random UUID v4 inserts into random positions, causing page splits. Result: ~50-60% fill rate, index bloat of 1.5-2x, and increasingly cold cache as the table grows.
+
+**Scale of impact**:
+
+| Table Size | UUID v4 INSERT/s | Autoincrement INSERT/s | Degradation |
+|-----------|-----------------|----------------------|-------------|
+| < 1M rows | ~50,000 | ~55,000 | Negligible |
+| 10M rows | ~35,000 | ~50,000 | ~30% |
+| 100M rows | ~8,000 | ~50,000 | **6x slower** |
+| 200M+ rows | lookup 3.8s | lookup 20ms | **190x slower** |
+
+**PostgreSQL vs MySQL**: In PostgreSQL (heap tables), fragmentation affects only the B-tree index. In MySQL/InnoDB (clustered index), the **entire table** is stored in PK order — UUID v4 fragments the row storage itself plus all secondary indexes.
+
+### Recommended Strategies
+
+#### 1. Integer Autoincrement (Simplest, Best Performance)
+
+Best for single-database applications without external API exposure:
+
+```go
+type User struct {
+    ID    int64  `db:"id,pk"`     // 8 bytes, optimal B-tree
+    Name  string `db:"name"`
+    Email string `db:"email"`
+}
+
+user := User{Name: "Alice", Email: "alice@example.com"}
+db.Model(&user).Insert()
+fmt.Println(user.ID) // auto-populated
+```
+
+```sql
+CREATE TABLE users (
+    id    BIGSERIAL PRIMARY KEY,
+    name  TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE
+);
+```
+
+**Pros**: Optimal B-tree (8 bytes, sequential), simplest implementation, best JOIN performance.
+**Cons**: Predictable (information disclosure in APIs), not suitable for distributed ID generation.
+
+#### 2. UUID v7 — Time-Ordered UUID (RFC 9562)
+
+Best when you need distributed ID generation or client-side ID creation:
+
+```go
+type Event struct {
+    ID   string `db:"id,pk,autoincrement"` // server-generated UUID v7
+    Type string `db:"type"`
+    Data string `db:"data"`
+}
+
+event := Event{Type: "user.created", Data: `{"userId": 42}`}
+db.Model(&event).Insert()
+fmt.Println(event.ID) // "019078fa-b37e-7abc-..." (auto-populated via RETURNING)
+```
+
+```sql
+-- PostgreSQL 18+:
+CREATE TABLE events (
+    id   UUID PRIMARY KEY DEFAULT uuidv7(),
+    type TEXT NOT NULL,
+    data JSONB
+);
+
+-- PostgreSQL 13-17 (extension required):
+-- CREATE EXTENSION IF NOT EXISTS pg_uuidv7;
+-- ... DEFAULT uuid_generate_v7()
+```
+
+**Pros**: Time-ordered (solves B-tree fragmentation), globally unique, no coordination needed, embeds creation timestamp.
+**Cons**: 16 bytes (2x integer), timestamp leaks creation time, requires PG 18+ for native support.
+
+> **Note**: The `autoincrement` tag tells Relica to use PostgreSQL `RETURNING` clause to read back the server-generated value. For MySQL/SQLite, generate the UUID in your application code before inserting.
+
+#### 3. Dual-Key Pattern (Recommended for APIs)
+
+Best for production APIs — optimal performance internally, safe identifiers externally. Used by Stripe (`cus_...`), Shopify, GitHub:
+
+```go
+type User struct {
+    ID       int64  `db:"id,pk"`       // internal: fast joins, compact FK
+    PublicID string `db:"public_id"`   // external: exposed in API responses
+    Name     string `db:"name"`
+    Email    string `db:"email"`
+}
+
+func CreateUser(db *relica.DB, name, email string) (User, error) {
+    user := User{
+        PublicID: "usr_" + uuid.NewV7().String(), // app-generated
+        Name:     name,
+        Email:    email,
+    }
+    err := db.Model(&user).Insert()
+    return user, err
+    // user.ID auto-populated (autoincrement)
+    // user.PublicID was set before insert
+}
+
+// API handler: lookup by public ID
+func GetUser(db *relica.DB, publicID string) (User, error) {
+    var user User
+    err := db.Select().From("users").
+        Where(relica.Eq("public_id", publicID)).
+        One(&user)
+    return user, err
+}
+
+// Internal queries: use integer PK for joins
+db.Select("u.name", "o.total").
+    From("users u").
+    InnerJoin("orders o", relica.EqCol("o.user_id", "u.id")).
+    Where(relica.Eq("u.id", internalUserID)).
+    All(&results)
+```
+
+```sql
+CREATE TABLE users (
+    id         BIGSERIAL PRIMARY KEY,
+    public_id  TEXT NOT NULL UNIQUE,
+    name       TEXT NOT NULL,
+    email      TEXT NOT NULL UNIQUE
+);
+CREATE INDEX idx_users_public_id ON users(public_id);
+```
+
+**Pros**: Optimal B-tree for PK, compact 8-byte FK references, external ID can change strategy without PK migration, no information disclosure.
+**Cons**: Extra column + index (24 bytes/row overhead), two lookup paths (discipline required), slightly more code.
+
+> **Why not built-in?** Dual-key is an application-level pattern, not a query builder concern. The business prefix (`usr_`, `ord_`, `cus_`) and generation strategy belong in your service layer. Relica's Model API already handles both keys naturally — integer PK auto-populates, and the public ID is just another field you set before insert.
+
+### Decision Matrix
+
+| Criteria | `int64` autoincrement | UUID v7 | Dual-key (int64 + UUID) |
+|----------|----------------------|---------|------------------------|
+| B-tree efficiency | Optimal | Good | Optimal |
+| PK index size | 8 bytes | 16 bytes | 8 bytes (+16 for external) |
+| Distributed generation | No | Yes | Yes (for external ID) |
+| API-safe | No (sequential) | Partial (timestamp leak) | **Yes** |
+| FK join performance | Best | Good | Best |
+| Complexity | Low | Low | Medium |
+
+**Quick guide**:
+- **Internal tool, no API**: `int64` autoincrement
+- **Public API, < 50M rows**: UUID v7 as PK
+- **Public API, 50M+ rows or performance-critical**: Dual-key pattern
+- **Distributed/microservices**: UUID v7 or Snowflake IDs
+
+### What to Avoid
+
+```go
+// ❌ NEVER: Random UUID v4 as primary key
+// This WILL degrade at scale. No exceptions.
+type BadExample struct {
+    ID string `db:"id,pk"` // uuid.New() = random v4 = B-tree fragmentation
+}
+
+// ❌ AVOID: Exposing autoincrement IDs in public APIs
+// Sequential integers leak information (total count, creation order, scraping)
+// GET /api/users/42 → attacker tries /api/users/43, /api/users/44...
+
+// ✅ INSTEAD: Use UUID v7 or dual-key pattern (see above)
+```
+
+### Table Partitioning (Complementary)
+
+At 50M+ rows, consider table partitioning regardless of PK strategy:
+
+```sql
+-- Range partitioning by date (PostgreSQL)
+CREATE TABLE events (
+    id         BIGSERIAL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    data       JSONB,
+    PRIMARY KEY (id, created_at)  -- must include partition key
+) PARTITION BY RANGE (created_at);
+
+CREATE TABLE events_2026_q3 PARTITION OF events
+    FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
+```
+
+Partitioning reduces the working set per query, improving cache hit rates independently of PK type.
+
+---
+
 ## 🚀 Production Checklist
 
 Before deploying to production:
@@ -579,6 +773,7 @@ Before deploying to production:
 - [ ] **errors.Is(err, relica.ErrNotFound)** used for not-found checks (not sql.ErrNoRows comparison)
 - [ ] **Constraint errors classified** (IsUniqueViolation, IsForeignKeyViolation, etc.)
 - [ ] **Migrations tested** on staging environment
+- [ ] **Primary key strategy chosen** (see [Primary Key Strategy](#-primary-key-strategy) — avoid UUID v4 as PK)
 - [ ] **Indexes created** for frequently queried columns
 - [ ] **Query performance tested** under load
 - [ ] **Security features enabled** (validator, auditor if needed)
