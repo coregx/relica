@@ -2,8 +2,6 @@ package relica
 
 import (
 	"testing"
-
-	"github.com/stretchr/testify/assert"
 )
 
 // TestGenericOne_CompileTimeTypeCheck verifies that One[T] returns the correct type.
@@ -19,7 +17,9 @@ func TestGenericOne_CompileTimeTypeCheck(t *testing.T) {
 		// Compile-time check: One[User] returns (User, error)
 		var _ func(*SelectQuery) (User, error) = One[User]
 	}
-	assert.True(t, true, "Generic One[T] compiles correctly")
+	if !true {
+		t.Error("expected true")
+	}
 }
 
 // TestGenericAll_CompileTimeTypeCheck verifies that All[T] returns []T.
@@ -31,7 +31,9 @@ func TestGenericAll_CompileTimeTypeCheck(t *testing.T) {
 		}
 		var _ func(*SelectQuery) ([]User, error) = All[User]
 	}
-	assert.True(t, true, "Generic All[T] compiles correctly")
+	if !true {
+		t.Error("expected true")
+	}
 }
 
 // TestGenericScalar_CompileTimeTypeCheck verifies Scalar[T] works with common types.
@@ -43,5 +45,7 @@ func TestGenericScalar_CompileTimeTypeCheck(t *testing.T) {
 	// string for single column
 	var _ func(*SelectQuery) (string, error) = Scalar[string]
 
-	assert.True(t, true, "Generic Scalar[T] compiles with int64/float64/string")
+	if !true {
+		t.Error("expected true")
+	}
 }

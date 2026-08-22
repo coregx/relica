@@ -2,11 +2,10 @@ package core
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/coregx/relica/internal/dialects"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // mockDBFull creates a minimal DB with both dialect and driverName set.
@@ -19,7 +18,7 @@ func mockDBFull(driverName string) *DB {
 	}
 }
 
-// ─── needsPostgresReturning: autoincrement tag ────────────────────────────────
+// ─── needsPostgresReturning: autoincrement tag ────────────────────────────────────
 
 // TestNeedsPostgresReturning_NumericPK verifies backward-compatible behavior
 // for numeric PKs: RETURNING is used without any explicit tag.
@@ -39,8 +38,12 @@ func TestNeedsPostgresReturning_NumericPK(t *testing.T) {
 	}
 
 	needs, col := mq.needsPostgresReturning()
-	assert.True(t, needs, "numeric PK should trigger RETURNING")
-	assert.Equal(t, "id", col)
+	if !needs {
+		t.Error("numeric PK should trigger RETURNING")
+	}
+	if col != "id" {
+		t.Errorf("got %v, want %v", col, "id")
+	}
 }
 
 // TestNeedsPostgresReturning_NumericPKNonZero verifies that non-zero PK
@@ -61,7 +64,9 @@ func TestNeedsPostgresReturning_NumericPKNonZero(t *testing.T) {
 	}
 
 	needs, _ := mq.needsPostgresReturning()
-	assert.False(t, needs, "non-zero PK must not trigger RETURNING")
+	if needs {
+		t.Error("non-zero PK must not trigger RETURNING")
+	}
 }
 
 // TestNeedsPostgresReturning_StringPKWithAutoIncrementTag verifies that
@@ -82,8 +87,12 @@ func TestNeedsPostgresReturning_StringPKWithAutoIncrementTag(t *testing.T) {
 	}
 
 	needs, col := mq.needsPostgresReturning()
-	assert.True(t, needs, "string PK with autoincrement tag should trigger RETURNING")
-	assert.Equal(t, "id", col)
+	if !needs {
+		t.Error("string PK with autoincrement tag should trigger RETURNING")
+	}
+	if col != "id" {
+		t.Errorf("got %v, want %v", col, "id")
+	}
 }
 
 // TestNeedsPostgresReturning_StringPKWithoutAutoIncrementTag verifies that
@@ -105,7 +114,9 @@ func TestNeedsPostgresReturning_StringPKWithoutAutoIncrementTag(t *testing.T) {
 	}
 
 	needs, _ := mq.needsPostgresReturning()
-	assert.False(t, needs, "string PK without autoincrement tag must not trigger RETURNING")
+	if needs {
+		t.Error("string PK without autoincrement tag must not trigger RETURNING")
+	}
 }
 
 // TestNeedsPostgresReturning_NonPostgres verifies that non-PostgreSQL drivers
@@ -127,7 +138,9 @@ func TestNeedsPostgresReturning_NonPostgres(t *testing.T) {
 			}
 
 			needs, _ := mq.needsPostgresReturning()
-			assert.False(t, needs, "non-postgres driver must not trigger RETURNING")
+			if needs {
+				t.Error("non-postgres driver must not trigger RETURNING")
+			}
 		})
 	}
 }
@@ -151,7 +164,9 @@ func TestNeedsPostgresReturning_CompositePK(t *testing.T) {
 	}
 
 	needs, _ := mq.needsPostgresReturning()
-	assert.False(t, needs, "composite PK must not trigger RETURNING")
+	if needs {
+		t.Error("composite PK must not trigger RETURNING")
+	}
 }
 
 // ─── scanReturningIntoField: type dispatch ────────────────────────────────────
@@ -172,9 +187,15 @@ func TestScanReturningIntoField_UnsupportedType(t *testing.T) {
 	// The function will reach q.Row() only for supported kinds. For float64
 	// (unsupported), it returns the error immediately after the switch.
 	err := scanReturningIntoField(nil, field)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unsupported PK type for RETURNING")
-	assert.Contains(t, err.Error(), "float64")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "unsupported PK type for RETURNING") {
+		t.Errorf("%q does not contain %q", err.Error(), "unsupported PK type for RETURNING")
+	}
+	if !strings.Contains(err.Error(), "float64") {
+		t.Errorf("%q does not contain %q", err.Error(), "float64")
+	}
 }
 
 // TestScanReturningIntoField_PointerDeref verifies that nil pointer is
@@ -187,6 +208,10 @@ func TestScanReturningIntoField_PointerDeref(t *testing.T) {
 	field := reflect.ValueOf(&f).Elem()
 
 	err := scanReturningIntoField(nil, field)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unsupported PK type for RETURNING")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "unsupported PK type for RETURNING") {
+		t.Errorf("%q does not contain %q", err.Error(), "unsupported PK type for RETURNING")
+	}
 }

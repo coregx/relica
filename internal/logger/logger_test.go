@@ -3,9 +3,8 @@ package logger
 import (
 	"bytes"
 	"log/slog"
+	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
 )
 
 func TestNoopLogger(t *testing.T) {
@@ -92,12 +91,20 @@ func TestSlogAdapter(t *testing.T) {
 			tt.logFunc(logger, tt.message, tt.args...)
 
 			output := buf.String()
-			assert.Contains(t, output, tt.wantLevel)
-			assert.Contains(t, output, tt.wantMsg)
+			if !strings.Contains(output, tt.wantLevel) {
+				t.Errorf("%q does not contain %q", output, tt.wantLevel)
+			}
+			if !strings.Contains(output, tt.wantMsg) {
+				t.Errorf("%q does not contain %q", output, tt.wantMsg)
+			}
 			for key, value := range tt.wantFields {
 				// slog quotes string values
-				assert.Contains(t, output, key+"=")
-				assert.Contains(t, output, value)
+				if !strings.Contains(output, key+"=") {
+					t.Errorf("%q does not contain %q", output, key+"=")
+				}
+				if !strings.Contains(output, value) {
+					t.Errorf("%q does not contain %q", output, value)
+				}
 			}
 		})
 	}
@@ -117,10 +124,18 @@ func TestSlogAdapterJSONHandler(t *testing.T) {
 		"rows", 1)
 
 	output := buf.String()
-	assert.Contains(t, output, `"msg":"query executed"`)
-	assert.Contains(t, output, `"sql":"SELECT * FROM users WHERE id = ?"`)
-	assert.Contains(t, output, `"duration_ms":15`)
-	assert.Contains(t, output, `"rows":1`)
+	if !strings.Contains(output, `"msg":"query executed"`) {
+		t.Errorf("%q does not contain %q", output, `"msg":"query executed"`)
+	}
+	if !strings.Contains(output, `"sql":"SELECT * FROM users WHERE id = ?"`) {
+		t.Errorf("%q does not contain %q", output, `"sql":"SELECT * FROM users WHERE id = ?"`)
+	}
+	if !strings.Contains(output, `"duration_ms":15`) {
+		t.Errorf("%q does not contain %q", output, `"duration_ms":15`)
+	}
+	if !strings.Contains(output, `"rows":1`) {
+		t.Errorf("%q does not contain %q", output, `"rows":1`)
+	}
 }
 
 func TestSlogAdapterMultipleFields(t *testing.T) {
@@ -136,10 +151,18 @@ func TestSlogAdapterMultipleFields(t *testing.T) {
 		"nil", nil)
 
 	output := buf.String()
-	assert.Contains(t, output, "string=value")
-	assert.Contains(t, output, "int=42")
-	assert.Contains(t, output, "bool=true")
-	assert.Contains(t, output, "nil=<nil>")
+	if !strings.Contains(output, "string=value") {
+		t.Errorf("%q does not contain %q", output, "string=value")
+	}
+	if !strings.Contains(output, "int=42") {
+		t.Errorf("%q does not contain %q", output, "int=42")
+	}
+	if !strings.Contains(output, "bool=true") {
+		t.Errorf("%q does not contain %q", output, "bool=true")
+	}
+	if !strings.Contains(output, "nil=<nil>") {
+		t.Errorf("%q does not contain %q", output, "nil=<nil>")
+	}
 }
 
 func BenchmarkNoopLogger(b *testing.B) {

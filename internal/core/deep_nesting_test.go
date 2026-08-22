@@ -9,8 +9,6 @@ import (
 	"testing"
 
 	"github.com/coregx/relica/internal/dialects"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // ============================================================================
@@ -36,20 +34,34 @@ func TestSubquery_DeepNesting_3Levels(t *testing.T) {
 	level1 := qb.Select("*").From("level1_table").Where(In("id", level2))
 
 	query := level1.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify SQL has 3 nested SELECTs
-	assert.Contains(t, query.sql, `SELECT * FROM "level1_table"`)
-	assert.Contains(t, query.sql, `"id" IN (SELECT "parent_id" FROM "level2_table"`)
-	assert.Contains(t, query.sql, `"id" IN (SELECT "id" FROM "level3_table"`)
+	if !strings.Contains(query.sql, `SELECT * FROM "level1_table"`) {
+		t.Errorf("%q does not contain %q", query.sql, `SELECT * FROM "level1_table"`)
+	}
+	if !strings.Contains(query.sql, `"id" IN (SELECT "parent_id" FROM "level2_table"`) {
+		t.Errorf("%q does not contain %q", query.sql, `"id" IN (SELECT "parent_id" FROM "level2_table"`)
+	}
+	if !strings.Contains(query.sql, `"id" IN (SELECT "id" FROM "level3_table"`) {
+		t.Errorf("%q does not contain %q", query.sql, `"id" IN (SELECT "id" FROM "level3_table"`)
+	}
 
 	// Verify parameter count (1 from level 3: 'active')
-	assert.Equal(t, 1, len(query.params))
-	assert.Equal(t, "active", query.params[0])
+	if len(query.params) != 1 {
+		t.Errorf("expected length %d, got %d", 1, len(query.params))
+	}
+	if query.params[0] != "active" {
+		t.Errorf("got %v, want %v", query.params[0], "active")
+	}
 
 	// Verify proper nesting structure (should have 3 SELECT keywords)
 	selectCount := strings.Count(query.sql, "SELECT")
-	assert.Equal(t, 3, selectCount, "Should have 3 SELECT statements")
+	if selectCount != 3 {
+		t.Errorf("got %v, want %v: Should have 3 SELECT statements", selectCount, 3)
+	}
 }
 
 // TestCTE_Nested_3Levels tests CTE referencing CTE referencing CTE
@@ -83,27 +95,51 @@ func TestCTE_Nested_3Levels(t *testing.T) {
 		From("cte3")
 
 	query := main.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify WITH clause has all 3 CTEs with comma separation
-	assert.Contains(t, query.sql, `WITH "cte1" AS`)
-	assert.Contains(t, query.sql, `, "cte2" AS`)
-	assert.Contains(t, query.sql, `, "cte3" AS`)
+	if !strings.Contains(query.sql, `WITH "cte1" AS`) {
+		t.Errorf("%q does not contain %q", query.sql, `WITH "cte1" AS`)
+	}
+	if !strings.Contains(query.sql, `, "cte2" AS`) {
+		t.Errorf("%q does not contain %q", query.sql, `, "cte2" AS`)
+	}
+	if !strings.Contains(query.sql, `, "cte3" AS`) {
+		t.Errorf("%q does not contain %q", query.sql, `, "cte3" AS`)
+	}
 
 	// Verify each CTE query is present
 	// Note: Each CTE buildSQL() independently, placeholders may be reused across CTEs
-	assert.Contains(t, query.sql, `SELECT "id", "value" FROM "base_table" WHERE status = $1`)
-	assert.Contains(t, query.sql, `"value * 2" AS "doubled"`)
-	assert.Contains(t, query.sql, `FROM "cte1"`)
-	assert.Contains(t, query.sql, `SELECT "id", SUM(doubled) as total FROM "cte2" GROUP BY "id"`)
+	if !strings.Contains(query.sql, `SELECT "id", "value" FROM "base_table" WHERE status = $1`) {
+		t.Errorf("%q does not contain %q", query.sql, `SELECT "id", "value" FROM "base_table" WHERE status = $1`)
+	}
+	if !strings.Contains(query.sql, `"value * 2" AS "doubled"`) {
+		t.Errorf("%q does not contain %q", query.sql, `"value * 2" AS "doubled"`)
+	}
+	if !strings.Contains(query.sql, `FROM "cte1"`) {
+		t.Errorf("%q does not contain %q", query.sql, `FROM "cte1"`)
+	}
+	if !strings.Contains(query.sql, `SELECT "id", SUM(doubled) as total FROM "cte2" GROUP BY "id"`) {
+		t.Errorf("%q does not contain %q", query.sql, `SELECT "id", SUM(doubled) as total FROM "cte2" GROUP BY "id"`)
+	}
 
 	// Verify main query references final CTE
-	assert.Contains(t, query.sql, `SELECT * FROM "cte3"`)
+	if !strings.Contains(query.sql, `SELECT * FROM "cte3"`) {
+		t.Errorf("%q does not contain %q", query.sql, `SELECT * FROM "cte3"`)
+	}
 
 	// Verify parameters from all CTEs (2 params: 1 from cte1, 10 from cte2)
-	assert.Equal(t, 2, len(query.params))
-	assert.Equal(t, 1, query.params[0])
-	assert.Equal(t, 10, query.params[1])
+	if len(query.params) != 2 {
+		t.Errorf("expected length %d, got %d", 2, len(query.params))
+	}
+	if query.params[0] != 1 {
+		t.Errorf("got %v, want %v", query.params[0], 1)
+	}
+	if query.params[1] != 10 {
+		t.Errorf("got %v, want %v", query.params[1], 10)
+	}
 }
 
 // TestFromSubquery_WithInSubquery tests FROM subquery combined with WHERE IN subquery
@@ -130,17 +166,27 @@ func TestFromSubquery_WithInSubquery(t *testing.T) {
 		Where(In("user_id", whereSub))
 
 	query := main.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify FROM subquery present
-	assert.Contains(t, query.sql, `FROM (SELECT "user_id", COUNT(*) as order_count FROM "orders" GROUP BY "user_id") AS "order_stats"`)
+	if !strings.Contains(query.sql, `FROM (SELECT "user_id", COUNT(*) as order_count FROM "orders" GROUP BY "user_id") AS "order_stats"`) {
+		t.Errorf("%q does not contain expected FROM subquery", query.sql)
+	}
 
 	// Verify WHERE IN subquery present
-	assert.Contains(t, query.sql, `WHERE "user_id" IN (SELECT "id" FROM "active_users" WHERE status = $1)`)
+	if !strings.Contains(query.sql, `WHERE "user_id" IN (SELECT "id" FROM "active_users" WHERE status = $1)`) {
+		t.Errorf("%q does not contain expected WHERE IN subquery", query.sql)
+	}
 
 	// Verify parameter from WHERE subquery
-	assert.Equal(t, 1, len(query.params))
-	assert.Equal(t, "active", query.params[0])
+	if len(query.params) != 1 {
+		t.Errorf("expected length %d, got %d", 1, len(query.params))
+	}
+	if query.params[0] != "active" {
+		t.Errorf("got %v, want %v", query.params[0], "active")
+	}
 }
 
 // TestParameterOrdering_DeepNesting tests correct parameter ordering across deep nesting
@@ -172,10 +218,14 @@ func TestParameterOrdering_DeepNesting(t *testing.T) {
 		Where("col4 = ?", "val4")
 
 	query := level1.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify all 4 parameters are present
-	assert.Equal(t, 4, len(query.params))
+	if len(query.params) != 4 {
+		t.Errorf("expected length %d, got %d", 4, len(query.params))
+	}
 
 	// Verify all parameter values are present (order may vary by implementation)
 	paramValues := make(map[string]bool)
@@ -183,14 +233,30 @@ func TestParameterOrdering_DeepNesting(t *testing.T) {
 		paramValues[param.(string)] = true
 	}
 
-	assert.True(t, paramValues["val1"], "val1 should be in parameters")
-	assert.True(t, paramValues["val2"], "val2 should be in parameters")
-	assert.True(t, paramValues["val3"], "val3 should be in parameters")
-	assert.True(t, paramValues["val4"], "val4 should be in parameters")
+	if !paramValues["val1"] {
+		t.Errorf("val1 should be in parameters")
+	}
+	if !paramValues["val2"] {
+		t.Errorf("val2 should be in parameters")
+	}
+	if !paramValues["val3"] {
+		t.Errorf("val3 should be in parameters")
+	}
+	if !paramValues["val4"] {
+		t.Errorf("val4 should be in parameters")
+	}
 
 	// Verify SQL structure contains nested IN clauses
-	assert.Contains(t, query.sql, `SELECT * FROM "t1"`)
-	assert.Contains(t, query.sql, `"id" IN`)
-	assert.Contains(t, query.sql, `SELECT "id" FROM "t2"`)
-	assert.Contains(t, query.sql, `SELECT "id" FROM "t3"`)
+	if !strings.Contains(query.sql, `SELECT * FROM "t1"`) {
+		t.Errorf("%q does not contain %q", query.sql, `SELECT * FROM "t1"`)
+	}
+	if !strings.Contains(query.sql, `"id" IN`) {
+		t.Errorf("%q does not contain %q", query.sql, `"id" IN`)
+	}
+	if !strings.Contains(query.sql, `SELECT "id" FROM "t2"`) {
+		t.Errorf("%q does not contain %q", query.sql, `SELECT "id" FROM "t2"`)
+	}
+	if !strings.Contains(query.sql, `SELECT "id" FROM "t3"`) {
+		t.Errorf("%q does not contain %q", query.sql, `SELECT "id" FROM "t3"`)
+	}
 }

@@ -1,10 +1,8 @@
 package core
 
 import (
+	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // mockDB is defined in upsert_test.go to avoid duplication
@@ -19,12 +17,20 @@ func TestSelectQuery_OrderBy_Single(t *testing.T) {
 		OrderBy("age DESC")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify SQL structure
-	assert.Contains(t, q.sql, `SELECT * FROM "users"`)
-	assert.Contains(t, q.sql, ` ORDER BY "age" DESC`)
-	assert.Empty(t, q.params, "ORDER BY should have no params")
+	if !strings.Contains(q.sql, `SELECT * FROM "users"`) {
+		t.Errorf("%q does not contain %q", q.sql, `SELECT * FROM "users"`)
+	}
+	if !strings.Contains(q.sql, ` ORDER BY "age" DESC`) {
+		t.Errorf("%q does not contain %q", q.sql, ` ORDER BY "age" DESC`)
+	}
+	if len(q.params) != 0 {
+		t.Errorf("ORDER BY should have no params: expected empty, got %d", len(q.params))
+	}
 }
 
 // TestSelectQuery_OrderBy_Multiple tests ORDER BY with multiple columns in one call
@@ -37,20 +43,34 @@ func TestSelectQuery_OrderBy_Multiple(t *testing.T) {
 		OrderBy("status ASC", "created_at DESC", "id")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify all columns are present in ORDER BY
-	assert.Contains(t, q.sql, `ORDER BY`)
-	assert.Contains(t, q.sql, `"status" ASC`)
-	assert.Contains(t, q.sql, `"created_at" DESC`)
-	assert.Contains(t, q.sql, `"id"`) // Default ASC (not explicitly shown)
+	if !strings.Contains(q.sql, `ORDER BY`) {
+		t.Errorf("%q does not contain %q", q.sql, `ORDER BY`)
+	}
+	if !strings.Contains(q.sql, `"status" ASC`) {
+		t.Errorf("%q does not contain %q", q.sql, `"status" ASC`)
+	}
+	if !strings.Contains(q.sql, `"created_at" DESC`) {
+		t.Errorf("%q does not contain %q", q.sql, `"created_at" DESC`)
+	}
+	if !strings.Contains(q.sql, `"id"`) { // Default ASC (not explicitly shown)
+		t.Errorf("%q does not contain %q", q.sql, `"id"`)
+	}
 
 	// Verify order is preserved
 	statusIdx := indexOf(q.sql, `"status"`)
 	createdIdx := indexOf(q.sql, `"created_at"`)
 	idIdx := lastIndexOf(q.sql, `"id"`)
-	assert.Less(t, statusIdx, createdIdx, "status should come before created_at")
-	assert.Less(t, createdIdx, idIdx, "created_at should come before id")
+	if statusIdx >= createdIdx {
+		t.Errorf("status should come before created_at: expected %v < %v", statusIdx, createdIdx)
+	}
+	if createdIdx >= idIdx {
+		t.Errorf("created_at should come before id: expected %v < %v", createdIdx, idIdx)
+	}
 }
 
 // TestSelectQuery_OrderBy_WithDirection tests ORDER BY with explicit ASC/DESC
@@ -99,11 +119,15 @@ func TestSelectQuery_OrderBy_WithDirection(t *testing.T) {
 				OrderBy(tt.orderBy)
 
 			q := query.Build()
-			require.NotNil(t, q)
+			if q == nil {
+				t.Fatal("expected non-nil")
+			}
 
-			assert.Contains(t, q.sql, tt.expectedSQL)
-			if tt.expectedNoSQL != "" {
-				assert.NotContains(t, q.sql, tt.expectedNoSQL)
+			if !strings.Contains(q.sql, tt.expectedSQL) {
+				t.Errorf("%q does not contain %q", q.sql, tt.expectedSQL)
+			}
+			if tt.expectedNoSQL != "" && strings.Contains(q.sql, tt.expectedNoSQL) {
+				t.Errorf("%q should not contain %q", q.sql, tt.expectedNoSQL)
 			}
 		})
 	}
@@ -121,19 +145,31 @@ func TestSelectQuery_OrderBy_Chained(t *testing.T) {
 		OrderBy("name")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// All columns should be present
-	assert.Contains(t, q.sql, `"status" ASC`)
-	assert.Contains(t, q.sql, `"age" DESC`)
-	assert.Contains(t, q.sql, `"name"`)
+	if !strings.Contains(q.sql, `"status" ASC`) {
+		t.Errorf("%q does not contain %q", q.sql, `"status" ASC`)
+	}
+	if !strings.Contains(q.sql, `"age" DESC`) {
+		t.Errorf("%q does not contain %q", q.sql, `"age" DESC`)
+	}
+	if !strings.Contains(q.sql, `"name"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"name"`)
+	}
 
 	// Verify order is preserved
 	statusIdx := indexOf(q.sql, `"status"`)
 	ageIdx := indexOf(q.sql, `"age"`)
 	nameIdx := lastIndexOf(q.sql, `"name"`)
-	assert.Less(t, statusIdx, ageIdx)
-	assert.Less(t, ageIdx, nameIdx)
+	if statusIdx >= ageIdx {
+		t.Errorf("expected %v < %v", statusIdx, ageIdx)
+	}
+	if ageIdx >= nameIdx {
+		t.Errorf("expected %v < %v", ageIdx, nameIdx)
+	}
 }
 
 // TestSelectQuery_OrderBy_WithTablePrefix tests ORDER BY with table.column format
@@ -147,11 +183,17 @@ func TestSelectQuery_OrderBy_WithTablePrefix(t *testing.T) {
 		OrderBy("m.created_at DESC", "u.name ASC")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Both table and column should be quoted
-	assert.Contains(t, q.sql, `"m"."created_at" DESC`)
-	assert.Contains(t, q.sql, `"u"."name" ASC`)
+	if !strings.Contains(q.sql, `"m"."created_at" DESC`) {
+		t.Errorf("%q does not contain %q", q.sql, `"m"."created_at" DESC`)
+	}
+	if !strings.Contains(q.sql, `"u"."name" ASC`) {
+		t.Errorf("%q does not contain %q", q.sql, `"u"."name" ASC`)
+	}
 }
 
 // TestSelectQuery_Limit tests LIMIT clause
@@ -164,10 +206,16 @@ func TestSelectQuery_Limit(t *testing.T) {
 		Limit(100)
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, q.sql, ` LIMIT 100`)
-	assert.NotContains(t, q.sql, "OFFSET")
+	if !strings.Contains(q.sql, ` LIMIT 100`) {
+		t.Errorf("%q does not contain %q", q.sql, ` LIMIT 100`)
+	}
+	if strings.Contains(q.sql, "OFFSET") {
+		t.Errorf("%q should not contain %q", q.sql, "OFFSET")
+	}
 }
 
 // TestSelectQuery_Offset tests OFFSET clause
@@ -181,12 +229,18 @@ func TestSelectQuery_Offset(t *testing.T) {
 		Offset(200)
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, q.sql, ` OFFSET 200`)
+	if !strings.Contains(q.sql, ` OFFSET 200`) {
+		t.Errorf("%q does not contain %q", q.sql, ` OFFSET 200`)
+	}
 	// MySQL requires LIMIT before OFFSET; a max-value sentinel is emitted when
 	// no explicit LIMIT is set, ensuring portability across all supported dialects.
-	assert.Contains(t, q.sql, "LIMIT 9223372036854775807")
+	if !strings.Contains(q.sql, "LIMIT 9223372036854775807") {
+		t.Errorf("%q does not contain %q", q.sql, "LIMIT 9223372036854775807")
+	}
 }
 
 // TestSelectQuery_Limit_And_Offset tests LIMIT and OFFSET together
@@ -200,15 +254,23 @@ func TestSelectQuery_Limit_And_Offset(t *testing.T) {
 		Offset(100)
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// LIMIT should come before OFFSET
-	assert.Contains(t, q.sql, ` LIMIT 50`)
-	assert.Contains(t, q.sql, ` OFFSET 100`)
+	if !strings.Contains(q.sql, ` LIMIT 50`) {
+		t.Errorf("%q does not contain %q", q.sql, ` LIMIT 50`)
+	}
+	if !strings.Contains(q.sql, ` OFFSET 100`) {
+		t.Errorf("%q does not contain %q", q.sql, ` OFFSET 100`)
+	}
 
 	limitIdx := indexOf(q.sql, "LIMIT")
 	offsetIdx := indexOf(q.sql, "OFFSET")
-	assert.Less(t, limitIdx, offsetIdx, "LIMIT should come before OFFSET")
+	if limitIdx >= offsetIdx {
+		t.Errorf("LIMIT should come before OFFSET: expected %v < %v", limitIdx, offsetIdx)
+	}
 }
 
 // TestSelectQuery_OrderBy_Limit_Offset_Combined tests all three features together
@@ -290,21 +352,31 @@ func TestSelectQuery_OrderBy_Limit_Offset_Combined(t *testing.T) {
 
 			query := tt.build(qb)
 			q := query.Build()
-			require.NotNil(t, q)
+			if q == nil {
+				t.Fatal("expected non-nil")
+			}
 
 			for _, check := range tt.checks {
-				assert.Contains(t, q.sql, check)
+				if !strings.Contains(q.sql, check) {
+					t.Errorf("%q does not contain %q", q.sql, check)
+				}
 			}
 
 			// Verify SQL clause order: WHERE < ORDER BY < LIMIT < OFFSET
 			if indexOf(q.sql, "WHERE") != -1 && indexOf(q.sql, "ORDER BY") != -1 {
-				assert.Less(t, indexOf(q.sql, "WHERE"), indexOf(q.sql, "ORDER BY"))
+				if indexOf(q.sql, "WHERE") >= indexOf(q.sql, "ORDER BY") {
+					t.Errorf("expected WHERE before ORDER BY")
+				}
 			}
 			if indexOf(q.sql, "ORDER BY") != -1 && indexOf(q.sql, "LIMIT") != -1 {
-				assert.Less(t, indexOf(q.sql, "ORDER BY"), indexOf(q.sql, "LIMIT"))
+				if indexOf(q.sql, "ORDER BY") >= indexOf(q.sql, "LIMIT") {
+					t.Errorf("expected ORDER BY before LIMIT")
+				}
 			}
 			if indexOf(q.sql, "LIMIT") != -1 && indexOf(q.sql, "OFFSET") != -1 {
-				assert.Less(t, indexOf(q.sql, "LIMIT"), indexOf(q.sql, "OFFSET"))
+				if indexOf(q.sql, "LIMIT") >= indexOf(q.sql, "OFFSET") {
+					t.Errorf("expected LIMIT before OFFSET")
+				}
 			}
 		})
 	}
@@ -320,12 +392,20 @@ func TestSelectQuery_OrderBy_PostgreSQL_Quoting(t *testing.T) {
 		OrderBy("age DESC", "name ASC")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// PostgreSQL uses double quotes
-	assert.Contains(t, q.sql, `"users"`)
-	assert.Contains(t, q.sql, `"age"`)
-	assert.Contains(t, q.sql, `"name"`)
+	if !strings.Contains(q.sql, `"users"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"users"`)
+	}
+	if !strings.Contains(q.sql, `"age"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"age"`)
+	}
+	if !strings.Contains(q.sql, `"name"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"name"`)
+	}
 }
 
 // TestSelectQuery_OrderBy_MySQL_Quoting tests MySQL-specific quoting
@@ -338,12 +418,20 @@ func TestSelectQuery_OrderBy_MySQL_Quoting(t *testing.T) {
 		OrderBy("age DESC", "name ASC")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// MySQL uses backticks
-	assert.Contains(t, q.sql, "`users`")
-	assert.Contains(t, q.sql, "`age`")
-	assert.Contains(t, q.sql, "`name`")
+	if !strings.Contains(q.sql, "`users`") {
+		t.Errorf("%q does not contain %q", q.sql, "`users`")
+	}
+	if !strings.Contains(q.sql, "`age`") {
+		t.Errorf("%q does not contain %q", q.sql, "`age`")
+	}
+	if !strings.Contains(q.sql, "`name`") {
+		t.Errorf("%q does not contain %q", q.sql, "`name`")
+	}
 }
 
 // TestSelectQuery_OrderBy_SQLite_Quoting tests SQLite-specific quoting
@@ -356,11 +444,17 @@ func TestSelectQuery_OrderBy_SQLite_Quoting(t *testing.T) {
 		OrderBy("age DESC")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// SQLite uses double quotes (like PostgreSQL)
-	assert.Contains(t, q.sql, `"users"`)
-	assert.Contains(t, q.sql, `"age"`)
+	if !strings.Contains(q.sql, `"users"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"users"`)
+	}
+	if !strings.Contains(q.sql, `"age"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"age"`)
+	}
 }
 
 // TestSelectQuery_Limit_Zero tests edge case: LIMIT 0
@@ -373,10 +467,14 @@ func TestSelectQuery_Limit_Zero(t *testing.T) {
 		Limit(0)
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// LIMIT 0 is valid (returns no rows)
-	assert.Contains(t, q.sql, ` LIMIT 0`)
+	if !strings.Contains(q.sql, ` LIMIT 0`) {
+		t.Errorf("%q does not contain %q", q.sql, ` LIMIT 0`)
+	}
 }
 
 // TestSelectQuery_Offset_Zero tests edge case: OFFSET 0
@@ -389,10 +487,14 @@ func TestSelectQuery_Offset_Zero(t *testing.T) {
 		Offset(0)
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// OFFSET 0 is valid (skip no rows)
-	assert.Contains(t, q.sql, ` OFFSET 0`)
+	if !strings.Contains(q.sql, ` OFFSET 0`) {
+		t.Errorf("%q does not contain %q", q.sql, ` OFFSET 0`)
+	}
 }
 
 // TestSelectQuery_OrderBy_EmptyString tests edge case: empty string in OrderBy
@@ -405,8 +507,12 @@ func TestSelectQuery_OrderBy_EmptyString(t *testing.T) {
 		OrderBy("") // Empty string
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Empty string should be ignored (no ORDER BY clause)
-	assert.NotContains(t, q.sql, "ORDER BY")
+	if strings.Contains(q.sql, "ORDER BY") {
+		t.Errorf("%q should not contain %q", q.sql, "ORDER BY")
+	}
 }

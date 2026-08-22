@@ -5,10 +5,10 @@
 package core
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/coregx/relica/internal/dialects"
-	"github.com/stretchr/testify/assert"
 )
 
 // ============================================================================
@@ -27,10 +27,19 @@ func TestInExp_Subquery_PostgreSQL(t *testing.T) {
 	exp := In("id", sub)
 	sql, args := exp.Build(dialect)
 
-	assert.Contains(t, sql, `"id" IN (SELECT`)
-	assert.Contains(t, sql, `FROM "orders"`)
-	assert.Contains(t, sql, `WHERE total >`) // PostgreSQL converts ? to $1
-	assert.Equal(t, []interface{}{100}, args)
+	if !strings.Contains(sql, `"id" IN (SELECT`) {
+		t.Errorf("%q does not contain %q", sql, `"id" IN (SELECT`)
+	}
+	if !strings.Contains(sql, `FROM "orders"`) {
+		t.Errorf("%q does not contain %q", sql, `FROM "orders"`)
+	}
+	if !strings.Contains(sql, `WHERE total >`) { // PostgreSQL converts ? to $1
+		t.Errorf("%q does not contain %q", sql, `WHERE total >`)
+	}
+	want := []interface{}{100}
+	if len(args) != len(want) || args[0] != want[0] {
+		t.Errorf("got %v, want %v", args, want)
+	}
 }
 
 func TestInExp_Subquery_MySQL(t *testing.T) {
@@ -42,10 +51,19 @@ func TestInExp_Subquery_MySQL(t *testing.T) {
 	exp := In("id", sub)
 	sql, args := exp.Build(dialect)
 
-	assert.Contains(t, sql, "`id` IN (SELECT")
-	assert.Contains(t, sql, "FROM `orders`")
-	assert.Contains(t, sql, "WHERE total > ?")
-	assert.Equal(t, []interface{}{100}, args)
+	if !strings.Contains(sql, "`id` IN (SELECT") {
+		t.Errorf("%q does not contain %q", sql, "`id` IN (SELECT")
+	}
+	if !strings.Contains(sql, "FROM `orders`") {
+		t.Errorf("%q does not contain %q", sql, "FROM `orders`")
+	}
+	if !strings.Contains(sql, "WHERE total > ?") {
+		t.Errorf("%q does not contain %q", sql, "WHERE total > ?")
+	}
+	want := []interface{}{100}
+	if len(args) != len(want) || args[0] != want[0] {
+		t.Errorf("got %v, want %v", args, want)
+	}
 }
 
 func TestInExp_Subquery_SQLite(t *testing.T) {
@@ -57,10 +75,19 @@ func TestInExp_Subquery_SQLite(t *testing.T) {
 	exp := In("id", sub)
 	sql, args := exp.Build(dialect)
 
-	assert.Contains(t, sql, `"id" IN (SELECT`)
-	assert.Contains(t, sql, `FROM "orders"`)
-	assert.Contains(t, sql, `WHERE total > ?`)
-	assert.Equal(t, []interface{}{100}, args)
+	if !strings.Contains(sql, `"id" IN (SELECT`) {
+		t.Errorf("%q does not contain %q", sql, `"id" IN (SELECT`)
+	}
+	if !strings.Contains(sql, `FROM "orders"`) {
+		t.Errorf("%q does not contain %q", sql, `FROM "orders"`)
+	}
+	if !strings.Contains(sql, `WHERE total > ?`) {
+		t.Errorf("%q does not contain %q", sql, `WHERE total > ?`)
+	}
+	want := []interface{}{100}
+	if len(args) != len(want) || args[0] != want[0] {
+		t.Errorf("got %v, want %v", args, want)
+	}
 }
 
 func TestNotInExp_Subquery(t *testing.T) {
@@ -72,10 +99,19 @@ func TestNotInExp_Subquery(t *testing.T) {
 	exp := NotIn("id", sub)
 	sql, args := exp.Build(dialect)
 
-	assert.Contains(t, sql, `"id" NOT IN (SELECT`)
-	assert.Contains(t, sql, `FROM "orders"`)
-	assert.Contains(t, sql, `WHERE status =`) // PostgreSQL converts ? to $1
-	assert.Equal(t, []interface{}{"deleted"}, args)
+	if !strings.Contains(sql, `"id" NOT IN (SELECT`) {
+		t.Errorf("%q does not contain %q", sql, `"id" NOT IN (SELECT`)
+	}
+	if !strings.Contains(sql, `FROM "orders"`) {
+		t.Errorf("%q does not contain %q", sql, `FROM "orders"`)
+	}
+	if !strings.Contains(sql, `WHERE status =`) { // PostgreSQL converts ? to $1
+		t.Errorf("%q does not contain %q", sql, `WHERE status =`)
+	}
+	want := []interface{}{"deleted"}
+	if len(args) != len(want) || args[0] != want[0] {
+		t.Errorf("got %v, want %v", args, want)
+	}
 }
 
 func TestInExp_Subquery_EmptyResult(t *testing.T) {
@@ -88,9 +124,15 @@ func TestInExp_Subquery_EmptyResult(t *testing.T) {
 	exp := In("id", sub)
 	sql, args := exp.Build(dialect)
 
-	assert.Contains(t, sql, `"id" IN (SELECT`)
-	assert.Contains(t, sql, `FROM "orders"`)
-	assert.Empty(t, args)
+	if !strings.Contains(sql, `"id" IN (SELECT`) {
+		t.Errorf("%q does not contain %q", sql, `"id" IN (SELECT`)
+	}
+	if !strings.Contains(sql, `FROM "orders"`) {
+		t.Errorf("%q does not contain %q", sql, `FROM "orders"`)
+	}
+	if len(args) != 0 {
+		t.Errorf("expected empty, got %d", len(args))
+	}
 }
 
 func TestInExp_Subquery_WithRawExp(t *testing.T) {
@@ -101,8 +143,13 @@ func TestInExp_Subquery_WithRawExp(t *testing.T) {
 	exp := In("id", sub)
 	sql, args := exp.Build(dialect)
 
-	assert.Equal(t, `"id" IN (SELECT user_id FROM orders WHERE total > ?)`, sql)
-	assert.Equal(t, []interface{}{200}, args)
+	if sql != `"id" IN (SELECT user_id FROM orders WHERE total > ?)` {
+		t.Errorf("got %v, want %v", sql, `"id" IN (SELECT user_id FROM orders WHERE total > ?)`)
+	}
+	want := []interface{}{200}
+	if len(args) != len(want) || args[0] != want[0] {
+		t.Errorf("got %v, want %v", args, want)
+	}
 }
 
 func TestInExp_Subquery_MultipleParams(t *testing.T) {
@@ -116,10 +163,19 @@ func TestInExp_Subquery_MultipleParams(t *testing.T) {
 	exp := In("id", sub)
 	sql, args := exp.Build(dialect)
 
-	assert.Contains(t, sql, `"id" IN (SELECT`)
-	assert.Contains(t, sql, `WHERE total >`) // PostgreSQL converts ? to $1, $2
-	assert.Contains(t, sql, ` AND status `)
-	assert.Equal(t, []interface{}{100, "completed"}, args)
+	if !strings.Contains(sql, `"id" IN (SELECT`) {
+		t.Errorf("%q does not contain %q", sql, `"id" IN (SELECT`)
+	}
+	if !strings.Contains(sql, `WHERE total >`) { // PostgreSQL converts ? to $1, $2
+		t.Errorf("%q does not contain %q", sql, `WHERE total >`)
+	}
+	if !strings.Contains(sql, ` AND status `) {
+		t.Errorf("%q does not contain %q", sql, ` AND status `)
+	}
+	want := []interface{}{100, "completed"}
+	if len(args) != len(want) || args[0] != want[0] || args[1] != want[1] {
+		t.Errorf("got %v, want %v", args, want)
+	}
 }
 
 func TestInExp_Subquery_WithJoin(t *testing.T) {
@@ -133,9 +189,16 @@ func TestInExp_Subquery_WithJoin(t *testing.T) {
 	exp := In("id", sub)
 	sql, args := exp.Build(dialect)
 
-	assert.Contains(t, sql, `"id" IN (SELECT`)
-	assert.Contains(t, sql, `INNER JOIN`)
-	assert.Equal(t, []interface{}{"active"}, args)
+	if !strings.Contains(sql, `"id" IN (SELECT`) {
+		t.Errorf("%q does not contain %q", sql, `"id" IN (SELECT`)
+	}
+	if !strings.Contains(sql, `INNER JOIN`) {
+		t.Errorf("%q does not contain %q", sql, `INNER JOIN`)
+	}
+	want := []interface{}{"active"}
+	if len(args) != len(want) || args[0] != want[0] {
+		t.Errorf("got %v, want %v", args, want)
+	}
 }
 
 // ============================================================================
@@ -154,12 +217,25 @@ func TestSelectQuery_FromSelect_PostgreSQL(t *testing.T) {
 	outer := qb.Select("user_id", "cnt").FromSelect(sub, "order_counts").Where("cnt > ?", 10)
 	sql, args := outer.buildSQL(dialect)
 
-	assert.Contains(t, sql, `SELECT`)
-	assert.Contains(t, sql, `FROM (SELECT`)
-	assert.Contains(t, sql, `GROUP BY`)
-	assert.Contains(t, sql, `) AS "order_counts"`)
-	assert.Contains(t, sql, `WHERE cnt >`) // PostgreSQL converts ? to $1
-	assert.Equal(t, []interface{}{10}, args)
+	if !strings.Contains(sql, `SELECT`) {
+		t.Errorf("%q does not contain %q", sql, `SELECT`)
+	}
+	if !strings.Contains(sql, `FROM (SELECT`) {
+		t.Errorf("%q does not contain %q", sql, `FROM (SELECT`)
+	}
+	if !strings.Contains(sql, `GROUP BY`) {
+		t.Errorf("%q does not contain %q", sql, `GROUP BY`)
+	}
+	if !strings.Contains(sql, `) AS "order_counts"`) {
+		t.Errorf("%q does not contain %q", sql, `) AS "order_counts"`)
+	}
+	if !strings.Contains(sql, `WHERE cnt >`) { // PostgreSQL converts ? to $1
+		t.Errorf("%q does not contain %q", sql, `WHERE cnt >`)
+	}
+	want := []interface{}{10}
+	if len(args) != len(want) || args[0] != want[0] {
+		t.Errorf("got %v, want %v", args, want)
+	}
 }
 
 func TestSelectQuery_FromSelect_MySQL(t *testing.T) {
@@ -171,10 +247,19 @@ func TestSelectQuery_FromSelect_MySQL(t *testing.T) {
 	outer := qb.Select("*").FromSelect(sub, "user_totals").Where("total > ?", 1000)
 	sql, args := outer.buildSQL(dialect)
 
-	assert.Contains(t, sql, "FROM (SELECT")
-	assert.Contains(t, sql, ") AS `user_totals`")
-	assert.Contains(t, sql, "WHERE total > ?")
-	assert.Equal(t, []interface{}{1000}, args)
+	if !strings.Contains(sql, "FROM (SELECT") {
+		t.Errorf("%q does not contain %q", sql, "FROM (SELECT")
+	}
+	if !strings.Contains(sql, ") AS `user_totals`") {
+		t.Errorf("%q does not contain %q", sql, ") AS `user_totals`")
+	}
+	if !strings.Contains(sql, "WHERE total > ?") {
+		t.Errorf("%q does not contain %q", sql, "WHERE total > ?")
+	}
+	want := []interface{}{1000}
+	if len(args) != len(want) || args[0] != want[0] {
+		t.Errorf("got %v, want %v", args, want)
+	}
 }
 
 func TestSelectQuery_FromSelect_RequiresAlias(t *testing.T) {
@@ -186,10 +271,16 @@ func TestSelectQuery_FromSelect_RequiresAlias(t *testing.T) {
 
 	// Should store an error (not panic) without alias
 	sq := qb.Select("*").FromSelect(sub, "")
-	assert.NotNil(t, sq.buildErr, "FromSelect with empty alias must store a build error")
-	assert.ErrorContains(t, sq.buildErr, "FromSelect")
+	if sq.buildErr == nil {
+		t.Error("FromSelect with empty alias must store a build error: expected non-nil")
+	}
+	if sq.buildErr != nil && !strings.Contains(sq.buildErr.Error(), "FromSelect") {
+		t.Errorf("%q does not contain %q", sq.buildErr.Error(), "FromSelect")
+	}
 	q := sq.Build()
-	assert.NotNil(t, q.prepErr, "build error must propagate through Build()")
+	if q.prepErr == nil {
+		t.Error("build error must propagate through Build(): expected non-nil")
+	}
 }
 
 func TestSelectQuery_FromSelect_WithWhere(t *testing.T) {
@@ -201,10 +292,19 @@ func TestSelectQuery_FromSelect_WithWhere(t *testing.T) {
 	outer := qb.Select("user_id").FromSelect(sub, "pending_orders")
 	sql, args := outer.buildSQL(dialect)
 
-	assert.Contains(t, sql, `FROM (SELECT`)
-	assert.Contains(t, sql, `WHERE status =`) // PostgreSQL converts ? to $1
-	assert.Contains(t, sql, `) AS "pending_orders"`)
-	assert.Equal(t, []interface{}{"pending"}, args)
+	if !strings.Contains(sql, `FROM (SELECT`) {
+		t.Errorf("%q does not contain %q", sql, `FROM (SELECT`)
+	}
+	if !strings.Contains(sql, `WHERE status =`) { // PostgreSQL converts ? to $1
+		t.Errorf("%q does not contain %q", sql, `WHERE status =`)
+	}
+	if !strings.Contains(sql, `) AS "pending_orders"`) {
+		t.Errorf("%q does not contain %q", sql, `) AS "pending_orders"`)
+	}
+	want := []interface{}{"pending"}
+	if len(args) != len(want) || args[0] != want[0] {
+		t.Errorf("got %v, want %v", args, want)
+	}
 }
 
 func TestSelectQuery_FromSelect_Nested(t *testing.T) {
@@ -222,11 +322,19 @@ func TestSelectQuery_FromSelect_Nested(t *testing.T) {
 	outer := qb.Select("user_id").FromSelect(middle, "active_users")
 	sql, args := outer.buildSQL(dialect)
 
-	assert.Contains(t, sql, "FROM (SELECT")
-	assert.Contains(t, sql, "FROM (SELECT")
-	assert.Contains(t, sql, `) AS "order_counts"`)
-	assert.Contains(t, sql, `) AS "active_users"`)
-	assert.Equal(t, []interface{}{5}, args)
+	if !strings.Contains(sql, "FROM (SELECT") {
+		t.Errorf("%q does not contain %q", sql, "FROM (SELECT")
+	}
+	if !strings.Contains(sql, `) AS "order_counts"`) {
+		t.Errorf("%q does not contain %q", sql, `) AS "order_counts"`)
+	}
+	if !strings.Contains(sql, `) AS "active_users"`) {
+		t.Errorf("%q does not contain %q", sql, `) AS "active_users"`)
+	}
+	want := []interface{}{5}
+	if len(args) != len(want) || args[0] != want[0] {
+		t.Errorf("got %v, want %v", args, want)
+	}
 }
 
 func TestSelectQuery_FromSelect_WithJoin(t *testing.T) {
@@ -240,9 +348,15 @@ func TestSelectQuery_FromSelect_WithJoin(t *testing.T) {
 		InnerJoin("users u", "ot.user_id = u.id")
 	sql, _ := outer.buildSQL(dialect)
 
-	assert.Contains(t, sql, `FROM (SELECT`)
-	assert.Contains(t, sql, `) AS "ot"`)
-	assert.Contains(t, sql, `INNER JOIN`)
+	if !strings.Contains(sql, `FROM (SELECT`) {
+		t.Errorf("%q does not contain %q", sql, `FROM (SELECT`)
+	}
+	if !strings.Contains(sql, `) AS "ot"`) {
+		t.Errorf("%q does not contain %q", sql, `) AS "ot"`)
+	}
+	if !strings.Contains(sql, `INNER JOIN`) {
+		t.Errorf("%q does not contain %q", sql, `INNER JOIN`)
+	}
 }
 
 // ============================================================================
@@ -259,9 +373,15 @@ func TestSelectQuery_SelectExpr_ScalarSubquery(t *testing.T) {
 		From("users")
 	sql, args := outer.buildSQL(dialect)
 
-	assert.Contains(t, sql, `SELECT "id", "name", (SELECT COUNT(*) FROM orders WHERE orders.user_id = users.id) as order_count`)
-	assert.Contains(t, sql, `FROM "users"`)
-	assert.Empty(t, args)
+	if !strings.Contains(sql, `SELECT "id", "name", (SELECT COUNT(*) FROM orders WHERE orders.user_id = users.id) as order_count`) {
+		t.Errorf("%q does not contain %q", sql, `SELECT "id", "name", (SELECT COUNT(*) FROM orders WHERE orders.user_id = users.id) as order_count`)
+	}
+	if !strings.Contains(sql, `FROM "users"`) {
+		t.Errorf("%q does not contain %q", sql, `FROM "users"`)
+	}
+	if len(args) != 0 {
+		t.Errorf("expected empty, got %d", len(args))
+	}
 }
 
 func TestSelectQuery_SelectExpr_WithParams(t *testing.T) {
@@ -274,8 +394,13 @@ func TestSelectQuery_SelectExpr_WithParams(t *testing.T) {
 		From("users")
 	sql, args := outer.buildSQL(dialect)
 
-	assert.Contains(t, sql, `(SELECT COUNT(*) FROM orders WHERE orders.user_id = users.id AND status = ?) as order_count`)
-	assert.Equal(t, []interface{}{"completed"}, args)
+	if !strings.Contains(sql, `(SELECT COUNT(*) FROM orders WHERE orders.user_id = users.id AND status = ?) as order_count`) {
+		t.Errorf("%q does not contain %q", sql, `(SELECT COUNT(*) FROM orders WHERE orders.user_id = users.id AND status = ?) as order_count`)
+	}
+	want := []interface{}{"completed"}
+	if len(args) != len(want) || args[0] != want[0] {
+		t.Errorf("got %v, want %v", args, want)
+	}
 }
 
 func TestSelectQuery_SelectExpr_Multiple(t *testing.T) {
@@ -289,9 +414,15 @@ func TestSelectQuery_SelectExpr_Multiple(t *testing.T) {
 		From("users")
 	sql, args := outer.buildSQL(dialect)
 
-	assert.Contains(t, sql, `(SELECT COUNT(*) FROM orders`)
-	assert.Contains(t, sql, `(SELECT SUM(total) FROM orders`)
-	assert.Empty(t, args)
+	if !strings.Contains(sql, `(SELECT COUNT(*) FROM orders`) {
+		t.Errorf("%q does not contain %q", sql, `(SELECT COUNT(*) FROM orders`)
+	}
+	if !strings.Contains(sql, `(SELECT SUM(total) FROM orders`) {
+		t.Errorf("%q does not contain %q", sql, `(SELECT SUM(total) FROM orders`)
+	}
+	if len(args) != 0 {
+		t.Errorf("expected empty, got %d", len(args))
+	}
 }
 
 func TestSelectQuery_SelectExpr_MySQL(t *testing.T) {
@@ -304,8 +435,12 @@ func TestSelectQuery_SelectExpr_MySQL(t *testing.T) {
 		From("users")
 	sql, _ := outer.buildSQL(dialect)
 
-	assert.Contains(t, sql, "SELECT `id`, (SELECT MAX(created_at)")
-	assert.Contains(t, sql, "FROM `users`")
+	if !strings.Contains(sql, "SELECT `id`, (SELECT MAX(created_at)") {
+		t.Errorf("%q does not contain %q", sql, "SELECT `id`, (SELECT MAX(created_at)")
+	}
+	if !strings.Contains(sql, "FROM `users`") {
+		t.Errorf("%q does not contain %q", sql, "FROM `users`")
+	}
 }
 
 // ============================================================================
@@ -329,10 +464,19 @@ func TestSelectQuery_Combined_FromSelect_And_IN(t *testing.T) {
 		Where(In("user_id", inSub))
 	sql, args := outer.buildSQL(dialect)
 
-	assert.Contains(t, sql, `FROM (SELECT`)
-	assert.Contains(t, sql, `) AS "oc"`)
-	assert.Contains(t, sql, `WHERE "user_id" IN (SELECT`)
-	assert.Equal(t, []interface{}{"active"}, args)
+	if !strings.Contains(sql, `FROM (SELECT`) {
+		t.Errorf("%q does not contain %q", sql, `FROM (SELECT`)
+	}
+	if !strings.Contains(sql, `) AS "oc"`) {
+		t.Errorf("%q does not contain %q", sql, `) AS "oc"`)
+	}
+	if !strings.Contains(sql, `WHERE "user_id" IN (SELECT`) {
+		t.Errorf("%q does not contain %q", sql, `WHERE "user_id" IN (SELECT`)
+	}
+	want := []interface{}{"active"}
+	if len(args) != len(want) || args[0] != want[0] {
+		t.Errorf("got %v, want %v", args, want)
+	}
 }
 
 func TestSelectQuery_Combined_All_Features(t *testing.T) {
@@ -351,11 +495,20 @@ func TestSelectQuery_Combined_All_Features(t *testing.T) {
 		Where("ot.total > ?", 1000)
 	sql, args := outer.buildSQL(dialect)
 
-	assert.Contains(t, sql, `FROM (SELECT`)
-	assert.Contains(t, sql, ` IN (SELECT`)
-	assert.Contains(t, sql, `AND ot.total >`)
+	if !strings.Contains(sql, `FROM (SELECT`) {
+		t.Errorf("%q does not contain %q", sql, `FROM (SELECT`)
+	}
+	if !strings.Contains(sql, ` IN (SELECT`) {
+		t.Errorf("%q does not contain %q", sql, ` IN (SELECT`)
+	}
+	if !strings.Contains(sql, `AND ot.total >`) {
+		t.Errorf("%q does not contain %q", sql, `AND ot.total >`)
+	}
 	// Args: premium (IN subquery), 1000 (WHERE)
-	assert.Equal(t, []interface{}{"premium", 1000}, args)
+	want := []interface{}{"premium", 1000}
+	if len(args) != len(want) || args[0] != want[0] || args[1] != want[1] {
+		t.Errorf("got %v, want %v", args, want)
+	}
 }
 
 // ============================================================================
@@ -371,8 +524,12 @@ func TestInExp_Subquery_Nil(t *testing.T) {
 	sql, args := exp.Build(dialect)
 
 	// nil value should generate IS NULL
-	assert.Equal(t, `"id" IS NULL`, sql)
-	assert.Nil(t, args)
+	if sql != `"id" IS NULL` {
+		t.Errorf("got %v, want %v", sql, `"id" IS NULL`)
+	}
+	if args != nil {
+		t.Errorf("expected nil, got %v", args)
+	}
 }
 
 func TestSelectQuery_FromSelect_Empty(t *testing.T) {
@@ -385,9 +542,15 @@ func TestSelectQuery_FromSelect_Empty(t *testing.T) {
 	outer := qb.Select("*").FromSelect(sub, "all_users")
 	sql, args := outer.buildSQL(dialect)
 
-	assert.Contains(t, sql, `FROM (SELECT`) // "*" gets quoted as "*" in PostgreSQL
-	assert.Contains(t, sql, `FROM "users") AS "all_users"`)
-	assert.Empty(t, args)
+	if !strings.Contains(sql, `FROM (SELECT`) { // "*" gets quoted as "*" in PostgreSQL
+		t.Errorf("%q does not contain %q", sql, `FROM (SELECT`)
+	}
+	if !strings.Contains(sql, `FROM "users") AS "all_users"`) {
+		t.Errorf("%q does not contain %q", sql, `FROM "users") AS "all_users"`)
+	}
+	if len(args) != 0 {
+		t.Errorf("expected empty, got %d", len(args))
+	}
 }
 
 func TestSelectQuery_SelectExpr_NoParams(t *testing.T) {
@@ -400,8 +563,12 @@ func TestSelectQuery_SelectExpr_NoParams(t *testing.T) {
 		From("users")
 	sql, args := outer.buildSQL(dialect)
 
-	assert.Contains(t, sql, "CURRENT_TIMESTAMP as created")
-	assert.Empty(t, args)
+	if !strings.Contains(sql, "CURRENT_TIMESTAMP as created") {
+		t.Errorf("%q does not contain %q", sql, "CURRENT_TIMESTAMP as created")
+	}
+	if len(args) != 0 {
+		t.Errorf("expected empty, got %d", len(args))
+	}
 }
 
 func TestInExp_Regular_Values_Still_Work(t *testing.T) {
@@ -411,8 +578,20 @@ func TestInExp_Regular_Values_Still_Work(t *testing.T) {
 	exp := In("id", 1, 2, 3)
 	sql, args := exp.Build(dialect)
 
-	assert.Equal(t, `"id" IN (?, ?, ?)`, sql)
-	assert.Equal(t, []interface{}{1, 2, 3}, args)
+	if sql != `"id" IN (?, ?, ?)` {
+		t.Errorf("got %v, want %v", sql, `"id" IN (?, ?, ?)`)
+	}
+	want := []interface{}{1, 2, 3}
+	if len(args) != len(want) {
+		t.Errorf("got %v, want %v", args, want)
+	} else {
+		for i := range want {
+			if args[i] != want[i] {
+				t.Errorf("got %v, want %v", args, want)
+				break
+			}
+		}
+	}
 }
 
 func TestInExp_Single_Regular_Value(t *testing.T) {
@@ -422,8 +601,13 @@ func TestInExp_Single_Regular_Value(t *testing.T) {
 	exp := In("id", 123)
 	sql, args := exp.Build(dialect)
 
-	assert.Equal(t, `"id" = ?`, sql)
-	assert.Equal(t, []interface{}{123}, args)
+	if sql != `"id" = ?` {
+		t.Errorf("got %v, want %v", sql, `"id" = ?`)
+	}
+	want := []interface{}{123}
+	if len(args) != len(want) || args[0] != want[0] {
+		t.Errorf("got %v, want %v", args, want)
+	}
 }
 
 func TestSelectQuery_From_Backward_Compatibility(t *testing.T) {
@@ -435,6 +619,11 @@ func TestSelectQuery_From_Backward_Compatibility(t *testing.T) {
 	sq := qb.Select("*").From("users").Where("id = ?", 1)
 	sql, args := sq.buildSQL(dialect)
 
-	assert.Contains(t, sql, `FROM "users"`)
-	assert.Equal(t, []interface{}{1}, args)
+	if !strings.Contains(sql, `FROM "users"`) {
+		t.Errorf("%q does not contain %q", sql, `FROM "users"`)
+	}
+	want := []interface{}{1}
+	if len(args) != len(want) || args[0] != want[0] {
+		t.Errorf("got %v, want %v", args, want)
+	}
 }

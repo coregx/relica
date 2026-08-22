@@ -5,16 +5,15 @@ import (
 	"fmt"
 	"sync"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // setupTestDB creates a mock database for testing.
 func setupTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := registerMockDriver()
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	t.Cleanup(func() {
 		_ = db.Close()
 	})
@@ -25,16 +24,26 @@ func setupTestDB(t *testing.T) *sql.DB {
 func createTestStmt(t *testing.T, db *sql.DB, query string) *sql.Stmt {
 	t.Helper()
 	stmt, err := db.Prepare(query)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	return stmt
 }
 
 func TestNewStmtCache(t *testing.T) {
 	cache := NewStmtCache()
-	require.NotNil(t, cache)
-	assert.Equal(t, DefaultStmtCacheCapacity, cache.capacity)
-	assert.Equal(t, 0, cache.lruList.Len())
-	assert.Equal(t, 0, len(cache.items))
+	if cache == nil {
+		t.Fatal("expected non-nil")
+	}
+	if got, want := cache.capacity, DefaultStmtCacheCapacity; got != want {
+		t.Errorf("got %v, want %v", got, want)
+	}
+	if got := cache.lruList.Len(); got != 0 {
+		t.Errorf("got %v, want %v", got, 0)
+	}
+	if got := len(cache.items); got != 0 {
+		t.Errorf("got %v, want %v", got, 0)
+	}
 }
 
 func TestNewStmtCacheWithCapacity(t *testing.T) {
@@ -63,8 +72,12 @@ func TestNewStmtCacheWithCapacity(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cache := NewStmtCacheWithCapacity(tt.capacity)
-			require.NotNil(t, cache)
-			assert.Equal(t, tt.expected, cache.capacity)
+			if cache == nil {
+				t.Fatal("expected non-nil")
+			}
+			if got := cache.capacity; got != tt.expected {
+				t.Errorf("got %v, want %v", got, tt.expected)
+			}
 		})
 	}
 }
@@ -75,8 +88,12 @@ func TestStmtCache_GetSet(t *testing.T) {
 
 	// Test miss on empty cache.
 	stmt, found := cache.Get("SELECT 1")
-	assert.Nil(t, stmt)
-	assert.False(t, found)
+	if stmt != nil {
+		t.Errorf("expected nil, got %v", stmt)
+	}
+	if found {
+		t.Error("expected false")
+	}
 
 	// Add statement to cache.
 	testStmt := createTestStmt(t, db, "SELECT 1")
@@ -84,15 +101,27 @@ func TestStmtCache_GetSet(t *testing.T) {
 
 	// Test hit.
 	stmt, found = cache.Get("SELECT 1")
-	assert.NotNil(t, stmt)
-	assert.True(t, found)
-	assert.Equal(t, testStmt, stmt)
+	if stmt == nil {
+		t.Error("expected non-nil")
+	}
+	if !found {
+		t.Error("expected true")
+	}
+	if got := stmt; got != testStmt {
+		t.Errorf("got %v, want %v", got, testStmt)
+	}
 
 	// Verify cache size.
 	stats := cache.Stats()
-	assert.Equal(t, 1, stats.Size)
-	assert.Equal(t, uint64(1), stats.Hits)
-	assert.Equal(t, uint64(1), stats.Misses)
+	if got := stats.Size; got != 1 {
+		t.Errorf("got %v, want %v", got, 1)
+	}
+	if got := stats.Hits; got != uint64(1) {
+		t.Errorf("got %v, want %v", got, uint64(1))
+	}
+	if got := stats.Misses; got != uint64(1) {
+		t.Errorf("got %v, want %v", got, uint64(1))
+	}
 }
 
 func TestStmtCache_LRUEviction(t *testing.T) {
@@ -109,28 +138,44 @@ func TestStmtCache_LRUEviction(t *testing.T) {
 	cache.Set("query3", stmt3)
 
 	stats := cache.Stats()
-	assert.Equal(t, 3, stats.Size)
-	assert.Equal(t, uint64(0), stats.Evictions)
+	if got := stats.Size; got != 3 {
+		t.Errorf("got %v, want %v", got, 3)
+	}
+	if got := stats.Evictions; got != uint64(0) {
+		t.Errorf("got %v, want %v", got, uint64(0))
+	}
 
 	// Add one more statement - should evict oldest (query1).
 	stmt4 := createTestStmt(t, db, "SELECT 4")
 	cache.Set("query4", stmt4)
 
 	stats = cache.Stats()
-	assert.Equal(t, 3, stats.Size)
-	assert.Equal(t, uint64(1), stats.Evictions)
+	if got := stats.Size; got != 3 {
+		t.Errorf("got %v, want %v", got, 3)
+	}
+	if got := stats.Evictions; got != uint64(1) {
+		t.Errorf("got %v, want %v", got, uint64(1))
+	}
 
 	// Verify query1 was evicted.
 	_, found := cache.Get("query1")
-	assert.False(t, found)
+	if found {
+		t.Error("expected false")
+	}
 
 	// Verify others still exist.
 	_, found = cache.Get("query2")
-	assert.True(t, found)
+	if !found {
+		t.Error("expected true")
+	}
 	_, found = cache.Get("query3")
-	assert.True(t, found)
+	if !found {
+		t.Error("expected true")
+	}
 	_, found = cache.Get("query4")
-	assert.True(t, found)
+	if !found {
+		t.Error("expected true")
+	}
 }
 
 func TestStmtCache_LRUOrdering(t *testing.T) {
@@ -148,7 +193,9 @@ func TestStmtCache_LRUOrdering(t *testing.T) {
 
 	// Access query1 to make it most recently used.
 	_, found := cache.Get("query1")
-	require.True(t, found)
+	if !found {
+		t.Fatal("expected true")
+	}
 
 	// Add new statement - should evict query2 (now least recently used).
 	stmt4 := createTestStmt(t, db, "SELECT 4")
@@ -156,10 +203,14 @@ func TestStmtCache_LRUOrdering(t *testing.T) {
 
 	// Verify query2 was evicted, not query1.
 	_, found = cache.Get("query2")
-	assert.False(t, found)
+	if found {
+		t.Error("expected false")
+	}
 
 	_, found = cache.Get("query1")
-	assert.True(t, found)
+	if !found {
+		t.Error("expected true")
+	}
 }
 
 func TestStmtCache_UpdateExisting(t *testing.T) {
@@ -171,7 +222,9 @@ func TestStmtCache_UpdateExisting(t *testing.T) {
 	cache.Set("query", stmt1)
 
 	stats := cache.Stats()
-	assert.Equal(t, 1, stats.Size)
+	if got := stats.Size; got != 1 {
+		t.Errorf("got %v, want %v", got, 1)
+	}
 
 	// Update with new statement (same key).
 	stmt2 := createTestStmt(t, db, "SELECT 2")
@@ -179,12 +232,18 @@ func TestStmtCache_UpdateExisting(t *testing.T) {
 
 	// Cache size should remain 1.
 	stats = cache.Stats()
-	assert.Equal(t, 1, stats.Size)
+	if got := stats.Size; got != 1 {
+		t.Errorf("got %v, want %v", got, 1)
+	}
 
 	// Retrieved statement should be the new one.
 	retrieved, found := cache.Get("query")
-	require.True(t, found)
-	assert.Equal(t, stmt2, retrieved)
+	if !found {
+		t.Fatal("expected true")
+	}
+	if got := retrieved; got != stmt2 {
+		t.Errorf("got %v, want %v", got, stmt2)
+	}
 }
 
 func TestStmtCache_Clear(t *testing.T) {
@@ -198,18 +257,24 @@ func TestStmtCache_Clear(t *testing.T) {
 	}
 
 	stats := cache.Stats()
-	assert.Equal(t, 5, stats.Size)
+	if got := stats.Size; got != 5 {
+		t.Errorf("got %v, want %v", got, 5)
+	}
 
 	// Clear cache.
 	cache.Clear()
 
 	stats = cache.Stats()
-	assert.Equal(t, 0, stats.Size)
+	if got := stats.Size; got != 0 {
+		t.Errorf("got %v, want %v", got, 0)
+	}
 
 	// Verify all statements are gone.
 	for i := 1; i <= 5; i++ {
 		_, found := cache.Get(fmt.Sprintf("query%d", i))
-		assert.False(t, found)
+		if found {
+			t.Error("expected false")
+		}
 	}
 }
 
@@ -219,34 +284,64 @@ func TestStmtCache_Stats(t *testing.T) {
 
 	// Initial stats.
 	stats := cache.Stats()
-	assert.Equal(t, 0, stats.Size)
-	assert.Equal(t, 2, stats.Capacity)
-	assert.Equal(t, uint64(0), stats.Hits)
-	assert.Equal(t, uint64(0), stats.Misses)
-	assert.Equal(t, uint64(0), stats.Evictions)
-	assert.Equal(t, 0.0, stats.HitRate)
+	if got := stats.Size; got != 0 {
+		t.Errorf("got %v, want %v", got, 0)
+	}
+	if got := stats.Capacity; got != 2 {
+		t.Errorf("got %v, want %v", got, 2)
+	}
+	if got := stats.Hits; got != uint64(0) {
+		t.Errorf("got %v, want %v", got, uint64(0))
+	}
+	if got := stats.Misses; got != uint64(0) {
+		t.Errorf("got %v, want %v", got, uint64(0))
+	}
+	if got := stats.Evictions; got != uint64(0) {
+		t.Errorf("got %v, want %v", got, uint64(0))
+	}
+	if got := stats.HitRate; got != 0.0 {
+		t.Errorf("got %v, want %v", got, 0.0)
+	}
 
 	// Add statement and test miss.
 	stmt1 := createTestStmt(t, db, "SELECT 1")
 	cache.Set("query1", stmt1)
 
 	_, found := cache.Get("nonexistent")
-	assert.False(t, found)
+	if found {
+		t.Error("expected false")
+	}
 
 	stats = cache.Stats()
-	assert.Equal(t, 1, stats.Size)
-	assert.Equal(t, uint64(0), stats.Hits)
-	assert.Equal(t, uint64(1), stats.Misses)
-	assert.Equal(t, 0.0, stats.HitRate)
+	if got := stats.Size; got != 1 {
+		t.Errorf("got %v, want %v", got, 1)
+	}
+	if got := stats.Hits; got != uint64(0) {
+		t.Errorf("got %v, want %v", got, uint64(0))
+	}
+	if got := stats.Misses; got != uint64(1) {
+		t.Errorf("got %v, want %v", got, uint64(1))
+	}
+	if got := stats.HitRate; got != 0.0 {
+		t.Errorf("got %v, want %v", got, 0.0)
+	}
 
 	// Test hit.
 	_, found = cache.Get("query1")
-	assert.True(t, found)
+	if !found {
+		t.Error("expected true")
+	}
 
 	stats = cache.Stats()
-	assert.Equal(t, uint64(1), stats.Hits)
-	assert.Equal(t, uint64(1), stats.Misses)
-	assert.Equal(t, 0.5, stats.HitRate)
+	if got := stats.Hits; got != uint64(1) {
+		t.Errorf("got %v, want %v", got, uint64(1))
+	}
+	if got := stats.Misses; got != uint64(1) {
+		t.Errorf("got %v, want %v", got, uint64(1))
+	}
+	if got := stats.HitRate; got != 0.5 {
+		t.Errorf("got %v, want %v", got, 0.5)
+	}
 
 	// Test eviction.
 	stmt2 := createTestStmt(t, db, "SELECT 2")
@@ -255,8 +350,12 @@ func TestStmtCache_Stats(t *testing.T) {
 	cache.Set("query3", stmt3) // Should evict query1.
 
 	stats = cache.Stats()
-	assert.Equal(t, 2, stats.Size)
-	assert.Equal(t, uint64(1), stats.Evictions)
+	if got := stats.Size; got != 2 {
+		t.Errorf("got %v, want %v", got, 2)
+	}
+	if got := stats.Evictions; got != uint64(1) {
+		t.Errorf("got %v, want %v", got, uint64(1))
+	}
 }
 
 func TestStmtCache_Concurrent(t *testing.T) {
@@ -291,8 +390,12 @@ func TestStmtCache_Concurrent(t *testing.T) {
 
 	// Verify cache is in valid state.
 	stats := cache.Stats()
-	assert.LessOrEqual(t, stats.Size, 100)
-	assert.Greater(t, stats.Hits+stats.Misses, uint64(0))
+	if stats.Size > 100 {
+		t.Errorf("expected %v <= %v", stats.Size, 100)
+	}
+	if stats.Hits+stats.Misses <= uint64(0) {
+		t.Errorf("expected %v > %v", stats.Hits+stats.Misses, uint64(0))
+	}
 }
 
 func TestStmtCache_ConcurrentEviction(t *testing.T) {
@@ -322,8 +425,12 @@ func TestStmtCache_ConcurrentEviction(t *testing.T) {
 
 	// Verify cache respects capacity.
 	stats := cache.Stats()
-	assert.LessOrEqual(t, stats.Size, 10)
-	assert.Greater(t, stats.Evictions, uint64(0))
+	if stats.Size > 10 {
+		t.Errorf("expected %v <= %v", stats.Size, 10)
+	}
+	if stats.Evictions <= uint64(0) {
+		t.Errorf("expected %v > %v", stats.Evictions, uint64(0))
+	}
 }
 
 func TestStmtCache_EmptyCache(t *testing.T) {
@@ -331,13 +438,19 @@ func TestStmtCache_EmptyCache(t *testing.T) {
 
 	// Test operations on empty cache.
 	_, found := cache.Get("anything")
-	assert.False(t, found)
+	if found {
+		t.Error("expected false")
+	}
 
 	cache.Clear() // Should not panic.
 
 	stats := cache.Stats()
-	assert.Equal(t, 0, stats.Size)
-	assert.Equal(t, 0.0, stats.HitRate)
+	if got := stats.Size; got != 0 {
+		t.Errorf("got %v, want %v", got, 0)
+	}
+	if got := stats.HitRate; got != 0.0 {
+		t.Errorf("got %v, want %v", got, 0.0)
+	}
 }
 
 func TestStmtCache_SingleItemCache(t *testing.T) {
@@ -348,22 +461,34 @@ func TestStmtCache_SingleItemCache(t *testing.T) {
 	cache.Set("query1", stmt1)
 
 	stats := cache.Stats()
-	assert.Equal(t, 1, stats.Size)
-	assert.Equal(t, uint64(0), stats.Evictions)
+	if got := stats.Size; got != 1 {
+		t.Errorf("got %v, want %v", got, 1)
+	}
+	if got := stats.Evictions; got != uint64(0) {
+		t.Errorf("got %v, want %v", got, uint64(0))
+	}
 
 	// Add second item - should evict first.
 	stmt2 := createTestStmt(t, db, "SELECT 2")
 	cache.Set("query2", stmt2)
 
 	stats = cache.Stats()
-	assert.Equal(t, 1, stats.Size)
-	assert.Equal(t, uint64(1), stats.Evictions)
+	if got := stats.Size; got != 1 {
+		t.Errorf("got %v, want %v", got, 1)
+	}
+	if got := stats.Evictions; got != uint64(1) {
+		t.Errorf("got %v, want %v", got, uint64(1))
+	}
 
 	// First item should be gone.
 	_, found := cache.Get("query1")
-	assert.False(t, found)
+	if found {
+		t.Error("expected false")
+	}
 
 	// Second item should exist.
 	_, found = cache.Get("query2")
-	assert.True(t, found)
+	if !found {
+		t.Error("expected true")
+	}
 }

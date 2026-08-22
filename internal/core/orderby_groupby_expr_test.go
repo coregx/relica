@@ -1,10 +1,8 @@
 package core
 
 import (
+	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // =============================================================================
@@ -30,9 +28,15 @@ func TestOrderByExpr_CaseWhen(t *testing.T) {
 				OrderByExpr("CASE WHEN t.due_date < CURRENT_DATE THEN 0 ELSE 1 END").
 				Build()
 
-			require.NotNil(t, q)
-			assert.Contains(t, q.sql, "ORDER BY CASE WHEN t.due_date < CURRENT_DATE THEN 0 ELSE 1 END")
-			assert.NotContains(t, q.sql, `"CASE"`)
+			if q == nil {
+				t.Fatal("expected non-nil")
+			}
+			if !strings.Contains(q.sql, "ORDER BY CASE WHEN t.due_date < CURRENT_DATE THEN 0 ELSE 1 END") {
+				t.Errorf("%q does not contain %q", q.sql, "ORDER BY CASE WHEN t.due_date < CURRENT_DATE THEN 0 ELSE 1 END")
+			}
+			if strings.Contains(q.sql, `"CASE"`) {
+				t.Errorf("%q should not contain %q", q.sql, `"CASE"`)
+			}
 		})
 	}
 }
@@ -46,13 +50,25 @@ func TestOrderByExpr_WithParams(t *testing.T) {
 		OrderByExpr("CASE WHEN priority = ? THEN 0 ELSE 1 END", "high").
 		Build()
 
-	require.NotNil(t, q)
-	assert.Contains(t, q.sql, "ORDER BY CASE WHEN priority = ")
-	assert.Contains(t, q.sql, "THEN 0 ELSE 1 END")
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
+	if !strings.Contains(q.sql, "ORDER BY CASE WHEN priority = ") {
+		t.Errorf("%q does not contain %q", q.sql, "ORDER BY CASE WHEN priority = ")
+	}
+	if !strings.Contains(q.sql, "THEN 0 ELSE 1 END") {
+		t.Errorf("%q does not contain %q", q.sql, "THEN 0 ELSE 1 END")
+	}
 	// Params: "active" (WHERE) + "high" (OrderByExpr)
-	assert.Len(t, q.params, 2)
-	assert.Equal(t, "active", q.params[0])
-	assert.Equal(t, "high", q.params[1])
+	if len(q.params) != 2 {
+		t.Errorf("expected length %d, got %d", 2, len(q.params))
+	}
+	if q.params[0] != "active" {
+		t.Errorf("got %v, want %v", q.params[0], "active")
+	}
+	if q.params[1] != "high" {
+		t.Errorf("got %v, want %v", q.params[1], "high")
+	}
 }
 
 func TestOrderByExpr_PostgreSQL_PlaceholderNumbering(t *testing.T) {
@@ -65,13 +81,23 @@ func TestOrderByExpr_PostgreSQL_PlaceholderNumbering(t *testing.T) {
 		OrderByExpr("CASE WHEN priority = ? THEN 0 ELSE 1 END", "high").
 		Build()
 
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 	// WHERE uses $1 and $2, OrderByExpr should use $3
-	assert.Contains(t, q.sql, "$1")
-	assert.Contains(t, q.sql, "$2")
+	if !strings.Contains(q.sql, "$1") {
+		t.Errorf("%q does not contain %q", q.sql, "$1")
+	}
+	if !strings.Contains(q.sql, "$2") {
+		t.Errorf("%q does not contain %q", q.sql, "$2")
+	}
 	// Params order: active, 42, high
-	assert.Len(t, q.params, 3)
-	assert.Equal(t, "high", q.params[2])
+	if len(q.params) != 3 {
+		t.Errorf("expected length %d, got %d", 3, len(q.params))
+	}
+	if q.params[2] != "high" {
+		t.Errorf("got %v, want %v", q.params[2], "high")
+	}
 }
 
 func TestOrderByExpr_CombinedWithOrderBy(t *testing.T) {
@@ -83,11 +109,19 @@ func TestOrderByExpr_CombinedWithOrderBy(t *testing.T) {
 		OrderBy("due_date ASC").
 		Build()
 
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 	// Both should be in ORDER BY
-	assert.Contains(t, q.sql, "ORDER BY")
-	assert.Contains(t, q.sql, "CASE WHEN")
-	assert.Contains(t, q.sql, `"due_date" ASC`)
+	if !strings.Contains(q.sql, "ORDER BY") {
+		t.Errorf("%q does not contain %q", q.sql, "ORDER BY")
+	}
+	if !strings.Contains(q.sql, "CASE WHEN") {
+		t.Errorf("%q does not contain %q", q.sql, "CASE WHEN")
+	}
+	if !strings.Contains(q.sql, `"due_date" ASC`) {
+		t.Errorf("%q does not contain %q", q.sql, `"due_date" ASC`)
+	}
 }
 
 func TestOrderByExpr_MultipleExprs(t *testing.T) {
@@ -99,9 +133,15 @@ func TestOrderByExpr_MultipleExprs(t *testing.T) {
 		OrderByExpr("COALESCE(due_date, '9999-12-31')").
 		Build()
 
-	require.NotNil(t, q)
-	assert.Contains(t, q.sql, "CASE WHEN urgent =")
-	assert.Contains(t, q.sql, "COALESCE(due_date")
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
+	if !strings.Contains(q.sql, "CASE WHEN urgent =") {
+		t.Errorf("%q does not contain %q", q.sql, "CASE WHEN urgent =")
+	}
+	if !strings.Contains(q.sql, "COALESCE(due_date") {
+		t.Errorf("%q does not contain %q", q.sql, "COALESCE(due_date")
+	}
 }
 
 func TestOrderByExpr_OnlyExpr_NoRegularOrderBy(t *testing.T) {
@@ -112,8 +152,12 @@ func TestOrderByExpr_OnlyExpr_NoRegularOrderBy(t *testing.T) {
 		OrderByExpr("RANDOM()").
 		Build()
 
-	require.NotNil(t, q)
-	assert.Contains(t, q.sql, "ORDER BY RANDOM()")
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
+	if !strings.Contains(q.sql, "ORDER BY RANDOM()") {
+		t.Errorf("%q does not contain %q", q.sql, "ORDER BY RANDOM()")
+	}
 }
 
 // =============================================================================
@@ -140,8 +184,12 @@ func TestGroupByExpr_DateFunction(t *testing.T) {
 				GroupByExpr(tt.expr).
 				Build()
 
-			require.NotNil(t, q)
-			assert.Contains(t, q.sql, "GROUP BY "+tt.expr)
+			if q == nil {
+				t.Fatal("expected non-nil")
+			}
+			if !strings.Contains(q.sql, "GROUP BY "+tt.expr) {
+				t.Errorf("%q does not contain %q", q.sql, "GROUP BY "+tt.expr)
+			}
 		})
 	}
 }
@@ -154,8 +202,12 @@ func TestGroupByExpr_ExtractYear(t *testing.T) {
 		GroupByExpr("EXTRACT(YEAR FROM order_date)").
 		Build()
 
-	require.NotNil(t, q)
-	assert.Contains(t, q.sql, "GROUP BY EXTRACT(YEAR FROM order_date)")
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
+	if !strings.Contains(q.sql, "GROUP BY EXTRACT(YEAR FROM order_date)") {
+		t.Errorf("%q does not contain %q", q.sql, "GROUP BY EXTRACT(YEAR FROM order_date)")
+	}
 }
 
 func TestGroupByExpr_CombinedWithGroupBy(t *testing.T) {
@@ -167,8 +219,12 @@ func TestGroupByExpr_CombinedWithGroupBy(t *testing.T) {
 		GroupByExpr("DATE(created_at)").
 		Build()
 
-	require.NotNil(t, q)
-	assert.Contains(t, q.sql, `GROUP BY "status", DATE(created_at)`)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
+	if !strings.Contains(q.sql, `GROUP BY "status", DATE(created_at)`) {
+		t.Errorf("%q does not contain %q", q.sql, `GROUP BY "status", DATE(created_at)`)
+	}
 }
 
 func TestGroupByExpr_WithParams(t *testing.T) {
@@ -179,10 +235,18 @@ func TestGroupByExpr_WithParams(t *testing.T) {
 		GroupByExpr("CASE WHEN total > ? THEN 'high' ELSE 'low' END", 1000).
 		Build()
 
-	require.NotNil(t, q)
-	assert.Contains(t, q.sql, "GROUP BY CASE WHEN total >")
-	assert.Len(t, q.params, 1)
-	assert.Equal(t, 1000, q.params[0])
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
+	if !strings.Contains(q.sql, "GROUP BY CASE WHEN total >") {
+		t.Errorf("%q does not contain %q", q.sql, "GROUP BY CASE WHEN total >")
+	}
+	if len(q.params) != 1 {
+		t.Errorf("expected length %d, got %d", 1, len(q.params))
+	}
+	if q.params[0] != 1000 {
+		t.Errorf("got %v, want %v", q.params[0], 1000)
+	}
 }
 
 // =============================================================================
@@ -202,12 +266,22 @@ func TestCombined_OrderByExpr_GroupByExpr_WHERE(t *testing.T) {
 		OrderBy("day DESC").
 		Build()
 
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 	// Params: "active" (WHERE), 5 (HAVING), 10 (OrderByExpr)
-	assert.Len(t, q.params, 3)
-	assert.Equal(t, "active", q.params[0])
-	assert.Equal(t, 5, q.params[1])
-	assert.Equal(t, 10, q.params[2])
+	if len(q.params) != 3 {
+		t.Errorf("expected length %d, got %d", 3, len(q.params))
+	}
+	if q.params[0] != "active" {
+		t.Errorf("got %v, want %v", q.params[0], "active")
+	}
+	if q.params[1] != 5 {
+		t.Errorf("got %v, want %v", q.params[1], 5)
+	}
+	if q.params[2] != 10 {
+		t.Errorf("got %v, want %v", q.params[2], 10)
+	}
 }
 
 // =============================================================================
@@ -223,10 +297,18 @@ func TestIssue34_CaseWhenOrderBy(t *testing.T) {
 		OrderBy("t.due_date ASC").
 		Build()
 
-	require.NotNil(t, q)
-	assert.NotContains(t, q.sql, `"CASE"`)
-	assert.Contains(t, q.sql, "CASE WHEN t.due_date < CURRENT_DATE THEN 0 ELSE 1 END")
-	assert.Contains(t, q.sql, `"t"."due_date" ASC`)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
+	if strings.Contains(q.sql, `"CASE"`) {
+		t.Errorf("%q should not contain %q", q.sql, `"CASE"`)
+	}
+	if !strings.Contains(q.sql, "CASE WHEN t.due_date < CURRENT_DATE THEN 0 ELSE 1 END") {
+		t.Errorf("%q does not contain %q", q.sql, "CASE WHEN t.due_date < CURRENT_DATE THEN 0 ELSE 1 END")
+	}
+	if !strings.Contains(q.sql, `"t"."due_date" ASC`) {
+		t.Errorf("%q does not contain %q", q.sql, `"t"."due_date" ASC`)
+	}
 }
 
 // =============================================================================
@@ -246,16 +328,34 @@ func TestOrderBySub_CaseWhen(t *testing.T) {
 		OrderBy("t.due_date ASC").
 		Build()
 
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 	// CaseWhen: conditions are raw SQL, THEN results are parameterized
-	assert.Contains(t, q.sql, "CASE WHEN t.due_date < CURRENT_DATE THEN ?")
-	assert.Contains(t, q.sql, "WHEN t.due_date IS NULL THEN ?")
-	assert.Contains(t, q.sql, "ELSE ?")
-	assert.Contains(t, q.sql, `"t"."due_date" ASC`)
-	assert.Contains(t, q.params, 0)
-	assert.Contains(t, q.params, 1)
-	assert.Contains(t, q.params, 2)
-	assert.Contains(t, q.params, 3)
+	if !strings.Contains(q.sql, "CASE WHEN t.due_date < CURRENT_DATE THEN ?") {
+		t.Errorf("%q does not contain %q", q.sql, "CASE WHEN t.due_date < CURRENT_DATE THEN ?")
+	}
+	if !strings.Contains(q.sql, "WHEN t.due_date IS NULL THEN ?") {
+		t.Errorf("%q does not contain %q", q.sql, "WHEN t.due_date IS NULL THEN ?")
+	}
+	if !strings.Contains(q.sql, "ELSE ?") {
+		t.Errorf("%q does not contain %q", q.sql, "ELSE ?")
+	}
+	if !strings.Contains(q.sql, `"t"."due_date" ASC`) {
+		t.Errorf("%q does not contain %q", q.sql, `"t"."due_date" ASC`)
+	}
+	for _, v := range []interface{}{0, 1, 2, 3} {
+		found := false
+		for _, p := range q.params {
+			if p == v {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("%q does not contain %q", q.params, v)
+		}
+	}
 }
 
 func TestOrderBySub_CaseWhenWithParams_PostgreSQL(t *testing.T) {
@@ -269,10 +369,16 @@ func TestOrderBySub_CaseWhenWithParams_PostgreSQL(t *testing.T) {
 			Else(0)).
 		Build()
 
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 	// WHERE param + CaseWhen params
-	assert.Equal(t, 42, q.params[0])
-	assert.Contains(t, q.sql, "ORDER BY CASE")
+	if q.params[0] != 42 {
+		t.Errorf("got %v, want %v", q.params[0], 42)
+	}
+	if !strings.Contains(q.sql, "ORDER BY CASE") {
+		t.Errorf("%q does not contain %q", q.sql, "ORDER BY CASE")
+	}
 }
 
 func TestOrderBySub_CombinedWithOrderBy(t *testing.T) {
@@ -286,10 +392,16 @@ func TestOrderBySub_CombinedWithOrderBy(t *testing.T) {
 		OrderBy("t.created_at DESC").
 		Build()
 
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 	// Regular OrderBy comes first, then Sub expressions
-	assert.Contains(t, q.sql, `"t"."created_at" DESC`)
-	assert.Contains(t, q.sql, "CASE")
+	if !strings.Contains(q.sql, `"t"."created_at" DESC`) {
+		t.Errorf("%q does not contain %q", q.sql, `"t"."created_at" DESC`)
+	}
+	if !strings.Contains(q.sql, "CASE") {
+		t.Errorf("%q does not contain %q", q.sql, "CASE")
+	}
 }
 
 func TestOrderBySub_SimpleCase(t *testing.T) {
@@ -304,8 +416,12 @@ func TestOrderBySub_SimpleCase(t *testing.T) {
 			Else(2)).
 		Build()
 
-	require.NotNil(t, q)
-	assert.Contains(t, q.sql, `ORDER BY CASE "priority"`)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
+	if !strings.Contains(q.sql, `ORDER BY CASE "priority"`) {
+		t.Errorf("%q does not contain %q", q.sql, `ORDER BY CASE "priority"`)
+	}
 }
 
 // =============================================================================
@@ -322,6 +438,10 @@ func TestGroupBySub_CaseWhen(t *testing.T) {
 			Else("normal")).
 		Build()
 
-	require.NotNil(t, q)
-	assert.Contains(t, q.sql, "GROUP BY CASE")
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
+	if !strings.Contains(q.sql, "GROUP BY CASE") {
+		t.Errorf("%q does not contain %q", q.sql, "GROUP BY CASE")
+	}
 }

@@ -1,11 +1,10 @@
 package core
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/coregx/relica/internal/dialects"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // TestSelectQuery_BuildErr_FromSelect verifies that FromSelect with an empty alias
@@ -17,13 +16,23 @@ func TestSelectQuery_BuildErr_FromSelect(t *testing.T) {
 	sub := qb.Select("id").From("orders")
 	sq := qb.Select("id").FromSelect(sub, "") // empty alias — programming error
 
-	assert.NotNil(t, sq.buildErr, "empty alias must store buildErr")
-	assert.ErrorContains(t, sq.buildErr, "FromSelect")
-	assert.ErrorContains(t, sq.buildErr, "non-empty alias")
+	if sq.buildErr == nil {
+		t.Error("empty alias must store buildErr")
+	}
+	if !strings.Contains(sq.buildErr.Error(), "FromSelect") {
+		t.Errorf("%q does not contain %q", sq.buildErr.Error(), "FromSelect")
+	}
+	if !strings.Contains(sq.buildErr.Error(), "non-empty alias") {
+		t.Errorf("%q does not contain %q", sq.buildErr.Error(), "non-empty alias")
+	}
 
 	q := sq.Build()
-	require.NotNil(t, q.prepErr, "buildErr must propagate to Query.prepErr")
-	assert.ErrorContains(t, q.prepErr, "FromSelect")
+	if q.prepErr == nil {
+		t.Fatal("buildErr must propagate to Query.prepErr")
+	}
+	if !strings.Contains(q.prepErr.Error(), "FromSelect") {
+		t.Errorf("%q does not contain %q", q.prepErr.Error(), "FromSelect")
+	}
 }
 
 // TestSelectQuery_BuildErr_Where verifies that an invalid Where() type stores
@@ -34,12 +43,20 @@ func TestSelectQuery_BuildErr_Where(t *testing.T) {
 
 	sq := qb.Select("id").From("users").Where(42) // int is not string or Expression
 
-	assert.NotNil(t, sq.buildErr, "invalid Where() type must store buildErr")
-	assert.ErrorContains(t, sq.buildErr, "Where()")
-	assert.ErrorContains(t, sq.buildErr, "int")
+	if sq.buildErr == nil {
+		t.Error("invalid Where() type must store buildErr")
+	}
+	if !strings.Contains(sq.buildErr.Error(), "Where()") {
+		t.Errorf("%q does not contain %q", sq.buildErr.Error(), "Where()")
+	}
+	if !strings.Contains(sq.buildErr.Error(), "int") {
+		t.Errorf("%q does not contain %q", sq.buildErr.Error(), "int")
+	}
 
 	q := sq.Build()
-	require.NotNil(t, q.prepErr, "buildErr must propagate to Query.prepErr")
+	if q.prepErr == nil {
+		t.Fatal("buildErr must propagate to Query.prepErr")
+	}
 }
 
 // TestSelectQuery_BuildErr_OrWhere verifies that an invalid OrWhere() type stores
@@ -52,11 +69,17 @@ func TestSelectQuery_BuildErr_OrWhere(t *testing.T) {
 		Where("status = ?", 1).
 		OrWhere([]int{1, 2, 3}) // slice is not string or Expression
 
-	assert.NotNil(t, sq.buildErr, "invalid OrWhere() type must store buildErr")
-	assert.ErrorContains(t, sq.buildErr, "OrWhere()")
+	if sq.buildErr == nil {
+		t.Error("invalid OrWhere() type must store buildErr")
+	}
+	if !strings.Contains(sq.buildErr.Error(), "OrWhere()") {
+		t.Errorf("%q does not contain %q", sq.buildErr.Error(), "OrWhere()")
+	}
 
 	q := sq.Build()
-	require.NotNil(t, q.prepErr, "buildErr must propagate to Query.prepErr")
+	if q.prepErr == nil {
+		t.Fatal("buildErr must propagate to Query.prepErr")
+	}
 }
 
 // TestSelectQuery_BuildErr_With_EmptyName verifies that With() with an empty
@@ -68,11 +91,17 @@ func TestSelectQuery_BuildErr_With_EmptyName(t *testing.T) {
 	cte := qb.Select("id").From("orders")
 	sq := qb.Select("*").With("", cte)
 
-	assert.NotNil(t, sq.buildErr, "empty CTE name must store buildErr")
-	assert.ErrorContains(t, sq.buildErr, "With()")
+	if sq.buildErr == nil {
+		t.Error("empty CTE name must store buildErr")
+	}
+	if !strings.Contains(sq.buildErr.Error(), "With()") {
+		t.Errorf("%q does not contain %q", sq.buildErr.Error(), "With()")
+	}
 
 	q := sq.Build()
-	require.NotNil(t, q.prepErr)
+	if q.prepErr == nil {
+		t.Fatal("expected non-nil prepErr")
+	}
 }
 
 // TestSelectQuery_BuildErr_With_NilQuery verifies that With() with a nil query
@@ -83,11 +112,17 @@ func TestSelectQuery_BuildErr_With_NilQuery(t *testing.T) {
 
 	sq := qb.Select("*").With("my_cte", nil)
 
-	assert.NotNil(t, sq.buildErr, "nil CTE query must store buildErr")
-	assert.ErrorContains(t, sq.buildErr, "With()")
+	if sq.buildErr == nil {
+		t.Error("nil CTE query must store buildErr")
+	}
+	if !strings.Contains(sq.buildErr.Error(), "With()") {
+		t.Errorf("%q does not contain %q", sq.buildErr.Error(), "With()")
+	}
 
 	q := sq.Build()
-	require.NotNil(t, q.prepErr)
+	if q.prepErr == nil {
+		t.Fatal("expected non-nil prepErr")
+	}
 }
 
 // TestSelectQuery_BuildErr_WithRecursive_EmptyName verifies that WithRecursive()
@@ -102,8 +137,12 @@ func TestSelectQuery_BuildErr_WithRecursive_EmptyName(t *testing.T) {
 
 	sq := qb.Select("*").WithRecursive("", cte)
 
-	assert.NotNil(t, sq.buildErr, "empty recursive CTE name must store buildErr")
-	assert.ErrorContains(t, sq.buildErr, "WithRecursive()")
+	if sq.buildErr == nil {
+		t.Error("empty recursive CTE name must store buildErr")
+	}
+	if !strings.Contains(sq.buildErr.Error(), "WithRecursive()") {
+		t.Errorf("%q does not contain %q", sq.buildErr.Error(), "WithRecursive()")
+	}
 }
 
 // TestSelectQuery_BuildErr_WithRecursive_NilQuery verifies that WithRecursive()
@@ -114,8 +153,12 @@ func TestSelectQuery_BuildErr_WithRecursive_NilQuery(t *testing.T) {
 
 	sq := qb.Select("*").WithRecursive("nums", nil)
 
-	assert.NotNil(t, sq.buildErr, "nil recursive CTE query must store buildErr")
-	assert.ErrorContains(t, sq.buildErr, "WithRecursive()")
+	if sq.buildErr == nil {
+		t.Error("nil recursive CTE query must store buildErr")
+	}
+	if !strings.Contains(sq.buildErr.Error(), "WithRecursive()") {
+		t.Errorf("%q does not contain %q", sq.buildErr.Error(), "WithRecursive()")
+	}
 }
 
 // TestSelectQuery_BuildErr_WithRecursive_NoUnion verifies that WithRecursive()
@@ -128,12 +171,20 @@ func TestSelectQuery_BuildErr_WithRecursive_NoUnion(t *testing.T) {
 
 	sq := qb.Select("*").WithRecursive("hier", nonRecursive)
 
-	assert.NotNil(t, sq.buildErr, "recursive CTE without UNION must store buildErr")
-	assert.ErrorContains(t, sq.buildErr, "WithRecursive()")
-	assert.ErrorContains(t, sq.buildErr, "UNION")
+	if sq.buildErr == nil {
+		t.Error("recursive CTE without UNION must store buildErr")
+	}
+	if !strings.Contains(sq.buildErr.Error(), "WithRecursive()") {
+		t.Errorf("%q does not contain %q", sq.buildErr.Error(), "WithRecursive()")
+	}
+	if !strings.Contains(sq.buildErr.Error(), "UNION") {
+		t.Errorf("%q does not contain %q", sq.buildErr.Error(), "UNION")
+	}
 
 	q := sq.Build()
-	require.NotNil(t, q.prepErr)
+	if q.prepErr == nil {
+		t.Fatal("expected non-nil prepErr")
+	}
 }
 
 // TestSelectQuery_BuildErr_JoinInvalidOnType verifies that an invalid JOIN ON
@@ -148,8 +199,12 @@ func TestSelectQuery_BuildErr_JoinInvalidOnType(t *testing.T) {
 
 	// buildErr is set lazily during buildSQL (called from Build)
 	q := sq.Build()
-	require.NotNil(t, q.prepErr, "invalid JOIN ON type must propagate as Query.prepErr")
-	assert.ErrorContains(t, q.prepErr, "JOIN ON")
+	if q.prepErr == nil {
+		t.Fatal("invalid JOIN ON type must propagate as Query.prepErr")
+	}
+	if !strings.Contains(q.prepErr.Error(), "JOIN ON") {
+		t.Errorf("%q does not contain %q", q.prepErr.Error(), "JOIN ON")
+	}
 }
 
 // TestSelectQuery_BuildErr_Having verifies that an invalid Having() type stores
@@ -163,11 +218,17 @@ func TestSelectQuery_BuildErr_Having(t *testing.T) {
 		GroupBy("status").
 		Having(42) // int is not string or Expression
 
-	assert.NotNil(t, sq.buildErr, "invalid Having() type must store buildErr")
-	assert.ErrorContains(t, sq.buildErr, "Having()")
+	if sq.buildErr == nil {
+		t.Error("invalid Having() type must store buildErr")
+	}
+	if !strings.Contains(sq.buildErr.Error(), "Having()") {
+		t.Errorf("%q does not contain %q", sq.buildErr.Error(), "Having()")
+	}
 
 	q := sq.Build()
-	require.NotNil(t, q.prepErr)
+	if q.prepErr == nil {
+		t.Fatal("expected non-nil prepErr")
+	}
 }
 
 // TestUpdateQuery_BuildErr_Where verifies that an invalid Where() type on
@@ -180,11 +241,17 @@ func TestUpdateQuery_BuildErr_Where(t *testing.T) {
 		Set(map[string]interface{}{"status": "active"}).
 		Where(struct{ bad string }{"value"}) // unsupported type
 
-	assert.NotNil(t, uq.buildErr, "invalid Where() type must store buildErr on UpdateQuery")
-	assert.ErrorContains(t, uq.buildErr, "Where()")
+	if uq.buildErr == nil {
+		t.Error("invalid Where() type must store buildErr on UpdateQuery")
+	}
+	if !strings.Contains(uq.buildErr.Error(), "Where()") {
+		t.Errorf("%q does not contain %q", uq.buildErr.Error(), "Where()")
+	}
 
 	q := uq.Build()
-	require.NotNil(t, q.prepErr)
+	if q.prepErr == nil {
+		t.Fatal("expected non-nil prepErr")
+	}
 }
 
 // TestUpdateQuery_BuildErr_OrWhere verifies that an invalid OrWhere() type on
@@ -198,11 +265,17 @@ func TestUpdateQuery_BuildErr_OrWhere(t *testing.T) {
 		Where("id = ?", 1).
 		OrWhere(map[string]string{"bad": "value"}) // unsupported type
 
-	assert.NotNil(t, uq.buildErr, "invalid OrWhere() type must store buildErr on UpdateQuery")
-	assert.ErrorContains(t, uq.buildErr, "OrWhere()")
+	if uq.buildErr == nil {
+		t.Error("invalid OrWhere() type must store buildErr on UpdateQuery")
+	}
+	if !strings.Contains(uq.buildErr.Error(), "OrWhere()") {
+		t.Errorf("%q does not contain %q", uq.buildErr.Error(), "OrWhere()")
+	}
 
 	q := uq.Build()
-	require.NotNil(t, q.prepErr)
+	if q.prepErr == nil {
+		t.Fatal("expected non-nil prepErr")
+	}
 }
 
 // TestDeleteQuery_BuildErr_Where verifies that an invalid Where() type on
@@ -213,11 +286,17 @@ func TestDeleteQuery_BuildErr_Where(t *testing.T) {
 
 	dq := qb.Delete("users").Where([]string{"bad"}) // unsupported type
 
-	assert.NotNil(t, dq.buildErr, "invalid Where() type must store buildErr on DeleteQuery")
-	assert.ErrorContains(t, dq.buildErr, "Where()")
+	if dq.buildErr == nil {
+		t.Error("invalid Where() type must store buildErr on DeleteQuery")
+	}
+	if !strings.Contains(dq.buildErr.Error(), "Where()") {
+		t.Errorf("%q does not contain %q", dq.buildErr.Error(), "Where()")
+	}
 
 	q := dq.Build()
-	require.NotNil(t, q.prepErr)
+	if q.prepErr == nil {
+		t.Fatal("expected non-nil prepErr")
+	}
 }
 
 // TestDeleteQuery_BuildErr_OrWhere verifies that an invalid OrWhere() type on
@@ -230,11 +309,17 @@ func TestDeleteQuery_BuildErr_OrWhere(t *testing.T) {
 		Where("id = ?", 1).
 		OrWhere(true) // bool — unsupported type
 
-	assert.NotNil(t, dq.buildErr, "invalid OrWhere() type must store buildErr on DeleteQuery")
-	assert.ErrorContains(t, dq.buildErr, "OrWhere()")
+	if dq.buildErr == nil {
+		t.Error("invalid OrWhere() type must store buildErr on DeleteQuery")
+	}
+	if !strings.Contains(dq.buildErr.Error(), "OrWhere()") {
+		t.Errorf("%q does not contain %q", dq.buildErr.Error(), "OrWhere()")
+	}
 
 	q := dq.Build()
-	require.NotNil(t, q.prepErr)
+	if q.prepErr == nil {
+		t.Fatal("expected non-nil prepErr")
+	}
 }
 
 // TestBatchInsertQuery_BuildErr_Values verifies that wrong value count stores
@@ -246,12 +331,20 @@ func TestBatchInsertQuery_BuildErr_Values(t *testing.T) {
 	biq := qb.BatchInsert("users", []string{"name", "email"})
 	biq.Values("Alice") // 1 value for 2 columns
 
-	assert.NotNil(t, biq.buildErr, "wrong value count must store buildErr")
-	assert.ErrorContains(t, biq.buildErr, "BatchInsert.Values")
-	assert.ErrorContains(t, biq.buildErr, "2")
+	if biq.buildErr == nil {
+		t.Error("wrong value count must store buildErr")
+	}
+	if !strings.Contains(biq.buildErr.Error(), "BatchInsert.Values") {
+		t.Errorf("%q does not contain %q", biq.buildErr.Error(), "BatchInsert.Values")
+	}
+	if !strings.Contains(biq.buildErr.Error(), "2") {
+		t.Errorf("%q does not contain %q", biq.buildErr.Error(), "2")
+	}
 
 	q := biq.Build()
-	require.NotNil(t, q.prepErr)
+	if q.prepErr == nil {
+		t.Fatal("expected non-nil prepErr")
+	}
 }
 
 // TestBatchInsertQuery_BuildErr_NoRows verifies that Build with no rows returns
@@ -264,8 +357,12 @@ func TestBatchInsertQuery_BuildErr_NoRows(t *testing.T) {
 	// No Values() calls
 
 	q := biq.Build()
-	require.NotNil(t, q.prepErr, "Build with no rows must store an error in prepErr")
-	assert.ErrorContains(t, q.prepErr, "BatchInsert")
+	if q.prepErr == nil {
+		t.Fatal("Build with no rows must store an error in prepErr")
+	}
+	if !strings.Contains(q.prepErr.Error(), "BatchInsert") {
+		t.Errorf("%q does not contain %q", q.prepErr.Error(), "BatchInsert")
+	}
 }
 
 // TestBatchUpdateQuery_BuildErr_NoUpdates verifies that Build with no updates
@@ -278,8 +375,12 @@ func TestBatchUpdateQuery_BuildErr_NoUpdates(t *testing.T) {
 	// No Set() calls
 
 	q := buq.Build()
-	require.NotNil(t, q.prepErr, "Build with no updates must store an error in prepErr")
-	assert.ErrorContains(t, q.prepErr, "BatchUpdate")
+	if q.prepErr == nil {
+		t.Fatal("Build with no updates must store an error in prepErr")
+	}
+	if !strings.Contains(q.prepErr.Error(), "BatchUpdate") {
+		t.Errorf("%q does not contain %q", q.prepErr.Error(), "BatchUpdate")
+	}
 }
 
 // TestLikeExp_BuildErr_EscapeChars verifies that an odd number of escape chars
@@ -289,13 +390,23 @@ func TestLikeExp_BuildErr_EscapeChars(t *testing.T) {
 
 	exp := Like("name", "test").EscapeChars("%", "\\%", "_") // 3 strings — odd
 
-	require.NotNil(t, exp.Err(), "odd EscapeChars must store an error via Err()")
-	assert.ErrorContains(t, exp.Err(), "EscapeChars")
-	assert.ErrorContains(t, exp.Err(), "3")
+	if exp.Err() == nil {
+		t.Fatal("odd EscapeChars must store an error via Err()")
+	}
+	if !strings.Contains(exp.Err().Error(), "EscapeChars") {
+		t.Errorf("%q does not contain %q", exp.Err().Error(), "EscapeChars")
+	}
+	if !strings.Contains(exp.Err().Error(), "3") {
+		t.Errorf("%q does not contain %q", exp.Err().Error(), "3")
+	}
 
 	sql, args := exp.Build(dialect)
-	assert.Empty(t, sql, "Build with stored error must return empty SQL")
-	assert.Nil(t, args, "Build with stored error must return nil args")
+	if sql != "" {
+		t.Errorf("Build with stored error must return empty SQL, got %q", sql)
+	}
+	if args != nil {
+		t.Errorf("Build with stored error must return nil args, got %v", args)
+	}
 }
 
 // TestLikeExp_BuildErr_EscapeChars_ValidAfterError verifies that a valid
@@ -305,5 +416,7 @@ func TestLikeExp_BuildErr_EscapeChars_ValidAfterError(t *testing.T) {
 	// (the error is set on the instance). We verify the error is preserved.
 	exp := Like("name", "test").EscapeChars("_") // 1 string — odd
 
-	assert.NotNil(t, exp.Err())
+	if exp.Err() == nil {
+		t.Error("expected non-nil error")
+	}
 }

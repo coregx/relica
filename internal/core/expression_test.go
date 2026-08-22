@@ -1,10 +1,10 @@
 package core
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/coregx/relica/internal/dialects"
-	"github.com/stretchr/testify/assert"
 )
 
 // Helper to create dialects for testing
@@ -57,8 +57,18 @@ func TestRawExp_Build(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			exp := NewExp(tt.sql, tt.args...)
 			sql, args := exp.Build(dialects[tt.dialect])
-			assert.Equal(t, tt.wantSQL, sql)
-			assert.Equal(t, tt.wantArgs, args)
+			if sql != tt.wantSQL {
+				t.Errorf("got %q, want %q", sql, tt.wantSQL)
+			}
+			if len(args) != len(tt.wantArgs) {
+				t.Errorf("args length: got %d, want %d", len(args), len(tt.wantArgs))
+			} else {
+				for i := range args {
+					if args[i] != tt.wantArgs[i] {
+						t.Errorf("args[%d]: got %v, want %v", i, args[i], tt.wantArgs[i])
+					}
+				}
+			}
 		})
 	}
 }
@@ -166,8 +176,18 @@ func TestHashExp_Build(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sql, args := tt.hash.Build(dialects[tt.dialect])
-			assert.Equal(t, tt.wantSQL, sql)
-			assert.Equal(t, tt.wantArgs, args)
+			if sql != tt.wantSQL {
+				t.Errorf("got %q, want %q", sql, tt.wantSQL)
+			}
+			if len(args) != len(tt.wantArgs) {
+				t.Errorf("args length: got %d, want %d", len(args), len(tt.wantArgs))
+			} else {
+				for i := range args {
+					if args[i] != tt.wantArgs[i] {
+						t.Errorf("args[%d]: got %v, want %v", i, args[i], tt.wantArgs[i])
+					}
+				}
+			}
 		})
 	}
 }
@@ -257,8 +277,18 @@ func TestCompareExp_Build(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sql, args := tt.exp.Build(dialects[tt.dialect])
-			assert.Equal(t, tt.wantSQL, sql)
-			assert.Equal(t, tt.wantArgs, args)
+			if sql != tt.wantSQL {
+				t.Errorf("got %q, want %q", sql, tt.wantSQL)
+			}
+			if len(args) != len(tt.wantArgs) {
+				t.Errorf("args length: got %d, want %d", len(args), len(tt.wantArgs))
+			} else {
+				for i := range args {
+					if args[i] != tt.wantArgs[i] {
+						t.Errorf("args[%d]: got %v, want %v", i, args[i], tt.wantArgs[i])
+					}
+				}
+			}
 		})
 	}
 }
@@ -348,8 +378,18 @@ func TestInExp_Build(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sql, args := tt.exp.Build(dialects[tt.dialect])
-			assert.Equal(t, tt.wantSQL, sql)
-			assert.Equal(t, tt.wantArgs, args)
+			if sql != tt.wantSQL {
+				t.Errorf("got %q, want %q", sql, tt.wantSQL)
+			}
+			if len(args) != len(tt.wantArgs) {
+				t.Errorf("args length: got %d, want %d", len(args), len(tt.wantArgs))
+			} else {
+				for i := range args {
+					if args[i] != tt.wantArgs[i] {
+						t.Errorf("args[%d]: got %v, want %v", i, args[i], tt.wantArgs[i])
+					}
+				}
+			}
 		})
 	}
 }
@@ -390,8 +430,18 @@ func TestBetweenExp_Build(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sql, args := tt.exp.Build(dialects[tt.dialect])
-			assert.Equal(t, tt.wantSQL, sql)
-			assert.Equal(t, tt.wantArgs, args)
+			if sql != tt.wantSQL {
+				t.Errorf("got %q, want %q", sql, tt.wantSQL)
+			}
+			if len(args) != len(tt.wantArgs) {
+				t.Errorf("args length: got %d, want %d", len(args), len(tt.wantArgs))
+			} else {
+				for i := range args {
+					if args[i] != tt.wantArgs[i] {
+						t.Errorf("args[%d]: got %v, want %v", i, args[i], tt.wantArgs[i])
+					}
+				}
+			}
 		})
 	}
 }
@@ -467,8 +517,18 @@ func TestLikeExp_Build(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sql, args := tt.exp.Build(dialects[tt.dialect])
-			assert.Equal(t, tt.wantSQL, sql)
-			assert.Equal(t, tt.wantArgs, args)
+			if sql != tt.wantSQL {
+				t.Errorf("got %q, want %q", sql, tt.wantSQL)
+			}
+			if len(args) != len(tt.wantArgs) {
+				t.Errorf("args length: got %d, want %d", len(args), len(tt.wantArgs))
+			} else {
+				for i := range args {
+					if args[i] != tt.wantArgs[i] {
+						t.Errorf("args[%d]: got %v, want %v", i, args[i], tt.wantArgs[i])
+					}
+				}
+			}
 		})
 	}
 }
@@ -547,8 +607,18 @@ func TestAndOrExp_Build(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sql, args := tt.exp.Build(dialects[tt.dialect])
-			assert.Equal(t, tt.wantSQL, sql)
-			assert.Equal(t, tt.wantArgs, args)
+			if sql != tt.wantSQL {
+				t.Errorf("got %q, want %q", sql, tt.wantSQL)
+			}
+			if len(args) != len(tt.wantArgs) {
+				t.Errorf("args length: got %d, want %d", len(args), len(tt.wantArgs))
+			} else {
+				for i := range args {
+					if args[i] != tt.wantArgs[i] {
+						t.Errorf("args[%d]: got %v, want %v", i, args[i], tt.wantArgs[i])
+					}
+				}
+			}
 		})
 	}
 }
@@ -599,8 +669,18 @@ func TestNotExp_Build(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sql, args := tt.exp.Build(dialects[tt.dialect])
-			assert.Equal(t, tt.wantSQL, sql)
-			assert.Equal(t, tt.wantArgs, args)
+			if sql != tt.wantSQL {
+				t.Errorf("got %q, want %q", sql, tt.wantSQL)
+			}
+			if len(args) != len(tt.wantArgs) {
+				t.Errorf("args length: got %d, want %d", len(args), len(tt.wantArgs))
+			} else {
+				for i := range args {
+					if args[i] != tt.wantArgs[i] {
+						t.Errorf("args[%d]: got %v, want %v", i, args[i], tt.wantArgs[i])
+					}
+				}
+			}
 		})
 	}
 }
@@ -613,21 +693,33 @@ func TestLikeExp_EscapeChars(t *testing.T) {
 	exp := Like("text", "50%").EscapeChars("%", "\\%")
 	sql, args := exp.Build(dialect)
 
-	assert.Equal(t, `"text" LIKE ?`, sql)
-	assert.Equal(t, []interface{}{"%50\\%%"}, args)
+	if sql != `"text" LIKE ?` {
+		t.Errorf("got %q, want %q", sql, `"text" LIKE ?`)
+	}
+	if len(args) != 1 || args[0] != "%50\\%%" {
+		t.Errorf("got %v, want %v", args, []interface{}{"%50\\%%"})
+	}
 }
 
 // TestLikeExp_EscapeChars_Panic tests that an odd number of escape chars
 // stores an error instead of panicking, and Build returns empty SQL.
 func TestLikeExp_EscapeChars_Panic(t *testing.T) {
 	exp := Like("name", "test").EscapeChars("%", "\\%", "_") // odd number
-	assert.NotNil(t, exp.Err(), "EscapeChars with odd count must store an error")
-	assert.ErrorContains(t, exp.Err(), "EscapeChars")
+	if exp.Err() == nil {
+		t.Fatal("EscapeChars with odd count must store an error")
+	}
+	if !strings.Contains(exp.Err().Error(), "EscapeChars") {
+		t.Errorf("%q does not contain %q", exp.Err().Error(), "EscapeChars")
+	}
 
 	dialect := dialects.GetDialect("postgres")
 	sql, args := exp.Build(dialect)
-	assert.Empty(t, sql, "Build with stored error must return empty SQL")
-	assert.Nil(t, args, "Build with stored error must return nil args")
+	if sql != "" {
+		t.Errorf("Build with stored error must return empty SQL, got %q", sql)
+	}
+	if args != nil {
+		t.Errorf("Build with stored error must return nil args, got %v", args)
+	}
 }
 
 // TestCompareExp_WithExpressionValue tests comparison with Expression values
@@ -638,8 +730,12 @@ func TestCompareExp_WithExpressionValue(t *testing.T) {
 	exp := Eq("total", NewExp("(SELECT SUM(amount) FROM orders WHERE user_id = ?)", 123))
 	sql, args := exp.Build(dialect)
 
-	assert.Equal(t, `"total" = ((SELECT SUM(amount) FROM orders WHERE user_id = ?))`, sql)
-	assert.Equal(t, []interface{}{123}, args)
+	if sql != `"total" = ((SELECT SUM(amount) FROM orders WHERE user_id = ?))` {
+		t.Errorf("got %q, want %q", sql, `"total" = ((SELECT SUM(amount) FROM orders WHERE user_id = ?))`)
+	}
+	if len(args) != 1 || args[0] != 123 {
+		t.Errorf("got %v, want %v", args, []interface{}{123})
+	}
 }
 
 // TestQuoteColumn tests the shared quoteColumn helper directly
@@ -665,7 +761,9 @@ func TestQuoteColumn(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			d := dialects.GetDialect(tt.dialect)
 			got := quoteColumn(tt.col, d)
-			assert.Equal(t, tt.want, got)
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
 		})
 	}
 }
@@ -748,8 +846,18 @@ func TestCompareExp_TableAlias(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			d := dialects.GetDialect(tt.dialect)
 			sql, args := tt.exp.Build(d)
-			assert.Equal(t, tt.wantSQL, sql)
-			assert.Equal(t, tt.wantArgs, args)
+			if sql != tt.wantSQL {
+				t.Errorf("got %q, want %q", sql, tt.wantSQL)
+			}
+			if len(args) != len(tt.wantArgs) {
+				t.Errorf("args length: got %d, want %d", len(args), len(tt.wantArgs))
+			} else {
+				for i := range args {
+					if args[i] != tt.wantArgs[i] {
+						t.Errorf("args[%d]: got %v, want %v", i, args[i], tt.wantArgs[i])
+					}
+				}
+			}
 		})
 	}
 }
@@ -804,8 +912,18 @@ func TestInExp_TableAlias(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			d := dialects.GetDialect(tt.dialect)
 			sql, args := tt.exp.Build(d)
-			assert.Equal(t, tt.wantSQL, sql)
-			assert.Equal(t, tt.wantArgs, args)
+			if sql != tt.wantSQL {
+				t.Errorf("got %q, want %q", sql, tt.wantSQL)
+			}
+			if len(args) != len(tt.wantArgs) {
+				t.Errorf("args length: got %d, want %d", len(args), len(tt.wantArgs))
+			} else {
+				for i := range args {
+					if args[i] != tt.wantArgs[i] {
+						t.Errorf("args[%d]: got %v, want %v", i, args[i], tt.wantArgs[i])
+					}
+				}
+			}
 		})
 	}
 }
@@ -846,8 +964,18 @@ func TestBetweenExp_TableAlias(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			d := dialects.GetDialect(tt.dialect)
 			sql, args := tt.exp.Build(d)
-			assert.Equal(t, tt.wantSQL, sql)
-			assert.Equal(t, tt.wantArgs, args)
+			if sql != tt.wantSQL {
+				t.Errorf("got %q, want %q", sql, tt.wantSQL)
+			}
+			if len(args) != len(tt.wantArgs) {
+				t.Errorf("args length: got %d, want %d", len(args), len(tt.wantArgs))
+			} else {
+				for i := range args {
+					if args[i] != tt.wantArgs[i] {
+						t.Errorf("args[%d]: got %v, want %v", i, args[i], tt.wantArgs[i])
+					}
+				}
+			}
 		})
 	}
 }
@@ -895,8 +1023,18 @@ func TestLikeExp_TableAlias(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			d := dialects.GetDialect(tt.dialect)
 			sql, args := tt.exp.Build(d)
-			assert.Equal(t, tt.wantSQL, sql)
-			assert.Equal(t, tt.wantArgs, args)
+			if sql != tt.wantSQL {
+				t.Errorf("got %q, want %q", sql, tt.wantSQL)
+			}
+			if len(args) != len(tt.wantArgs) {
+				t.Errorf("args length: got %d, want %d", len(args), len(tt.wantArgs))
+			} else {
+				for i := range args {
+					if args[i] != tt.wantArgs[i] {
+						t.Errorf("args[%d]: got %v, want %v", i, args[i], tt.wantArgs[i])
+					}
+				}
+			}
 		})
 	}
 }
@@ -947,8 +1085,18 @@ func TestHashExp_TableAlias(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			d := dialects.GetDialect(tt.dialect)
 			sql, args := tt.hash.Build(d)
-			assert.Equal(t, tt.wantSQL, sql)
-			assert.Equal(t, tt.wantArgs, args)
+			if sql != tt.wantSQL {
+				t.Errorf("got %q, want %q", sql, tt.wantSQL)
+			}
+			if len(args) != len(tt.wantArgs) {
+				t.Errorf("args length: got %d, want %d", len(args), len(tt.wantArgs))
+			} else {
+				for i := range args {
+					if args[i] != tt.wantArgs[i] {
+						t.Errorf("args[%d]: got %v, want %v", i, args[i], tt.wantArgs[i])
+					}
+				}
+			}
 		})
 	}
 }
@@ -963,8 +1111,12 @@ func TestTableAlias_ComposedExpressions(t *testing.T) {
 			GreaterThan("c.revenue", 1000),
 		)
 		sql, args := exp.Build(d)
-		assert.Equal(t, `("c"."deleted_at" IS NULL) AND ("c"."revenue" > ?)`, sql)
-		assert.Equal(t, []interface{}{1000}, args)
+		if sql != `("c"."deleted_at" IS NULL) AND ("c"."revenue" > ?)` {
+			t.Errorf("got %q, want %q", sql, `("c"."deleted_at" IS NULL) AND ("c"."revenue" > ?)`)
+		}
+		if len(args) != 1 || args[0] != 1000 {
+			t.Errorf("got %v, want %v", args, []interface{}{1000})
+		}
 	})
 
 	t.Run("Or with table aliases", func(t *testing.T) {
@@ -973,15 +1125,23 @@ func TestTableAlias_ComposedExpressions(t *testing.T) {
 			Eq("u.role", "superadmin"),
 		)
 		sql, args := exp.Build(d)
-		assert.Equal(t, `("u"."role" = ?) OR ("u"."role" = ?)`, sql)
-		assert.Equal(t, []interface{}{"admin", "superadmin"}, args)
+		if sql != `("u"."role" = ?) OR ("u"."role" = ?)` {
+			t.Errorf("got %q, want %q", sql, `("u"."role" = ?) OR ("u"."role" = ?)`)
+		}
+		if len(args) != 2 || args[0] != "admin" || args[1] != "superadmin" {
+			t.Errorf("got %v, want %v", args, []interface{}{"admin", "superadmin"})
+		}
 	})
 
 	t.Run("Not with table alias", func(t *testing.T) {
 		exp := Not(In("u.status", "banned", "suspended"))
 		sql, args := exp.Build(d)
-		assert.Equal(t, `NOT ("u"."status" IN (?, ?))`, sql)
-		assert.Equal(t, []interface{}{"banned", "suspended"}, args)
+		if sql != `NOT ("u"."status" IN (?, ?))` {
+			t.Errorf("got %q, want %q", sql, `NOT ("u"."status" IN (?, ?))`)
+		}
+		if len(args) != 2 || args[0] != "banned" || args[1] != "suspended" {
+			t.Errorf("got %v, want %v", args, []interface{}{"banned", "suspended"})
+		}
 	})
 
 	t.Run("complex nested with mixed aliases", func(t *testing.T) {
@@ -993,8 +1153,12 @@ func TestTableAlias_ComposedExpressions(t *testing.T) {
 			),
 		)
 		sql, args := exp.Build(d)
-		assert.Equal(t, `("c"."deleted_at" IS NULL) AND (("o"."total" > ?) OR ("o"."status" IN (?, ?)))`, sql)
-		assert.Equal(t, []interface{}{500, "vip", "premium"}, args)
+		if sql != `("c"."deleted_at" IS NULL) AND (("o"."total" > ?) OR ("o"."status" IN (?, ?)))` {
+			t.Errorf("got %q, want %q", sql, `("c"."deleted_at" IS NULL) AND (("o"."total" > ?) OR ("o"."status" IN (?, ?)))`)
+		}
+		if len(args) != 3 || args[0] != 500 || args[1] != "vip" || args[2] != "premium" {
+			t.Errorf("got %v, want %v", args, []interface{}{500, "vip", "premium"})
+		}
 	})
 }
 
@@ -1027,8 +1191,19 @@ func TestHashExp_AllDialects(t *testing.T) {
 		t.Run(tc.dialectName, func(t *testing.T) {
 			dialect := dialects.GetDialect(tc.dialectName)
 			sql, args := hash.Build(dialect)
-			assert.Equal(t, tc.wantSQL, sql)
-			assert.Equal(t, []interface{}{18, 19, 20, 1}, args)
+			if sql != tc.wantSQL {
+				t.Errorf("got %q, want %q", sql, tc.wantSQL)
+			}
+			wantArgs := []interface{}{18, 19, 20, 1}
+			if len(args) != len(wantArgs) {
+				t.Errorf("args length: got %d, want %d", len(args), len(wantArgs))
+			} else {
+				for i := range args {
+					if args[i] != wantArgs[i] {
+						t.Errorf("args[%d]: got %v, want %v", i, args[i], wantArgs[i])
+					}
+				}
+			}
 		})
 	}
 }

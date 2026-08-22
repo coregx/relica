@@ -2,8 +2,6 @@ package util
 
 import (
 	"testing"
-
-	"github.com/stretchr/testify/assert"
 )
 
 // TestSanitizeString tests removal of dangerous SQL patterns.
@@ -98,7 +96,9 @@ func TestSanitizeString(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := SanitizeString(tt.input)
-			assert.Equal(t, tt.want, got)
+			if got != tt.want {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
 		})
 	}
 }
@@ -190,7 +190,9 @@ func TestSanitizeIdentifier(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := SanitizeIdentifier(tt.input)
-			assert.Equal(t, tt.want, got)
+			if got != tt.want {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
 		})
 	}
 }

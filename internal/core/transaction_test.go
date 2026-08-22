@@ -11,12 +11,13 @@ import (
 func setupTransactionTestDB(t *testing.T) *DB {
 	t.Helper()
 
-	db, err := NewDB("sqlite", ":memory:")
+	sqlDB, err := sql.Open("memdb", ":memory:")
 	if err != nil {
-		t.Fatalf("Failed to create database: %v", err)
+		t.Fatalf("Failed to open test database: %v", err)
 	}
+	t.Cleanup(func() { sqlDB.Close() })
 
-	return db
+	return WrapDB(sqlDB, "sqlite")
 }
 
 // TestTransaction_CreateAndCommit tests creating and committing a transaction.

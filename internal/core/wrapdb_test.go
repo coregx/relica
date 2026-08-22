@@ -10,13 +10,15 @@ import (
 // TestWrapDB_BasicWrapping tests basic wrapping of sql.DB with different drivers.
 func TestWrapDB_BasicWrapping(t *testing.T) {
 	tests := []struct {
-		name       string
-		driverName string
-		dsn        string
+		name        string
+		driverName  string // name used to open the sql.DB (registered driver)
+		dialectName string // name passed to WrapDB for dialect resolution
+		dsn         string
 	}{
-		{"PostgreSQL", "postgres", "postgres://localhost/test"},
-		{"MySQL", "mysql", "user:pass@tcp(localhost:3306)/test"},
-		{"SQLite", "sqlite", ":memory:"},
+		{"PostgreSQL", "postgres", "postgres", "postgres://localhost/test"},
+		{"MySQL", "mysql", "mysql", "user:pass@tcp(localhost:3306)/test"},
+		// Use "memdb" driver (in-memory test driver) with the "sqlite" dialect.
+		{"SQLite", "memdb", "sqlite", ":memory:"},
 	}
 
 	for _, tt := range tests {
@@ -28,8 +30,8 @@ func TestWrapDB_BasicWrapping(t *testing.T) {
 			}
 			defer sqlDB.Close()
 
-			// Wrap with Relica
-			db := WrapDB(sqlDB, tt.driverName)
+			// Wrap with Relica using the resolved dialect name.
+			db := WrapDB(sqlDB, tt.dialectName)
 
 			// Verify DB instance
 			if db == nil {
@@ -40,8 +42,8 @@ func TestWrapDB_BasicWrapping(t *testing.T) {
 				t.Error("Expected wrapped DB to reference the same sql.DB instance")
 			}
 
-			if db.driverName != tt.driverName {
-				t.Errorf("Expected driver name %s, got %s", tt.driverName, db.driverName)
+			if db.driverName != tt.dialectName {
+				t.Errorf("Expected driver name %s, got %s", tt.dialectName, db.driverName)
 			}
 
 			if db.stmtCache == nil {
@@ -58,7 +60,7 @@ func TestWrapDB_BasicWrapping(t *testing.T) {
 // TestWrapDB_QueryExecution tests that queries can be executed through wrapped connection.
 func TestWrapDB_QueryExecution(t *testing.T) {
 	// Create external sql.DB
-	sqlDB, err := sql.Open("sqlite", ":memory:")
+	sqlDB, err := sql.Open("memdb", ":memory:")
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
@@ -179,7 +181,7 @@ func TestWrapDB_QueryExecution(t *testing.T) {
 // TestWrapDB_Transactions tests transaction support with wrapped connection.
 func TestWrapDB_Transactions(t *testing.T) {
 	// Create external sql.DB
-	sqlDB, err := sql.Open("sqlite", ":memory:")
+	sqlDB, err := sql.Open("memdb", ":memory:")
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
@@ -289,7 +291,7 @@ func TestWrapDB_Transactions(t *testing.T) {
 // TestWrapDB_StatementCache tests that wrapped DB uses its own statement cache.
 func TestWrapDB_StatementCache(t *testing.T) {
 	// Create external sql.DB
-	sqlDB, err := sql.Open("sqlite", ":memory:")
+	sqlDB, err := sql.Open("memdb", ":memory:")
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
@@ -337,7 +339,7 @@ func TestWrapDB_StatementCache(t *testing.T) {
 // TestWrapDB_MultipleWraps tests that multiple wraps of same connection have isolated caches.
 func TestWrapDB_MultipleWraps(t *testing.T) {
 	// Create external sql.DB
-	sqlDB, err := sql.Open("sqlite", ":memory:")
+	sqlDB, err := sql.Open("memdb", ":memory:")
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
@@ -405,7 +407,7 @@ func TestWrapDB_MultipleWraps(t *testing.T) {
 // TestWrapDB_BuilderReturnsWorkingQueryBuilder tests Builder() returns functional query builder.
 func TestWrapDB_BuilderReturnsWorkingQueryBuilder(t *testing.T) {
 	// Create external sql.DB
-	sqlDB, err := sql.Open("sqlite", ":memory:")
+	sqlDB, err := sql.Open("memdb", ":memory:")
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
@@ -458,7 +460,7 @@ func TestWrapDB_BuilderReturnsWorkingQueryBuilder(t *testing.T) {
 // TestWrapDB_ContextPropagation tests that context is properly propagated.
 func TestWrapDB_ContextPropagation(t *testing.T) {
 	// Create external sql.DB
-	sqlDB, err := sql.Open("sqlite", ":memory:")
+	sqlDB, err := sql.Open("memdb", ":memory:")
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}
@@ -488,7 +490,7 @@ func TestWrapDB_ContextPropagation(t *testing.T) {
 // TestWrapDB_CallerOwnsConnectionLifecycle tests that caller manages underlying connection.
 func TestWrapDB_CallerOwnsConnectionLifecycle(t *testing.T) {
 	// Create external sql.DB
-	sqlDB, err := sql.Open("sqlite", ":memory:")
+	sqlDB, err := sql.Open("memdb", ":memory:")
 	if err != nil {
 		t.Fatalf("Failed to open database: %v", err)
 	}

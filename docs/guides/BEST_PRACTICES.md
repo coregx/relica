@@ -651,40 +651,39 @@ CREATE TABLE events (
 
 > **Note**: The `autoincrement` tag tells Relica to use PostgreSQL `RETURNING` clause to read back the server-generated value. For MySQL/SQLite, generate the UUID in your application code before inserting.
 
-#### 3. Dual-Key Pattern (Recommended for APIs)
+#### 3. Dual-Key Pattern with AutoID (Recommended for APIs)
 
-Best for production APIs — optimal performance internally, safe identifiers externally. Used by Stripe (`cus_...`), Shopify, GitHub:
+Best for production APIs — optimal performance internally, safe identifiers externally. Used by Stripe (`cus_...`), Shopify, GitHub. **Relica supports this natively via `autoid` tag:**
 
 ```go
 type User struct {
-    ID       int64  `db:"id,pk"`       // internal: fast joins, compact FK
-    PublicID string `db:"public_id"`   // external: exposed in API responses
+    ID       int64  `db:"id,pk"`                    // internal: fast joins, compact FK
+    PublicID string `db:"public_id,autoid:usr"`      // external: auto-generated "usr_019078fa-..."
     Name     string `db:"name"`
     Email    string `db:"email"`
 }
 
+// Insert — PublicID auto-generated, ID auto-populated:
 func CreateUser(db *relica.DB, name, email string) (User, error) {
-    user := User{
-        PublicID: "usr_" + uuid.NewV7().String(), // app-generated
-        Name:     name,
-        Email:    email,
-    }
+    user := User{Name: name, Email: email}
     err := db.Model(&user).Insert()
     return user, err
-    // user.ID auto-populated (autoincrement)
-    // user.PublicID was set before insert
+    // user.ID = 42 (auto-populated)
+    // user.PublicID = "usr_019078fa-b37e-..." (auto-generated)
 }
 
-// API handler: lookup by public ID
+// API handler: one-liner lookup by public ID
 func GetUser(db *relica.DB, publicID string) (User, error) {
     var user User
-    err := db.Select().From("users").
-        Where(relica.Eq("public_id", publicID)).
-        One(&user)
+    err := db.Model(&user).FindByPublicID(publicID)
     return user, err
 }
 
-// Internal queries: use integer PK for joins
+// Wrong prefix → safe error (prevents cross-model lookups):
+err := db.Model(&user).FindByPublicID("ord_019078fa-...")
+// errors.Is(err, relica.ErrAutoIDPrefixMismatch) == true
+
+// Internal queries: use integer PK for joins (8 bytes, optimal)
 db.Select("u.name", "o.total").
     From("users u").
     InnerJoin("orders o", relica.EqCol("o.user_id", "u.id")).
@@ -702,10 +701,8 @@ CREATE TABLE users (
 CREATE INDEX idx_users_public_id ON users(public_id);
 ```
 
-**Pros**: Optimal B-tree for PK, compact 8-byte FK references, external ID can change strategy without PK migration, no information disclosure.
-**Cons**: Extra column + index (24 bytes/row overhead), two lookup paths (discipline required), slightly more code.
-
-> **Why not built-in?** Dual-key is an application-level pattern, not a query builder concern. The business prefix (`usr_`, `ord_`, `cus_`) and generation strategy belong in your service layer. Relica's Model API already handles both keys naturally — integer PK auto-populates, and the public ID is just another field you set before insert.
+**Pros**: Optimal B-tree for PK, compact 8-byte FK references, external ID can change strategy without PK migration, no information disclosure, zero boilerplate with `autoid` tag.
+**Cons**: Extra column + index (24 bytes/row overhead), two lookup paths.
 
 ### Decision Matrix
 

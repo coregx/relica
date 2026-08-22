@@ -2,11 +2,10 @@ package core
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/coregx/relica/internal/util"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // TestInsertStruct_SkipsZeroPK verifies that InsertStruct excludes zero PK
@@ -25,27 +24,51 @@ func TestInsertStruct_SkipsZeroPK(t *testing.T) {
 	dataMap, _ := util.StructToMap(user)
 
 	// Before fix: dataMap includes "id" with value 0
-	assert.Contains(t, dataMap, "id", "StructToMap should include id")
+	if _, ok := dataMap["id"]; !ok {
+		t.Errorf("StructToMap should include id")
+	}
 
 	// Simulate the zero PK check (same logic as in db.go InsertStruct)
 	pkInfo, err := util.FindPrimaryKeyFields(testReflectValue(user))
-	require.NoError(t, err)
-	require.NotNil(t, pkInfo)
-	assert.True(t, pkInfo.IsSingle())
-	assert.True(t, util.IsPrimaryKeyZero(pkInfo.Values[0]))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pkInfo == nil {
+		t.Fatal("expected non-nil")
+	}
+	if !pkInfo.IsSingle() {
+		t.Error("expected true")
+	}
+	if !util.IsPrimaryKeyZero(pkInfo.Values[0]) {
+		t.Error("expected true")
+	}
 
 	// After deletion: "id" should be removed
 	delete(dataMap, pkInfo.Columns[0])
-	assert.NotContains(t, dataMap, "id")
-	assert.Contains(t, dataMap, "name")
-	assert.Contains(t, dataMap, "email")
+	if _, ok := dataMap["id"]; ok {
+		t.Errorf("expected %q not in map", "id")
+	}
+	if _, ok := dataMap["name"]; !ok {
+		t.Errorf("expected %q in map", "name")
+	}
+	if _, ok := dataMap["email"]; !ok {
+		t.Errorf("expected %q in map", "email")
+	}
 
 	// Build query without PK
 	q := qb.Insert("users", dataMap)
-	assert.NotNil(t, q)
-	assert.NotContains(t, q.sql, `"id"`)
-	assert.Contains(t, q.sql, `"name"`)
-	assert.Contains(t, q.sql, `"email"`)
+	if q == nil {
+		t.Error("expected non-nil")
+	}
+	if strings.Contains(q.sql, `"id"`) {
+		t.Errorf("%q should not contain %q", q.sql, `"id"`)
+	}
+	if !strings.Contains(q.sql, `"name"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"name"`)
+	}
+	if !strings.Contains(q.sql, `"email"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"email"`)
+	}
 }
 
 // TestInsertStruct_KeepsNonZeroPK verifies that non-zero PK is kept.
@@ -59,8 +82,12 @@ func TestInsertStruct_KeepsNonZeroPK(t *testing.T) {
 	dataMap, _ := util.StructToMap(user)
 
 	pkInfo, _ := util.FindPrimaryKeyFields(testReflectValue(user))
-	assert.False(t, util.IsPrimaryKeyZero(pkInfo.Values[0]))
-	assert.Contains(t, dataMap, "id", "Non-zero PK should be kept")
+	if util.IsPrimaryKeyZero(pkInfo.Values[0]) {
+		t.Error("expected false")
+	}
+	if _, ok := dataMap["id"]; !ok {
+		t.Errorf("Non-zero PK should be kept: expected %q in map", "id")
+	}
 }
 
 // TestBatchInsertStruct_SkipsZeroPK verifies batch insert also excludes zero PK.
@@ -78,12 +105,20 @@ func TestBatchInsertStruct_SkipsZeroPK(t *testing.T) {
 	// First element check
 	dataMap, _ := util.StructToMap(items[0])
 	pkInfo, _ := util.FindPrimaryKeyFields(testReflectValue(items[0]))
-	require.NotNil(t, pkInfo)
-	assert.True(t, util.IsPrimaryKeyZero(pkInfo.Values[0]))
+	if pkInfo == nil {
+		t.Fatal("expected non-nil")
+	}
+	if !util.IsPrimaryKeyZero(pkInfo.Values[0]) {
+		t.Error("expected true")
+	}
 
 	delete(dataMap, pkInfo.Columns[0])
-	assert.NotContains(t, dataMap, "id")
-	assert.Contains(t, dataMap, "name")
+	if _, ok := dataMap["id"]; ok {
+		t.Errorf("expected %q not in map", "id")
+	}
+	if _, ok := dataMap["name"]; !ok {
+		t.Errorf("expected %q in map", "name")
+	}
 }
 
 // TestInsertStruct_CompositePK_NotSkipped verifies composite PK is never skipped.
@@ -98,12 +133,20 @@ func TestInsertStruct_CompositePK_NotSkipped(t *testing.T) {
 	dataMap, _ := util.StructToMap(oi)
 
 	pkInfo, _ := util.FindPrimaryKeyFields(testReflectValue(oi))
-	require.NotNil(t, pkInfo)
-	assert.False(t, pkInfo.IsSingle(), "Composite PK should not be single")
+	if pkInfo == nil {
+		t.Fatal("expected non-nil")
+	}
+	if pkInfo.IsSingle() {
+		t.Error("Composite PK should not be single: expected false")
+	}
 
 	// Both PK columns should remain
-	assert.Contains(t, dataMap, "order_id")
-	assert.Contains(t, dataMap, "item_id")
+	if _, ok := dataMap["order_id"]; !ok {
+		t.Errorf("expected %q in map", "order_id")
+	}
+	if _, ok := dataMap["item_id"]; !ok {
+		t.Errorf("expected %q in map", "item_id")
+	}
 }
 
 // helper

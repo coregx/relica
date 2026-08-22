@@ -1,11 +1,10 @@
 package core
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/coregx/relica/internal/dialects"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // =============================================================================
@@ -29,7 +28,9 @@ func TestSelectAliasQuoting_SimpleAlias(t *testing.T) {
 			db := mockDB(tt.dialect)
 			qb := &QueryBuilder{db: db}
 			q := qb.Select(tt.col).From("orders").Build()
-			assert.Contains(t, q.sql, tt.want)
+			if !strings.Contains(q.sql, tt.want) {
+				t.Errorf("%q does not contain %q", q.sql, tt.want)
+			}
 		})
 	}
 }
@@ -51,7 +52,9 @@ func TestSelectAliasQuoting_TableDotColumn(t *testing.T) {
 			db := mockDB(tt.dialect)
 			qb := &QueryBuilder{db: db}
 			q := qb.Select(tt.col).From("users u").Build()
-			assert.Contains(t, q.sql, tt.want)
+			if !strings.Contains(q.sql, tt.want) {
+				t.Errorf("%q does not contain %q", q.sql, tt.want)
+			}
 		})
 	}
 }
@@ -62,15 +65,21 @@ func TestSelectAliasQuoting_CaseInsensitive(t *testing.T) {
 
 	// lowercase "as"
 	q := qb.Select("name as display").From("users").Build()
-	assert.Contains(t, q.sql, `"name" AS "display"`)
+	if !strings.Contains(q.sql, `"name" AS "display"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"name" AS "display"`)
+	}
 
 	// uppercase "AS"
 	q = qb.Select("name AS display").From("users").Build()
-	assert.Contains(t, q.sql, `"name" AS "display"`)
+	if !strings.Contains(q.sql, `"name" AS "display"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"name" AS "display"`)
+	}
 
 	// mixed "As"
 	q = qb.Select("name As display").From("users").Build()
-	assert.Contains(t, q.sql, `"name" AS "display"`)
+	if !strings.Contains(q.sql, `"name" AS "display"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"name" AS "display"`)
+	}
 }
 
 func TestSelectAliasQuoting_NoAlias(t *testing.T) {
@@ -79,8 +88,12 @@ func TestSelectAliasQuoting_NoAlias(t *testing.T) {
 
 	// Regular column — no AS, should be quoted normally
 	q := qb.Select("name").From("users").Build()
-	assert.Contains(t, q.sql, `"name"`)
-	assert.NotContains(t, q.sql, "AS")
+	if !strings.Contains(q.sql, `"name"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"name"`)
+	}
+	if strings.Contains(q.sql, "AS") {
+		t.Errorf("%q should not contain %q", q.sql, "AS")
+	}
 }
 
 func TestSelectAliasQuoting_FunctionWithAlias(t *testing.T) {
@@ -89,7 +102,9 @@ func TestSelectAliasQuoting_FunctionWithAlias(t *testing.T) {
 
 	// Function call with AS — should pass through (has parentheses)
 	q := qb.Select("COUNT(*) AS total").From("users").Build()
-	assert.Contains(t, q.sql, "COUNT(*) AS total")
+	if !strings.Contains(q.sql, "COUNT(*) AS total") {
+		t.Errorf("%q does not contain %q", q.sql, "COUNT(*) AS total")
+	}
 }
 
 // =============================================================================
@@ -115,7 +130,9 @@ func TestQuoteColumn_FunctionCallGuard(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := quoteColumn(tt.input, d)
-			assert.Equal(t, tt.want, got)
+			if got != tt.want {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
 		})
 	}
 }
@@ -130,8 +147,12 @@ func TestOrderBy_FunctionCall_NotQuoted(t *testing.T) {
 		OrderBy("COUNT(*) DESC").
 		Build()
 
-	assert.Contains(t, q.sql, "ORDER BY COUNT(*) DESC")
-	assert.NotContains(t, q.sql, `"COUNT(*)"`)
+	if !strings.Contains(q.sql, "ORDER BY COUNT(*) DESC") {
+		t.Errorf("%q does not contain %q", q.sql, "ORDER BY COUNT(*) DESC")
+	}
+	if strings.Contains(q.sql, `"COUNT(*)"`) {
+		t.Errorf("%q should not contain %q", q.sql, `"COUNT(*)"`)
+	}
 }
 
 func TestGroupBy_FunctionCall_NotQuoted(t *testing.T) {
@@ -143,8 +164,12 @@ func TestGroupBy_FunctionCall_NotQuoted(t *testing.T) {
 		GroupBy("DATE(created_at)").
 		Build()
 
-	assert.Contains(t, q.sql, "GROUP BY DATE(created_at)")
-	assert.NotContains(t, q.sql, `"DATE(created_at)"`)
+	if !strings.Contains(q.sql, "GROUP BY DATE(created_at)") {
+		t.Errorf("%q does not contain %q", q.sql, "GROUP BY DATE(created_at)")
+	}
+	if strings.Contains(q.sql, `"DATE(created_at)"`) {
+		t.Errorf("%q should not contain %q", q.sql, `"DATE(created_at)"`)
+	}
 }
 
 // =============================================================================
@@ -157,8 +182,12 @@ func TestOffsetWithoutLimit_EmitsMaxLimit(t *testing.T) {
 
 	q := qb.Select().From("users").Offset(100).Build()
 
-	assert.Contains(t, q.sql, "LIMIT 9223372036854775807")
-	assert.Contains(t, q.sql, "OFFSET 100")
+	if !strings.Contains(q.sql, "LIMIT 9223372036854775807") {
+		t.Errorf("%q does not contain %q", q.sql, "LIMIT 9223372036854775807")
+	}
+	if !strings.Contains(q.sql, "OFFSET 100") {
+		t.Errorf("%q does not contain %q", q.sql, "OFFSET 100")
+	}
 }
 
 func TestOffsetWithLimit_NoMaxLimit(t *testing.T) {
@@ -167,9 +196,15 @@ func TestOffsetWithLimit_NoMaxLimit(t *testing.T) {
 
 	q := qb.Select().From("users").Limit(10).Offset(20).Build()
 
-	assert.Contains(t, q.sql, "LIMIT 10")
-	assert.Contains(t, q.sql, "OFFSET 20")
-	assert.NotContains(t, q.sql, "9223372036854775807")
+	if !strings.Contains(q.sql, "LIMIT 10") {
+		t.Errorf("%q does not contain %q", q.sql, "LIMIT 10")
+	}
+	if !strings.Contains(q.sql, "OFFSET 20") {
+		t.Errorf("%q does not contain %q", q.sql, "OFFSET 20")
+	}
+	if strings.Contains(q.sql, "9223372036854775807") {
+		t.Errorf("%q should not contain %q", q.sql, "9223372036854775807")
+	}
 }
 
 func TestLimitOnly_NoOffset(t *testing.T) {
@@ -178,8 +213,12 @@ func TestLimitOnly_NoOffset(t *testing.T) {
 
 	q := qb.Select().From("users").Limit(10).Build()
 
-	assert.Contains(t, q.sql, "LIMIT 10")
-	assert.NotContains(t, q.sql, "OFFSET")
+	if !strings.Contains(q.sql, "LIMIT 10") {
+		t.Errorf("%q does not contain %q", q.sql, "LIMIT 10")
+	}
+	if strings.Contains(q.sql, "OFFSET") {
+		t.Errorf("%q should not contain %q", q.sql, "OFFSET")
+	}
 }
 
 // =============================================================================
@@ -195,11 +234,21 @@ func TestAndSelect_AppendsColumns(t *testing.T) {
 		AndSelect("phone", "address").
 		Build()
 
-	assert.Contains(t, q.sql, `"id"`)
-	assert.Contains(t, q.sql, `"name"`)
-	assert.Contains(t, q.sql, `"email"`)
-	assert.Contains(t, q.sql, `"phone"`)
-	assert.Contains(t, q.sql, `"address"`)
+	if !strings.Contains(q.sql, `"id"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"id"`)
+	}
+	if !strings.Contains(q.sql, `"name"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"name"`)
+	}
+	if !strings.Contains(q.sql, `"email"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"email"`)
+	}
+	if !strings.Contains(q.sql, `"phone"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"phone"`)
+	}
+	if !strings.Contains(q.sql, `"address"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"address"`)
+	}
 }
 
 func TestAndSelect_ConditionalPattern(t *testing.T) {
@@ -218,8 +267,12 @@ func TestAndSelect_ConditionalPattern(t *testing.T) {
 	}
 	built := q.Build()
 
-	assert.Contains(t, built.sql, `"email"`)
-	assert.NotContains(t, built.sql, `"phone"`)
+	if !strings.Contains(built.sql, `"email"`) {
+		t.Errorf("%q does not contain %q", built.sql, `"email"`)
+	}
+	if strings.Contains(built.sql, `"phone"`) {
+		t.Errorf("%q should not contain %q", built.sql, `"phone"`)
+	}
 }
 
 func TestAndSelect_WithTableAlias(t *testing.T) {
@@ -230,8 +283,12 @@ func TestAndSelect_WithTableAlias(t *testing.T) {
 		AndSelect("u.name AS display_name").
 		Build()
 
-	assert.Contains(t, q.sql, `"u"."id"`)
-	assert.Contains(t, q.sql, `"u"."name" AS "display_name"`)
+	if !strings.Contains(q.sql, `"u"."id"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"u"."id"`)
+	}
+	if !strings.Contains(q.sql, `"u"."name" AS "display_name"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"u"."name" AS "display_name"`)
+	}
 }
 
 func TestAndSelect_EmptyInitialSelect(t *testing.T) {
@@ -244,9 +301,15 @@ func TestAndSelect_EmptyInitialSelect(t *testing.T) {
 		Build()
 
 	// When AndSelect adds columns, they should appear (no more *)
-	require.NotNil(t, q)
-	assert.Contains(t, q.sql, `"id"`)
-	assert.Contains(t, q.sql, `"name"`)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
+	if !strings.Contains(q.sql, `"id"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"id"`)
+	}
+	if !strings.Contains(q.sql, `"name"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"name"`)
+	}
 }
 
 // =============================================================================
@@ -267,18 +330,30 @@ func TestCombined_RealWorldQuery(t *testing.T) {
 		Build()
 
 	// Column with alias properly quoted
-	assert.Contains(t, q.sql, `"c"."name" AS "company_name"`)
+	if !strings.Contains(q.sql, `"c"."name" AS "company_name"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"c"."name" AS "company_name"`)
+	}
 
 	// Function call NOT quoted in ORDER BY
-	assert.Contains(t, q.sql, "ORDER BY COUNT(e.id) DESC")
-	assert.NotContains(t, q.sql, `"COUNT(e.id)"`)
+	if !strings.Contains(q.sql, "ORDER BY COUNT(e.id) DESC") {
+		t.Errorf("%q does not contain %q", q.sql, "ORDER BY COUNT(e.id) DESC")
+	}
+	if strings.Contains(q.sql, `"COUNT(e.id)"`) {
+		t.Errorf("%q should not contain %q", q.sql, `"COUNT(e.id)"`)
+	}
 
 	// Function call with AS in SELECT passed through
-	assert.Contains(t, q.sql, "COUNT(e.id) AS employee_count")
+	if !strings.Contains(q.sql, "COUNT(e.id) AS employee_count") {
+		t.Errorf("%q does not contain %q", q.sql, "COUNT(e.id) AS employee_count")
+	}
 
 	// GROUP BY columns quoted
-	assert.Contains(t, q.sql, `"c"."id"`)
+	if !strings.Contains(q.sql, `"c"."id"`) {
+		t.Errorf("%q does not contain %q", q.sql, `"c"."id"`)
+	}
 
 	// HAVING works
-	assert.Contains(t, q.sql, "HAVING COUNT(e.id) > ")
+	if !strings.Contains(q.sql, "HAVING COUNT(e.id) > ") {
+		t.Errorf("%q does not contain %q", q.sql, "HAVING COUNT(e.id) > ")
+	}
 }

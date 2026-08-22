@@ -2,9 +2,6 @@ package core
 
 import (
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // TestBatchInsert_PostgreSQL tests batch INSERT SQL generation for PostgreSQL.
@@ -18,25 +15,36 @@ func TestBatchInsert_PostgreSQL(t *testing.T) {
 		Values("Charlie", "charlie@example.com")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify SQL structure
 	sql := q.sql
-	assert.Contains(t, sql, `INSERT INTO "users"`)
-	assert.Contains(t, sql, `("name", "email")`)
-	assert.Contains(t, sql, "VALUES")
-	assert.Contains(t, sql, "($1, $2)")
-	assert.Contains(t, sql, "($3, $4)")
-	assert.Contains(t, sql, "($5, $6)")
+	checks := []string{
+		`INSERT INTO "users"`,
+		`("name", "email")`,
+		"VALUES",
+		"($1, $2)",
+		"($3, $4)",
+		"($5, $6)",
+	}
+	for _, s := range checks {
+		if !containsStr(sql, s) {
+			t.Errorf("%q does not contain %q", sql, s)
+		}
+	}
 
 	// Verify parameters
-	assert.Len(t, q.params, 6)
-	assert.Equal(t, "Alice", q.params[0])
-	assert.Equal(t, "alice@example.com", q.params[1])
-	assert.Equal(t, "Bob", q.params[2])
-	assert.Equal(t, "bob@example.com", q.params[3])
-	assert.Equal(t, "Charlie", q.params[4])
-	assert.Equal(t, "charlie@example.com", q.params[5])
+	if len(q.params) != 6 {
+		t.Errorf("expected length %d, got %d", 6, len(q.params))
+	}
+	wantParams := []interface{}{"Alice", "alice@example.com", "Bob", "bob@example.com", "Charlie", "charlie@example.com"}
+	for i, want := range wantParams {
+		if q.params[i] != want {
+			t.Errorf("param[%d]: got %v, want %v", i, q.params[i], want)
+		}
+	}
 }
 
 // TestBatchInsert_MySQL tests batch INSERT SQL generation for MySQL.
@@ -49,18 +57,33 @@ func TestBatchInsert_MySQL(t *testing.T) {
 		Values("Bob", "bob@example.com")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify SQL structure
 	sql := q.sql
-	assert.Contains(t, sql, "INSERT INTO `users`")
-	assert.Contains(t, sql, "(`name`, `email`)")
-	assert.Contains(t, sql, "VALUES (?, ?), (?, ?)")
+	checks := []string{
+		"INSERT INTO `users`",
+		"(`name`, `email`)",
+		"VALUES (?, ?), (?, ?)",
+	}
+	for _, s := range checks {
+		if !containsStr(sql, s) {
+			t.Errorf("%q does not contain %q", sql, s)
+		}
+	}
 
 	// Verify parameters
-	assert.Len(t, q.params, 4)
-	assert.Equal(t, "Alice", q.params[0])
-	assert.Equal(t, "alice@example.com", q.params[1])
+	if len(q.params) != 4 {
+		t.Errorf("expected length %d, got %d", 4, len(q.params))
+	}
+	if q.params[0] != "Alice" {
+		t.Errorf("got %v, want %v", q.params[0], "Alice")
+	}
+	if q.params[1] != "alice@example.com" {
+		t.Errorf("got %v, want %v", q.params[1], "alice@example.com")
+	}
 }
 
 // TestBatchInsert_SQLite tests batch INSERT SQL generation for SQLite.
@@ -73,19 +96,36 @@ func TestBatchInsert_SQLite(t *testing.T) {
 		Values("Gadget", 19.99, 50)
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify SQL structure
 	sql := q.sql
-	assert.Contains(t, sql, `INSERT INTO "products"`)
-	assert.Contains(t, sql, `("name", "price", "stock")`)
-	assert.Contains(t, sql, "VALUES (?, ?, ?), (?, ?, ?)")
+	checks := []string{
+		`INSERT INTO "products"`,
+		`("name", "price", "stock")`,
+		"VALUES (?, ?, ?), (?, ?, ?)",
+	}
+	for _, s := range checks {
+		if !containsStr(sql, s) {
+			t.Errorf("%q does not contain %q", sql, s)
+		}
+	}
 
 	// Verify parameters
-	assert.Len(t, q.params, 6)
-	assert.Equal(t, "Widget", q.params[0])
-	assert.Equal(t, 9.99, q.params[1])
-	assert.Equal(t, 100, q.params[2])
+	if len(q.params) != 6 {
+		t.Errorf("expected length %d, got %d", 6, len(q.params))
+	}
+	if q.params[0] != "Widget" {
+		t.Errorf("got %v, want %v", q.params[0], "Widget")
+	}
+	if q.params[1] != 9.99 {
+		t.Errorf("got %v, want %v", q.params[1], 9.99)
+	}
+	if q.params[2] != 100 {
+		t.Errorf("got %v, want %v", q.params[2], 100)
+	}
 }
 
 // TestBatchInsert_SingleRow tests batch INSERT with a single row.
@@ -97,10 +137,16 @@ func TestBatchInsert_SingleRow(t *testing.T) {
 		Values("Alice")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, q.sql, "VALUES ($1)")
-	assert.Len(t, q.params, 1)
+	if !containsStr(q.sql, "VALUES ($1)") {
+		t.Errorf("%q does not contain %q", q.sql, "VALUES ($1)")
+	}
+	if len(q.params) != 1 {
+		t.Errorf("expected length %d, got %d", 1, len(q.params))
+	}
 }
 
 // TestBatchInsert_MultipleRows tests batch INSERT with many rows.
@@ -114,10 +160,14 @@ func TestBatchInsert_MultipleRows(t *testing.T) {
 	}
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Should have 100 rows
-	assert.Len(t, q.params, 200) // 100 rows * 2 columns
+	if len(q.params) != 200 { // 100 rows * 2 columns
+		t.Errorf("expected length %d, got %d", 200, len(q.params))
+	}
 }
 
 // TestBatchInsert_ValuesMap tests batch INSERT with map-based values.
@@ -136,15 +186,27 @@ func TestBatchInsert_ValuesMap(t *testing.T) {
 		})
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify columns are in correct order
-	assert.Contains(t, q.sql, `("email", "name")`)
+	if !containsStr(q.sql, `("email", "name")`) {
+		t.Errorf("%q does not contain %q", q.sql, `("email", "name")`)
+	}
 	// Verify parameters are in correct order (email, name)
-	assert.Equal(t, "alice@example.com", q.params[0])
-	assert.Equal(t, "Alice", q.params[1])
-	assert.Equal(t, "bob@example.com", q.params[2])
-	assert.Equal(t, "Bob", q.params[3])
+	if q.params[0] != "alice@example.com" {
+		t.Errorf("got %v, want %v", q.params[0], "alice@example.com")
+	}
+	if q.params[1] != "Alice" {
+		t.Errorf("got %v, want %v", q.params[1], "Alice")
+	}
+	if q.params[2] != "bob@example.com" {
+		t.Errorf("got %v, want %v", q.params[2], "bob@example.com")
+	}
+	if q.params[3] != "Bob" {
+		t.Errorf("got %v, want %v", q.params[3], "Bob")
+	}
 }
 
 // TestBatchInsert_ValuesMap_MissingColumn tests map with missing columns (should use nil).
@@ -160,12 +222,22 @@ func TestBatchInsert_ValuesMap_MissingColumn(t *testing.T) {
 		})
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Len(t, q.params, 3)
-	assert.Equal(t, "Alice", q.params[0])
-	assert.Equal(t, "alice@example.com", q.params[1])
-	assert.Nil(t, q.params[2]) // Missing age should be nil
+	if len(q.params) != 3 {
+		t.Errorf("expected length %d, got %d", 3, len(q.params))
+	}
+	if q.params[0] != "Alice" {
+		t.Errorf("got %v, want %v", q.params[0], "Alice")
+	}
+	if q.params[1] != "alice@example.com" {
+		t.Errorf("got %v, want %v", q.params[1], "alice@example.com")
+	}
+	if q.params[2] != nil { // Missing age should be nil
+		t.Errorf("expected nil, got %v", q.params[2])
+	}
 }
 
 // TestBatchInsert_EmptyPanic tests that building without rows returns an error
@@ -176,8 +248,12 @@ func TestBatchInsert_EmptyPanic(t *testing.T) {
 
 	query := qb.BatchInsert("users", []string{"name"})
 	q := query.Build()
-	assert.NotNil(t, q.prepErr, "Build with no rows must store an error")
-	assert.ErrorContains(t, q.prepErr, "BatchInsert")
+	if q.prepErr == nil {
+		t.Error("Build with no rows must store an error")
+	}
+	if !containsStr(q.prepErr.Error(), "BatchInsert") {
+		t.Errorf("%q does not contain %q", q.prepErr.Error(), "BatchInsert")
+	}
 }
 
 // TestBatchInsert_WrongValueCount tests that wrong value count stores an error
@@ -189,13 +265,21 @@ func TestBatchInsert_WrongValueCount(t *testing.T) {
 	query := qb.BatchInsert("users", []string{"name", "email"})
 
 	query.Values("Alice") // Only 1 value, expected 2
-	assert.NotNil(t, query.buildErr, "wrong value count must store build error")
-	assert.ErrorContains(t, query.buildErr, "BatchInsert.Values")
+	if query.buildErr == nil {
+		t.Error("wrong value count must store build error")
+	}
+	if !containsStr(query.buildErr.Error(), "BatchInsert.Values") {
+		t.Errorf("%q does not contain %q", query.buildErr.Error(), "BatchInsert.Values")
+	}
 
 	query2 := qb.BatchInsert("users", []string{"name", "email"})
 	query2.Values("Alice", "alice@example.com", "extra") // 3 values, expected 2
-	assert.NotNil(t, query2.buildErr, "too many values must store build error")
-	assert.ErrorContains(t, query2.buildErr, "BatchInsert.Values")
+	if query2.buildErr == nil {
+		t.Error("too many values must store build error")
+	}
+	if !containsStr(query2.buildErr.Error(), "BatchInsert.Values") {
+		t.Errorf("%q does not contain %q", query2.buildErr.Error(), "BatchInsert.Values")
+	}
 }
 
 // TestBatchUpdate_PostgreSQL tests batch UPDATE SQL generation for PostgreSQL.
@@ -209,20 +293,31 @@ func TestBatchUpdate_PostgreSQL(t *testing.T) {
 		Set(3, map[string]interface{}{"name": "Charlie Updated", "status": "inactive"})
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify SQL structure
 	sql := q.sql
-	assert.Contains(t, sql, `UPDATE "users"`)
-	assert.Contains(t, sql, `SET`)
-	assert.Contains(t, sql, `"name" = CASE "id"`)
-	assert.Contains(t, sql, `"status" = CASE "id"`)
-	assert.Contains(t, sql, `WHEN $1 THEN $2`)
-	assert.Contains(t, sql, `WHERE "id" IN ($13, $14, $15)`)
+	checks := []string{
+		`UPDATE "users"`,
+		`SET`,
+		`"name" = CASE "id"`,
+		`"status" = CASE "id"`,
+		`WHEN $1 THEN $2`,
+		`WHERE "id" IN ($13, $14, $15)`,
+	}
+	for _, s := range checks {
+		if !containsStr(sql, s) {
+			t.Errorf("%q does not contain %q", sql, s)
+		}
+	}
 
 	// Verify we have the right number of parameters
 	// 3 rows * 2 columns * 2 params (key + value) + 3 WHERE IN params = 15
-	assert.Len(t, q.params, 15)
+	if len(q.params) != 15 {
+		t.Errorf("expected length %d, got %d", 15, len(q.params))
+	}
 }
 
 // TestBatchUpdate_MySQL tests batch UPDATE SQL generation for MySQL.
@@ -235,13 +330,22 @@ func TestBatchUpdate_MySQL(t *testing.T) {
 		Set(2, map[string]interface{}{"name": "Bob", "email": "bob@new.com"})
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	sql := q.sql
-	assert.Contains(t, sql, "UPDATE `users`")
-	assert.Contains(t, sql, "`name` = CASE `id`")
-	assert.Contains(t, sql, "`email` = CASE `id`")
-	assert.Contains(t, sql, "WHERE `id` IN (?, ?)")
+	checks := []string{
+		"UPDATE `users`",
+		"`name` = CASE `id`",
+		"`email` = CASE `id`",
+		"WHERE `id` IN (?, ?)",
+	}
+	for _, s := range checks {
+		if !containsStr(sql, s) {
+			t.Errorf("%q does not contain %q", sql, s)
+		}
+	}
 }
 
 // TestBatchUpdate_SQLite tests batch UPDATE SQL generation for SQLite.
@@ -254,11 +358,17 @@ func TestBatchUpdate_SQLite(t *testing.T) {
 		Set(2, map[string]interface{}{"price": 20.99})
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	sql := q.sql
-	assert.Contains(t, sql, `UPDATE "products"`)
-	assert.Contains(t, sql, `"price" = CASE "id"`)
+	if !containsStr(sql, `UPDATE "products"`) {
+		t.Errorf("%q does not contain %q", sql, `UPDATE "products"`)
+	}
+	if !containsStr(sql, `"price" = CASE "id"`) {
+		t.Errorf("%q does not contain %q", sql, `"price" = CASE "id"`)
+	}
 }
 
 // TestBatchUpdate_SingleRow tests batch UPDATE with a single row.
@@ -270,12 +380,20 @@ func TestBatchUpdate_SingleRow(t *testing.T) {
 		Set(1, map[string]interface{}{"name": "Alice"})
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, q.sql, `UPDATE "users"`)
-	assert.Contains(t, q.sql, `WHERE "id" IN ($3)`)
+	if !containsStr(q.sql, `UPDATE "users"`) {
+		t.Errorf("%q does not contain %q", q.sql, `UPDATE "users"`)
+	}
+	if !containsStr(q.sql, `WHERE "id" IN ($3)`) {
+		t.Errorf("%q does not contain %q", q.sql, `WHERE "id" IN ($3)`)
+	}
 	// 1 row * 1 column * 2 params (key + value) + 1 WHERE IN = 3 params
-	assert.Len(t, q.params, 3)
+	if len(q.params) != 3 {
+		t.Errorf("expected length %d, got %d", 3, len(q.params))
+	}
 }
 
 // TestBatchUpdate_MultipleRows tests batch UPDATE with many rows.
@@ -289,10 +407,14 @@ func TestBatchUpdate_MultipleRows(t *testing.T) {
 	}
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// 50 rows * 1 column * 2 params (key + value) + 50 WHERE IN params = 150
-	assert.Len(t, q.params, 150)
+	if len(q.params) != 150 {
+		t.Errorf("expected length %d, got %d", 150, len(q.params))
+	}
 }
 
 // TestBatchUpdate_MultipleColumns tests batch UPDATE with multiple columns.
@@ -315,14 +437,23 @@ func TestBatchUpdate_MultipleColumns(t *testing.T) {
 		})
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	sql := q.sql
 	// Should have CASE for each column
-	assert.Contains(t, sql, `"age" = CASE "id"`)
-	assert.Contains(t, sql, `"email" = CASE "id"`)
-	assert.Contains(t, sql, `"name" = CASE "id"`)
-	assert.Contains(t, sql, `"status" = CASE "id"`)
+	checks := []string{
+		`"age" = CASE "id"`,
+		`"email" = CASE "id"`,
+		`"name" = CASE "id"`,
+		`"status" = CASE "id"`,
+	}
+	for _, s := range checks {
+		if !containsStr(sql, s) {
+			t.Errorf("%q does not contain %q", sql, s)
+		}
+	}
 }
 
 // TestBatchUpdate_DifferentColumns tests batch UPDATE where rows update different columns.
@@ -336,13 +467,22 @@ func TestBatchUpdate_DifferentColumns(t *testing.T) {
 		Set(3, map[string]interface{}{"name": "Charlie", "age": 35})                   // 2 columns (different from row 1)
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	sql := q.sql
 	// Should have CASE for all unique columns (age, email, name)
-	assert.Contains(t, sql, `"age" = CASE "id"`)
-	assert.Contains(t, sql, `"email" = CASE "id"`)
-	assert.Contains(t, sql, `"name" = CASE "id"`)
+	checks := []string{
+		`"age" = CASE "id"`,
+		`"email" = CASE "id"`,
+		`"name" = CASE "id"`,
+	}
+	for _, s := range checks {
+		if !containsStr(sql, s) {
+			t.Errorf("%q does not contain %q", sql, s)
+		}
+	}
 
 	// Row 2 only updates age, so only row 2's key should appear in age CASE
 	// This is complex to verify in generated SQL, but we can check param count
@@ -351,7 +491,9 @@ func TestBatchUpdate_DifferentColumns(t *testing.T) {
 	// Row 3: name+age (2*2=4 params)
 	// WHERE IN: 3 params
 	// Total: 4+2+4+3 = 13 params
-	assert.Len(t, q.params, 13)
+	if len(q.params) != 13 {
+		t.Errorf("expected length %d, got %d", 13, len(q.params))
+	}
 }
 
 // TestBatchUpdate_EmptyPanic tests that building without updates returns an error
@@ -362,8 +504,12 @@ func TestBatchUpdate_EmptyPanic(t *testing.T) {
 
 	query := qb.BatchUpdate("users", "id")
 	q := query.Build()
-	assert.NotNil(t, q.prepErr, "Build with no updates must store an error")
-	assert.ErrorContains(t, q.prepErr, "BatchUpdate")
+	if q.prepErr == nil {
+		t.Error("Build with no updates must store an error")
+	}
+	if !containsStr(q.prepErr.Error(), "BatchUpdate") {
+		t.Errorf("%q does not contain %q", q.prepErr.Error(), "BatchUpdate")
+	}
 }
 
 // TestBatchInsert_ChainedCalls tests method chaining for batch insert.
@@ -381,8 +527,12 @@ func TestBatchInsert_ChainedCalls(t *testing.T) {
 		})
 
 	q := query.Build()
-	require.NotNil(t, q)
-	assert.Len(t, q.params, 6) // 3 rows * 2 columns
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
+	if len(q.params) != 6 { // 3 rows * 2 columns
+		t.Errorf("expected length %d, got %d", 6, len(q.params))
+	}
 }
 
 // TestBatchUpdate_ChainedCalls tests method chaining for batch update.
@@ -397,8 +547,12 @@ func TestBatchUpdate_ChainedCalls(t *testing.T) {
 		Set(3, map[string]interface{}{"name": "Charlie"})
 
 	q := query.Build()
-	require.NotNil(t, q)
-	assert.Contains(t, q.sql, "WHERE")
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
+	if !containsStr(q.sql, "WHERE") {
+		t.Errorf("%q does not contain %q", q.sql, "WHERE")
+	}
 }
 
 // TestBatchInsert_NullValues tests batch INSERT with NULL values.
@@ -411,11 +565,19 @@ func TestBatchInsert_NullValues(t *testing.T) {
 		Values("Bob", nil, 30)                     // email is NULL
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Len(t, q.params, 6)
-	assert.Nil(t, q.params[2]) // Alice's age
-	assert.Nil(t, q.params[4]) // Bob's email
+	if len(q.params) != 6 {
+		t.Errorf("expected length %d, got %d", 6, len(q.params))
+	}
+	if q.params[2] != nil { // Alice's age
+		t.Errorf("expected nil, got %v", q.params[2])
+	}
+	if q.params[4] != nil { // Bob's email
+		t.Errorf("expected nil, got %v", q.params[4])
+	}
 }
 
 // TestBatchUpdate_NullValues tests batch UPDATE with NULL values.
@@ -428,7 +590,9 @@ func TestBatchUpdate_NullValues(t *testing.T) {
 		Set(2, map[string]interface{}{"email": "bob@example.com"})
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Should contain NULL value in params
 	foundNull := false
@@ -438,7 +602,9 @@ func TestBatchUpdate_NullValues(t *testing.T) {
 			break
 		}
 	}
-	assert.True(t, foundNull, "Should have NULL parameter")
+	if !foundNull {
+		t.Error("Should have NULL parameter")
+	}
 }
 
 // TestBatchInsert_QuoteIdentifiers tests proper identifier quoting.
@@ -451,12 +617,17 @@ func TestBatchInsert_QuoteIdentifiers(t *testing.T) {
 		Values("Alice", "alice@example.com")
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// PostgreSQL should quote with double quotes
-	assert.Contains(t, q.sql, `"user_table"`)
-	assert.Contains(t, q.sql, `"user_name"`)
-	assert.Contains(t, q.sql, `"user_email"`)
+	checks := []string{`"user_table"`, `"user_name"`, `"user_email"`}
+	for _, s := range checks {
+		if !containsStr(q.sql, s) {
+			t.Errorf("%q does not contain %q", q.sql, s)
+		}
+	}
 }
 
 // TestBatchUpdate_QuoteIdentifiers tests proper identifier quoting in UPDATE.
@@ -468,12 +639,17 @@ func TestBatchUpdate_QuoteIdentifiers(t *testing.T) {
 		Set(1, map[string]interface{}{"user_name": "Alice"})
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// MySQL should quote with backticks
-	assert.Contains(t, q.sql, "`user_table`")
-	assert.Contains(t, q.sql, "`user_id`")
-	assert.Contains(t, q.sql, "`user_name`")
+	checks := []string{"`user_table`", "`user_id`", "`user_name`"}
+	for _, s := range checks {
+		if !containsStr(q.sql, s) {
+			t.Errorf("%q does not contain %q", q.sql, s)
+		}
+	}
 }
 
 // TestBatchInsert_ColumnOrder tests that column order is preserved.
@@ -486,15 +662,25 @@ func TestBatchInsert_ColumnOrder(t *testing.T) {
 		Values("alice@example.com", "Alice", 30)
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// SQL should have columns in the specified order
-	assert.Contains(t, q.sql, `("email", "name", "age")`)
+	if !containsStr(q.sql, `("email", "name", "age")`) {
+		t.Errorf("%q does not contain %q", q.sql, `("email", "name", "age")`)
+	}
 
 	// Parameters should also be in correct order
-	assert.Equal(t, "alice@example.com", q.params[0])
-	assert.Equal(t, "Alice", q.params[1])
-	assert.Equal(t, 30, q.params[2])
+	if q.params[0] != "alice@example.com" {
+		t.Errorf("got %v, want %v", q.params[0], "alice@example.com")
+	}
+	if q.params[1] != "Alice" {
+		t.Errorf("got %v, want %v", q.params[1], "Alice")
+	}
+	if q.params[2] != 30 {
+		t.Errorf("got %v, want %v", q.params[2], 30)
+	}
 }
 
 // TestBatchUpdate_ColumnOrder tests that columns are sorted for consistency.
@@ -511,7 +697,9 @@ func TestBatchUpdate_ColumnOrder(t *testing.T) {
 		})
 
 	q := query.Build()
-	require.NotNil(t, q)
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Columns should be sorted alphabetically in SQL
 	sql := q.sql
@@ -519,8 +707,12 @@ func TestBatchUpdate_ColumnOrder(t *testing.T) {
 	nameIndex := findIndex(sql, `"name"`)
 	zIndex := findIndex(sql, `"zzz"`)
 
-	assert.True(t, aIndex < nameIndex, "aaa should come before name")
-	assert.True(t, nameIndex < zIndex, "name should come before zzz")
+	if aIndex >= nameIndex {
+		t.Errorf("aaa should come before name")
+	}
+	if nameIndex >= zIndex {
+		t.Errorf("name should come before zzz")
+	}
 }
 
 // Helper function to find index of substring.
@@ -531,4 +723,9 @@ func findIndex(s, substr string) int {
 		}
 	}
 	return -1
+}
+
+// containsStr is a local helper to avoid import of strings in this file.
+func containsStr(s, sub string) bool {
+	return findIndex(s, sub) >= 0
 }

@@ -102,6 +102,17 @@ type QueryBuilder struct {
 	qb *core.QueryBuilder
 }
 
+// QueryPlan represents a unified query execution plan from database EXPLAIN.
+// It provides performance metrics, index usage analysis, and database-specific details.
+// Returned by [SelectQuery.Explain] and [SelectQuery.ExplainAnalyze].
+//
+// Fields populated by EXPLAIN (always available):
+//   - Cost, EstimatedRows, UsesIndex, IndexName, FullScan, RawOutput, Database
+//
+// Fields populated only by EXPLAIN ANALYZE (require actual execution):
+//   - ActualRows, ActualTime, BuffersHit, BuffersMiss, RowsExamined, RowsProduced
+type QueryPlan = core.QueryPlan
+
 // SelectQuery represents a SELECT query being built.
 //
 // SelectQuery supports a wide range of SQL features including:
@@ -185,6 +196,26 @@ type Tx struct {
 type ModelQuery struct {
 	mq *core.ModelQuery
 }
+
+// BeforeInserter is implemented by models that need pre-insert logic.
+// If a struct implements this interface, Model().Insert() and Model().Upsert()
+// call BeforeInsert() before autoid generation and query execution.
+//
+// Use cases: setting timestamps, generating custom IDs, validation.
+//
+// Example:
+//
+//	type User struct {
+//	    ID        int64     `db:"id,pk"`
+//	    PublicID  string    `db:"public_id,autoid:usr"`
+//	    CreatedAt time.Time `db:"created_at"`
+//	}
+//
+//	func (u *User) BeforeInsert() error {
+//	    u.CreatedAt = time.Now()
+//	    return nil
+//	}
+type BeforeInserter = core.BeforeInserter
 
 // Query represents a built query ready for execution.
 //
@@ -1334,6 +1365,25 @@ func (mq *ModelQuery) Table(name string) *ModelQuery {
 	return &ModelQuery{mq: mq.mq.Table(name)}
 }
 
+// FindByPublicID finds a record by its autoid-tagged field value.
+// Auto-detects the autoid column from struct tags and validates the prefix.
+//
+// This is the key method for the dual-key pattern: API handlers receive
+// a public ID from the request and use this one-liner to find the record.
+//
+// Example:
+//
+//	var user User
+//	err := db.Model(&user).FindByPublicID("usr_019078fa-b37e-7abc-...")
+//	// Equivalent to: SELECT * FROM users WHERE public_id = ? LIMIT 1
+//
+//	// Prefix mismatch returns ErrAutoIDPrefixMismatch:
+//	err = db.Model(&user).FindByPublicID("ord_019078fa-...")
+//	// Error: autoid: prefix mismatch
+func (mq *ModelQuery) FindByPublicID(publicID string) error {
+	return mq.mq.FindByPublicID(publicID)
+}
+
 // WithContext sets the context for this model operation.
 //
 // The context is propagated to the underlying query execution,
@@ -2090,6 +2140,41 @@ func (sq *SelectQuery) ToSQL() (string, []interface{}) {
 	return sq.sq.ToSQL()
 }
 
+// Explain analyzes the query execution plan without executing the query.
+// Returns [QueryPlan] with estimated metrics (cost, rows, index usage).
+// Supported databases: PostgreSQL, MySQL, SQLite.
+//
+// Example:
+//
+//	plan, err := db.Select("*").From("users").Where(relica.Eq("email", "alice@example.com")).Explain()
+//	if err != nil {
+//	    return err
+//	}
+//	fmt.Printf("Cost: %.2f, Rows: %d, Uses Index: %v\n",
+//	    plan.Cost, plan.EstimatedRows, plan.UsesIndex)
+func (sq *SelectQuery) Explain() (*QueryPlan, error) {
+	return sq.sq.Explain()
+}
+
+// ExplainAnalyze analyzes the query execution plan AND executes the query.
+// Returns [QueryPlan] with both estimated and actual execution metrics.
+// Supported databases: PostgreSQL, MySQL 8.0.18+.
+//
+// WARNING: This method ACTUALLY EXECUTES the query, including any side effects
+// (INSERT, UPDATE, DELETE in CTEs, triggers, etc.). Use with caution in production.
+//
+// Example:
+//
+//	plan, err := db.Select("*").From("users").Where(relica.Eq("status", 1)).ExplainAnalyze()
+//	if err != nil {
+//	    return err
+//	}
+//	fmt.Printf("Actual Time: %v, Actual Rows: %d, Buffers Hit: %d\n",
+//	    plan.ActualTime, plan.ActualRows, plan.BuffersHit)
+func (sq *SelectQuery) ExplainAnalyze() (*QueryPlan, error) {
+	return sq.sq.ExplainAnalyze()
+}
+
 // AsExpression converts a SelectQuery to an Expression for subquery use.
 //
 // Example:
@@ -2578,6 +2663,23 @@ func (q *Query) BindParams(params Params) *Query {
 	return q
 }
 
+// ToSQL returns the SQL string and parameters without executing the query.
+// This provides a consistent interface across all query types (Select, Insert, Update, Delete, Upsert).
+//
+// Example:
+//
+//	sql, params := db.Insert("users", map[string]interface{}{
+//	    "name": "Alice", "email": "alice@example.com",
+//	}).ToSQL()
+//	// sql: INSERT INTO "users" ("email", "name") VALUES ($1, $2)
+//	// params: [alice@example.com Alice]
+func (q *Query) ToSQL() (string, []interface{}) {
+	if q.q == nil {
+		return "", nil
+	}
+	return q.q.ToSQL()
+}
+
 // SQL returns the SQL query string.
 func (q *Query) SQL() string {
 	if q.q == nil {
@@ -2617,6 +2719,45 @@ func (q *Query) QueryParams() []interface{} {
 //	    // handle not found
 //	}
 var ErrNotFound = core.ErrNotFound
+
+// ErrAutoIDPrefixMismatch is returned by FindByPublicID when the provided ID's
+// prefix doesn't match the model's autoid tag prefix.
+// This prevents accidentally looking up an order ID in the users table.
+//
+// Example:
+//
+//	// User has autoid:usr, but we pass an order ID:
+//	err := db.Model(&user).FindByPublicID("ord_019078fa-...")
+//	if errors.Is(err, relica.ErrAutoIDPrefixMismatch) {
+//	    // wrong ID type for this model
+//	}
+var ErrAutoIDPrefixMismatch = util.ErrAutoIDPrefixMismatch
+
+// RegisterIDGenerator registers a custom ID generator for use with the autoid tag.
+// The default generator is UUID v7. Custom generators enable ULID, Snowflake, or any format.
+//
+// The generator function returns the ID body (without prefix).
+// The prefix is added automatically by Relica based on the autoid tag.
+//
+// Example:
+//
+//	// Register once at startup:
+//	relica.RegisterIDGenerator("ulid", func() string {
+//	    return ulid.Make().String()
+//	})
+//
+//	// Use in struct tag:
+//	type Event struct {
+//	    ID       int64  `db:"id,pk"`
+//	    PublicID string `db:"public_id,autoid:evt,gen=ulid"`
+//	}
+//
+//	event := Event{}
+//	db.Model(&event).Insert()
+//	// event.PublicID = "evt_01H9XZ..." (ULID with prefix)
+func RegisterIDGenerator(name string, fn func() string) {
+	util.RegisterIDGenerator(name, fn)
+}
 
 // IsUniqueViolation reports whether err represents a unique constraint violation.
 // Works with PostgreSQL, MySQL, and SQLite. Returns false for nil errors.

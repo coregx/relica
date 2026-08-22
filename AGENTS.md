@@ -348,6 +348,45 @@ type OrderItem struct {
 
 ---
 
+## AutoID — Dual-Key Pattern
+
+**Stripe-like prefixed IDs with auto-generation and lookup:**
+
+```go
+// Model definition — one tag:
+type User struct {
+    ID       int64  `db:"id,pk"`
+    PublicID string `db:"public_id,autoid:usr"`
+    Name     string `db:"name"`
+}
+
+// Insert — PublicID auto-generated:
+user := User{Name: "Alice"}
+db.Model(&user).Insert()
+// user.PublicID = "usr_019078fa-..."
+
+// Lookup by public ID:
+var found User
+db.Model(&found).FindByPublicID("usr_019078fa-...")
+
+// Wrong prefix → ErrAutoIDPrefixMismatch:
+db.Model(&found).FindByPublicID("ord_019078fa-...")
+
+// BeforeInserter hook:
+func (u *User) BeforeInsert() error {
+    u.CreatedAt = time.Now()
+    return nil
+}
+
+// Custom generator:
+relica.RegisterIDGenerator("ulid", func() string { return ulid.Make().String() })
+// Use: db:"public_id,autoid:evt,gen=ulid"
+```
+
+**Tag syntax**: `db:"column,autoid"` | `db:"column,autoid:prefix"` | `db:"column,autoid:prefix,gen=name"`
+
+---
+
 ## Query Helpers
 
 ### Exists / Count

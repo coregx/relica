@@ -5,10 +5,8 @@
 package core
 
 import (
+	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // ============================================================================
@@ -24,13 +22,26 @@ func TestSelectSub_ScalarSubquery_PostgreSQL(t *testing.T) {
 	q := qb.Select("id", "name").SelectSub(sub.AsExpression(), "order_count").From("users")
 
 	query := q.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, query.sql, `"id"`)
-	assert.Contains(t, query.sql, `"name"`)
-	assert.Contains(t, query.sql, `(SELECT COUNT(*) FROM "orders" WHERE user_id = $1) AS "order_count"`)
-	assert.Contains(t, query.sql, `FROM "users"`)
-	assert.Equal(t, []interface{}{42}, query.params)
+	if !strings.Contains(query.sql, `"id"`) {
+		t.Errorf("%q does not contain %q", query.sql, `"id"`)
+	}
+	if !strings.Contains(query.sql, `"name"`) {
+		t.Errorf("%q does not contain %q", query.sql, `"name"`)
+	}
+	if !strings.Contains(query.sql, `(SELECT COUNT(*) FROM "orders" WHERE user_id = $1) AS "order_count"`) {
+		t.Errorf("%q does not contain %q", query.sql, `(SELECT COUNT(*) FROM "orders" WHERE user_id = $1) AS "order_count"`)
+	}
+	if !strings.Contains(query.sql, `FROM "users"`) {
+		t.Errorf("%q does not contain %q", query.sql, `FROM "users"`)
+	}
+	want := []interface{}{42}
+	if len(query.params) != len(want) || query.params[0] != want[0] {
+		t.Errorf("got %v, want %v", query.params, want)
+	}
 }
 
 // TestSelectSub_ScalarSubquery_MySQL tests a scalar subquery with MySQL backtick quoting.
@@ -42,13 +53,26 @@ func TestSelectSub_ScalarSubquery_MySQL(t *testing.T) {
 	q := qb.Select("id", "name").SelectSub(sub.AsExpression(), "order_count").From("users")
 
 	query := q.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, query.sql, "`id`")
-	assert.Contains(t, query.sql, "`name`")
-	assert.Contains(t, query.sql, "(SELECT COUNT(*) FROM `orders` WHERE user_id = ?) AS `order_count`")
-	assert.Contains(t, query.sql, "FROM `users`")
-	assert.Equal(t, []interface{}{42}, query.params)
+	if !strings.Contains(query.sql, "`id`") {
+		t.Errorf("%q does not contain %q", query.sql, "`id`")
+	}
+	if !strings.Contains(query.sql, "`name`") {
+		t.Errorf("%q does not contain %q", query.sql, "`name`")
+	}
+	if !strings.Contains(query.sql, "(SELECT COUNT(*) FROM `orders` WHERE user_id = ?) AS `order_count`") {
+		t.Errorf("%q does not contain %q", query.sql, "(SELECT COUNT(*) FROM `orders` WHERE user_id = ?) AS `order_count`")
+	}
+	if !strings.Contains(query.sql, "FROM `users`") {
+		t.Errorf("%q does not contain %q", query.sql, "FROM `users`")
+	}
+	want := []interface{}{42}
+	if len(query.params) != len(want) || query.params[0] != want[0] {
+		t.Errorf("got %v, want %v", query.params, want)
+	}
 }
 
 // TestSelectSub_ScalarSubquery_SQLite tests a scalar subquery with SQLite double-quote quoting.
@@ -60,13 +84,26 @@ func TestSelectSub_ScalarSubquery_SQLite(t *testing.T) {
 	q := qb.Select("id", "name").SelectSub(sub.AsExpression(), "order_count").From("users")
 
 	query := q.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, query.sql, `"id"`)
-	assert.Contains(t, query.sql, `"name"`)
-	assert.Contains(t, query.sql, `(SELECT COUNT(*) FROM "orders" WHERE user_id = ?) AS "order_count"`)
-	assert.Contains(t, query.sql, `FROM "users"`)
-	assert.Equal(t, []interface{}{42}, query.params)
+	if !strings.Contains(query.sql, `"id"`) {
+		t.Errorf("%q does not contain %q", query.sql, `"id"`)
+	}
+	if !strings.Contains(query.sql, `"name"`) {
+		t.Errorf("%q does not contain %q", query.sql, `"name"`)
+	}
+	if !strings.Contains(query.sql, `(SELECT COUNT(*) FROM "orders" WHERE user_id = ?) AS "order_count"`) {
+		t.Errorf("%q does not contain %q", query.sql, `(SELECT COUNT(*) FROM "orders" WHERE user_id = ?) AS "order_count"`)
+	}
+	if !strings.Contains(query.sql, `FROM "users"`) {
+		t.Errorf("%q does not contain %q", query.sql, `FROM "users"`)
+	}
+	want := []interface{}{42}
+	if len(query.params) != len(want) || query.params[0] != want[0] {
+		t.Errorf("got %v, want %v", query.params, want)
+	}
 }
 
 // TestSelectSub_AggregateSubquery tests SUM/AVG aggregate subqueries in SELECT.
@@ -78,10 +115,17 @@ func TestSelectSub_AggregateSubquery(t *testing.T) {
 	q := qb.Select("id").SelectSub(sumSub.AsExpression(), "total_paid").From("users")
 
 	query := q.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, query.sql, `(SELECT SUM(amount) FROM "payments" WHERE status = $1) AS "total_paid"`)
-	assert.Equal(t, []interface{}{"paid"}, query.params)
+	if !strings.Contains(query.sql, `(SELECT SUM(amount) FROM "payments" WHERE status = $1) AS "total_paid"`) {
+		t.Errorf("%q does not contain %q", query.sql, `(SELECT SUM(amount) FROM "payments" WHERE status = $1) AS "total_paid"`)
+	}
+	want := []interface{}{"paid"}
+	if len(query.params) != len(want) || query.params[0] != want[0] {
+		t.Errorf("got %v, want %v", query.params, want)
+	}
 }
 
 // TestSelectSub_MultipleSubqueries tests multiple SelectSub calls in one query.
@@ -98,13 +142,23 @@ func TestSelectSub_MultipleSubqueries(t *testing.T) {
 		From("users")
 
 	query := q.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, query.sql, `(SELECT COUNT(*) FROM "orders" WHERE user_id = users.id) AS "order_count"`)
-	assert.Contains(t, query.sql, `(SELECT SUM(amount) FROM "payments" WHERE user_id = users.id) AS "total_amount"`)
+	if !strings.Contains(query.sql, `(SELECT COUNT(*) FROM "orders" WHERE user_id = users.id) AS "order_count"`) {
+		t.Errorf("%q does not contain %q", query.sql, `(SELECT COUNT(*) FROM "orders" WHERE user_id = users.id) AS "order_count"`)
+	}
+	if !strings.Contains(query.sql, `(SELECT SUM(amount) FROM "payments" WHERE user_id = users.id) AS "total_amount"`) {
+		t.Errorf("%q does not contain %q", query.sql, `(SELECT SUM(amount) FROM "payments" WHERE user_id = users.id) AS "total_amount"`)
+	}
 	// Both subqueries present in SELECT
-	assert.Contains(t, query.sql, `"id"`)
-	assert.Contains(t, query.sql, `"name"`)
+	if !strings.Contains(query.sql, `"id"`) {
+		t.Errorf("%q does not contain %q", query.sql, `"id"`)
+	}
+	if !strings.Contains(query.sql, `"name"`) {
+		t.Errorf("%q does not contain %q", query.sql, `"name"`)
+	}
 }
 
 // TestSelectSub_CombinedWithSelectColumns tests mixing SelectSub with regular Select columns.
@@ -118,10 +172,16 @@ func TestSelectSub_CombinedWithSelectColumns(t *testing.T) {
 		From("users")
 
 	query := q.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, query.sql, `"id", "name", "email"`)
-	assert.Contains(t, query.sql, `(SELECT COUNT(*) FROM "orders") AS "cnt"`)
+	if !strings.Contains(query.sql, `"id", "name", "email"`) {
+		t.Errorf("%q does not contain %q", query.sql, `"id", "name", "email"`)
+	}
+	if !strings.Contains(query.sql, `(SELECT COUNT(*) FROM "orders") AS "cnt"`) {
+		t.Errorf("%q does not contain %q", query.sql, `(SELECT COUNT(*) FROM "orders") AS "cnt"`)
+	}
 }
 
 // TestSelectSub_EmptyAlias_StoresError tests that empty alias is rejected gracefully.
@@ -134,8 +194,12 @@ func TestSelectSub_EmptyAlias_StoresError(t *testing.T) {
 
 	query := q.Build()
 	// The query should record a build error for empty alias
-	require.NotNil(t, query)
-	assert.NotNil(t, q.buildErr)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
+	if q.buildErr == nil {
+		t.Error("expected non-nil")
+	}
 }
 
 // TestSelectSub_CorrelatedWithEqCol tests the canonical correlated subquery pattern
@@ -151,12 +215,22 @@ func TestSelectSub_CorrelatedWithEqCol(t *testing.T) {
 		From("users")
 
 	query := q.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, query.sql, `SELECT "id", "name"`)
-	assert.Contains(t, query.sql, `(SELECT COUNT(*) FROM "orders" WHERE "orders"."user_id" = "users"."id") AS "order_count"`)
-	assert.Contains(t, query.sql, `FROM "users"`)
-	assert.Empty(t, query.params) // EqCol produces no bind parameters
+	if !strings.Contains(query.sql, `SELECT "id", "name"`) {
+		t.Errorf("%q does not contain %q", query.sql, `SELECT "id", "name"`)
+	}
+	if !strings.Contains(query.sql, `(SELECT COUNT(*) FROM "orders" WHERE "orders"."user_id" = "users"."id") AS "order_count"`) {
+		t.Errorf("%q does not contain %q", query.sql, `(SELECT COUNT(*) FROM "orders" WHERE "orders"."user_id" = "users"."id") AS "order_count"`)
+	}
+	if !strings.Contains(query.sql, `FROM "users"`) {
+		t.Errorf("%q does not contain %q", query.sql, `FROM "users"`)
+	}
+	if len(query.params) != 0 {
+		t.Errorf("EqCol produces no bind parameters: expected empty, got %d", len(query.params))
+	}
 }
 
 // TestSelectSub_ParameterOrdering_PostgreSQL verifies that subExpr params come before WHERE params.
@@ -170,16 +244,28 @@ func TestSelectSub_ParameterOrdering_PostgreSQL(t *testing.T) {
 	q := qb.Select("id").SelectSub(sub.AsExpression(), "cnt").From("users").Where("age > ?", 18)
 
 	query := q.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Params: [subquery param, WHERE param]
-	require.Len(t, query.params, 2)
-	assert.Equal(t, "active", query.params[0])
-	assert.Equal(t, 18, query.params[1])
+	if len(query.params) != 2 {
+		t.Fatalf("expected length %d, got %d", 2, len(query.params))
+	}
+	if query.params[0] != "active" {
+		t.Errorf("got %v, want %v", query.params[0], "active")
+	}
+	if query.params[1] != 18 {
+		t.Errorf("got %v, want %v", query.params[1], 18)
+	}
 
 	// Subquery uses $1, WHERE uses $2
-	assert.Contains(t, query.sql, "$1")
-	assert.Contains(t, query.sql, "$2")
+	if !strings.Contains(query.sql, "$1") {
+		t.Errorf("%q does not contain %q", query.sql, "$1")
+	}
+	if !strings.Contains(query.sql, "$2") {
+		t.Errorf("%q does not contain %q", query.sql, "$2")
+	}
 }
 
 // ============================================================================
@@ -188,7 +274,7 @@ func TestSelectSub_ParameterOrdering_PostgreSQL(t *testing.T) {
 
 // TestEqCol_SimpleColumns tests basic column equality without table prefix.
 func TestEqCol_SimpleColumns(t *testing.T) {
-	dialects := getDialects()
+	ds := getDialects()
 
 	tests := []struct {
 		name    string
@@ -223,16 +309,20 @@ func TestEqCol_SimpleColumns(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			exp := EqCol(tt.col1, tt.col2)
-			sql, args := exp.Build(dialects[tt.dialect])
-			assert.Equal(t, tt.wantSQL, sql)
-			assert.Nil(t, args)
+			sql, args := exp.Build(ds[tt.dialect])
+			if sql != tt.wantSQL {
+				t.Errorf("got %v, want %v", sql, tt.wantSQL)
+			}
+			if args != nil {
+				t.Errorf("expected nil, got %v", args)
+			}
 		})
 	}
 }
 
 // TestEqCol_TableAliasedColumns tests column equality with table.column notation.
 func TestEqCol_TableAliasedColumns(t *testing.T) {
-	dialects := getDialects()
+	ds := getDialects()
 
 	tests := []struct {
 		name    string
@@ -274,16 +364,20 @@ func TestEqCol_TableAliasedColumns(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			exp := EqCol(tt.col1, tt.col2)
-			sql, args := exp.Build(dialects[tt.dialect])
-			assert.Equal(t, tt.wantSQL, sql)
-			assert.Nil(t, args)
+			sql, args := exp.Build(ds[tt.dialect])
+			if sql != tt.wantSQL {
+				t.Errorf("got %v, want %v", sql, tt.wantSQL)
+			}
+			if args != nil {
+				t.Errorf("expected nil, got %v", args)
+			}
 		})
 	}
 }
 
 // TestNotEqCol tests column inequality expression.
 func TestNotEqCol_AllDialects(t *testing.T) {
-	dialects := getDialects()
+	ds := getDialects()
 
 	tests := []struct {
 		name    string
@@ -318,9 +412,13 @@ func TestNotEqCol_AllDialects(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			exp := NotEqCol(tt.col1, tt.col2)
-			sql, args := exp.Build(dialects[tt.dialect])
-			assert.Equal(t, tt.wantSQL, sql)
-			assert.Nil(t, args)
+			sql, args := exp.Build(ds[tt.dialect])
+			if sql != tt.wantSQL {
+				t.Errorf("got %v, want %v", sql, tt.wantSQL)
+			}
+			if args != nil {
+				t.Errorf("expected nil, got %v", args)
+			}
 		})
 	}
 }
@@ -332,8 +430,12 @@ func TestGreaterThanCol(t *testing.T) {
 	exp := GreaterThanCol("a.score", "b.score")
 	sql, args := exp.Build(dialect)
 
-	assert.Equal(t, `"a"."score" > "b"."score"`, sql)
-	assert.Nil(t, args)
+	if sql != `"a"."score" > "b"."score"` {
+		t.Errorf("got %v, want %v", sql, `"a"."score" > "b"."score"`)
+	}
+	if args != nil {
+		t.Errorf("expected nil, got %v", args)
+	}
 }
 
 // TestLessThanCol tests column less-than expression.
@@ -343,8 +445,12 @@ func TestLessThanCol(t *testing.T) {
 	exp := LessThanCol("a.created_at", "b.updated_at")
 	sql, args := exp.Build(dialect)
 
-	assert.Equal(t, `"a"."created_at" < "b"."updated_at"`, sql)
-	assert.Nil(t, args)
+	if sql != `"a"."created_at" < "b"."updated_at"` {
+		t.Errorf("got %v, want %v", sql, `"a"."created_at" < "b"."updated_at"`)
+	}
+	if args != nil {
+		t.Errorf("expected nil, got %v", args)
+	}
 }
 
 // TestEqCol_InWhereClause tests EqCol used inside a WHERE clause.
@@ -358,11 +464,20 @@ func TestEqCol_InWhereClause(t *testing.T) {
 		Where("o.status = ?", "active")
 
 	query := q.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, query.sql, `"o"."user_id" = "u"."id"`)
-	assert.Contains(t, query.sql, `o.status = $1`)
-	assert.Equal(t, []interface{}{"active"}, query.params)
+	if !strings.Contains(query.sql, `"o"."user_id" = "u"."id"`) {
+		t.Errorf("%q does not contain %q", query.sql, `"o"."user_id" = "u"."id"`)
+	}
+	if !strings.Contains(query.sql, `o.status = $1`) {
+		t.Errorf("%q does not contain %q", query.sql, `o.status = $1`)
+	}
+	want := []interface{}{"active"}
+	if len(query.params) != len(want) || query.params[0] != want[0] {
+		t.Errorf("got %v, want %v", query.params, want)
+	}
 }
 
 // TestEqCol_InJoinON tests EqCol used as an Expression in JOIN ON condition.
@@ -375,9 +490,13 @@ func TestEqCol_InJoinON(t *testing.T) {
 		InnerJoin("orders o", EqCol("o.user_id", "u.id"))
 
 	query := q.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, query.sql, `INNER JOIN "orders" AS "o" ON "o"."user_id" = "u"."id"`)
+	if !strings.Contains(query.sql, `INNER JOIN "orders" AS "o" ON "o"."user_id" = "u"."id"`) {
+		t.Errorf("%q does not contain %q", query.sql, `INNER JOIN "orders" AS "o" ON "o"."user_id" = "u"."id"`)
+	}
 }
 
 // TestEqCol_InJoinON_MySQL tests EqCol in JOIN ON with MySQL dialect.
@@ -390,9 +509,13 @@ func TestEqCol_InJoinON_MySQL(t *testing.T) {
 		InnerJoin("orders o", EqCol("o.user_id", "u.id"))
 
 	query := q.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, query.sql, "INNER JOIN `orders` AS `o` ON `o`.`user_id` = `u`.`id`")
+	if !strings.Contains(query.sql, "INNER JOIN `orders` AS `o` ON `o`.`user_id` = `u`.`id`") {
+		t.Errorf("%q does not contain %q", query.sql, "INNER JOIN `orders` AS `o` ON `o`.`user_id` = `u`.`id`")
+	}
 }
 
 // ============================================================================
@@ -414,13 +537,19 @@ func TestSelectSub_CorrelatedSubquery_FullPattern(t *testing.T) {
 		From("users")
 
 	query := q.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	expectedSQL := `SELECT "id", "name", ` +
 		`(SELECT COUNT(*) FROM "orders" WHERE "orders"."user_id" = "users"."id") AS "order_count" ` +
 		`FROM "users"`
-	assert.Equal(t, expectedSQL, query.sql)
-	assert.Empty(t, query.params)
+	if query.sql != expectedSQL {
+		t.Errorf("got %v, want %v", query.sql, expectedSQL)
+	}
+	if len(query.params) != 0 {
+		t.Errorf("expected empty, got %d", len(query.params))
+	}
 }
 
 // TestSelectSub_CorrelatedSubquery_MySQL tests the full pattern with MySQL dialect.
@@ -434,10 +563,16 @@ func TestSelectSub_CorrelatedSubquery_MySQL(t *testing.T) {
 		From("users")
 
 	query := q.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, query.sql, "(SELECT COUNT(*) FROM `orders` WHERE `orders`.`user_id` = `users`.`id`) AS `order_count`")
-	assert.Contains(t, query.sql, "FROM `users`")
+	if !strings.Contains(query.sql, "(SELECT COUNT(*) FROM `orders` WHERE `orders`.`user_id` = `users`.`id`) AS `order_count`") {
+		t.Errorf("%q does not contain %q", query.sql, "(SELECT COUNT(*) FROM `orders` WHERE `orders`.`user_id` = `users`.`id`) AS `order_count`")
+	}
+	if !strings.Contains(query.sql, "FROM `users`") {
+		t.Errorf("%q does not contain %q", query.sql, "FROM `users`")
+	}
 }
 
 // TestSelectSub_CorrelatedSubquery_SQLite tests the full pattern with SQLite dialect.
@@ -451,10 +586,16 @@ func TestSelectSub_CorrelatedSubquery_SQLite(t *testing.T) {
 		From("users")
 
 	query := q.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, query.sql, `(SELECT COUNT(*) FROM "orders" WHERE "orders"."user_id" = "users"."id") AS "order_count"`)
-	assert.Contains(t, query.sql, `FROM "users"`)
+	if !strings.Contains(query.sql, `(SELECT COUNT(*) FROM "orders" WHERE "orders"."user_id" = "users"."id") AS "order_count"`) {
+		t.Errorf("%q does not contain %q", query.sql, `(SELECT COUNT(*) FROM "orders" WHERE "orders"."user_id" = "users"."id") AS "order_count"`)
+	}
+	if !strings.Contains(query.sql, `FROM "users"`) {
+		t.Errorf("%q does not contain %q", query.sql, `FROM "users"`)
+	}
 }
 
 // TestSelectSub_MultipleWithParams tests multiple subqueries each with parameters,
@@ -473,16 +614,32 @@ func TestSelectSub_MultipleWithParams_PostgreSQL(t *testing.T) {
 		Where("active = ?", true)
 
 	query := q.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Params: [sub1.param, sub2.param, WHERE.param]
-	require.Len(t, query.params, 3)
-	assert.Equal(t, "paid", query.params[0])
-	assert.Equal(t, "credit", query.params[1])
-	assert.Equal(t, true, query.params[2])
+	if len(query.params) != 3 {
+		t.Fatalf("expected length %d, got %d", 3, len(query.params))
+	}
+	if query.params[0] != "paid" {
+		t.Errorf("got %v, want %v", query.params[0], "paid")
+	}
+	if query.params[1] != "credit" {
+		t.Errorf("got %v, want %v", query.params[1], "credit")
+	}
+	if query.params[2] != true {
+		t.Errorf("got %v, want %v", query.params[2], true)
+	}
 
 	// Each placeholder renumbered correctly
-	assert.Contains(t, query.sql, "$1")
-	assert.Contains(t, query.sql, "$2")
-	assert.Contains(t, query.sql, "$3")
+	if !strings.Contains(query.sql, "$1") {
+		t.Errorf("%q does not contain %q", query.sql, "$1")
+	}
+	if !strings.Contains(query.sql, "$2") {
+		t.Errorf("%q does not contain %q", query.sql, "$2")
+	}
+	if !strings.Contains(query.sql, "$3") {
+		t.Errorf("%q does not contain %q", query.sql, "$3")
+	}
 }

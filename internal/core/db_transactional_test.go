@@ -360,14 +360,15 @@ func TestTransactional_CommitError(t *testing.T) {
 	t.Skip("Commit error testing requires specific database state manipulation")
 }
 
-// setupReplicaDB creates a Relica DB instance for testing.
+// setupReplicaDB creates a Relica DB instance for testing using the in-memory test driver.
 func setupReplicaDB(t *testing.T) *DB {
 	t.Helper()
 
-	db, err := NewDB("sqlite", ":memory:")
+	sqlDB, err := sql.Open("memdb", ":memory:")
 	if err != nil {
-		t.Fatalf("Failed to create test DB: %v", err)
+		t.Fatalf("Failed to open test DB: %v", err)
 	}
+	t.Cleanup(func() { sqlDB.Close() })
 
-	return db
+	return WrapDB(sqlDB, "sqlite")
 }

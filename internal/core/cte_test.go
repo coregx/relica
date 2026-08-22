@@ -1,10 +1,8 @@
 package core
 
 import (
+	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // ============================================================================
@@ -28,14 +26,27 @@ func TestWith_SingleCTE(t *testing.T) {
 		Where("total > ?", 1000)
 
 	query := main.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify WITH clause structure
-	assert.Contains(t, query.sql, `WITH "order_totals" AS`)
-	assert.Contains(t, query.sql, `SELECT "user_id", SUM(total) as total FROM "orders" GROUP BY "user_id"`)
-	assert.Contains(t, query.sql, `SELECT * FROM "order_totals" WHERE total > $1`)
-	assert.Len(t, query.params, 1)
-	assert.Equal(t, 1000, query.params[0])
+	checks := []string{
+		`WITH "order_totals" AS`,
+		`SELECT "user_id", SUM(total) as total FROM "orders" GROUP BY "user_id"`,
+		`SELECT * FROM "order_totals" WHERE total > $1`,
+	}
+	for _, s := range checks {
+		if !strings.Contains(query.sql, s) {
+			t.Errorf("%q does not contain %q", query.sql, s)
+		}
+	}
+	if len(query.params) != 1 {
+		t.Errorf("expected length %d, got %d", 1, len(query.params))
+	}
+	if query.params[0] != 1000 {
+		t.Errorf("got %v, want %v", query.params[0], 1000)
+	}
 }
 
 // TestWith_MultipleCTEs tests chaining multiple CTEs
@@ -62,16 +73,31 @@ func TestWith_MultipleCTEs(t *testing.T) {
 		InnerJoin("recent_orders o", "u.id = o.user_id")
 
 	query := main.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify multiple CTEs with comma separation
-	assert.Contains(t, query.sql, `WITH "active_users" AS`)
-	assert.Contains(t, query.sql, `, "recent_orders" AS`)
-	assert.Contains(t, query.sql, `FROM "active_users" AS "u"`)
-	assert.Contains(t, query.sql, `INNER JOIN "recent_orders" AS "o"`)
-	assert.Len(t, query.params, 2)
-	assert.Equal(t, "active", query.params[0])
-	assert.Equal(t, "2024-01-01", query.params[1])
+	checks := []string{
+		`WITH "active_users" AS`,
+		`, "recent_orders" AS`,
+		`FROM "active_users" AS "u"`,
+		`INNER JOIN "recent_orders" AS "o"`,
+	}
+	for _, s := range checks {
+		if !strings.Contains(query.sql, s) {
+			t.Errorf("%q does not contain %q", query.sql, s)
+		}
+	}
+	if len(query.params) != 2 {
+		t.Errorf("expected length %d, got %d", 2, len(query.params))
+	}
+	if query.params[0] != "active" {
+		t.Errorf("got %v, want %v", query.params[0], "active")
+	}
+	if query.params[1] != "2024-01-01" {
+		t.Errorf("got %v, want %v", query.params[1], "2024-01-01")
+	}
 }
 
 // TestWith_ParameterMerging tests correct parameter ordering across CTE and main query
@@ -91,16 +117,28 @@ func TestWith_ParameterMerging(t *testing.T) {
 		Where("category = ?", "electronics")
 
 	query := main.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify parameter order: CTE params come first, then main query params
-	assert.Len(t, query.params, 2)
-	assert.Equal(t, 100, query.params[0])           // CTE param
-	assert.Equal(t, "electronics", query.params[1]) // Main query param
+	if len(query.params) != 2 {
+		t.Errorf("expected length %d, got %d", 2, len(query.params))
+	}
+	if query.params[0] != 100 {
+		t.Errorf("got %v, want %v", query.params[0], 100) // CTE param
+	}
+	if query.params[1] != "electronics" {
+		t.Errorf("got %v, want %v", query.params[1], "electronics") // Main query param
+	}
 
 	// Verify placeholder numbering
-	assert.Contains(t, query.sql, "price > $1")    // CTE uses $1
-	assert.Contains(t, query.sql, "category = $2") // Main uses $2
+	if !strings.Contains(query.sql, "price > $1") { // CTE uses $1
+		t.Errorf("%q does not contain %q", query.sql, "price > $1")
+	}
+	if !strings.Contains(query.sql, "category = $2") { // Main uses $2
+		t.Errorf("%q does not contain %q", query.sql, "category = $2")
+	}
 }
 
 // TestWith_CTEReferencedInWhere tests CTE referenced in WHERE clause
@@ -121,13 +159,26 @@ func TestWith_CTEReferencedInWhere(t *testing.T) {
 		Where("id IN (SELECT customer_id FROM high_value_customers)")
 
 	query := main.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, query.sql, `WITH "high_value_customers" AS`)
-	assert.Contains(t, query.sql, `SELECT "customer_id" FROM "orders" GROUP BY "customer_id" HAVING SUM(total) > $1`)
-	assert.Contains(t, query.sql, `FROM "customers" WHERE id IN (SELECT customer_id FROM high_value_customers)`)
-	assert.Len(t, query.params, 1)
-	assert.Equal(t, 10000, query.params[0])
+	checks := []string{
+		`WITH "high_value_customers" AS`,
+		`SELECT "customer_id" FROM "orders" GROUP BY "customer_id" HAVING SUM(total) > $1`,
+		`FROM "customers" WHERE id IN (SELECT customer_id FROM high_value_customers)`,
+	}
+	for _, s := range checks {
+		if !strings.Contains(query.sql, s) {
+			t.Errorf("%q does not contain %q", query.sql, s)
+		}
+	}
+	if len(query.params) != 1 {
+		t.Errorf("expected length %d, got %d", 1, len(query.params))
+	}
+	if query.params[0] != 10000 {
+		t.Errorf("got %v, want %v", query.params[0], 10000)
+	}
 }
 
 // TestWith_EmptyName_Panics tests that an empty CTE name stores an error
@@ -139,10 +190,16 @@ func TestWith_EmptyName_Panics(t *testing.T) {
 	cte := qb.Select("id").From("users")
 
 	sq := qb.Select("*").With("", cte)
-	assert.NotNil(t, sq.buildErr, "empty CTE name must store a build error")
-	assert.ErrorContains(t, sq.buildErr, "With()")
+	if sq.buildErr == nil {
+		t.Error("empty CTE name must store a build error")
+	}
+	if !strings.Contains(sq.buildErr.Error(), "With()") {
+		t.Errorf("%q does not contain %q", sq.buildErr.Error(), "With()")
+	}
 	q := sq.Build()
-	assert.NotNil(t, q.prepErr, "build error must propagate through Build()")
+	if q.prepErr == nil {
+		t.Error("build error must propagate through Build()")
+	}
 }
 
 // TestWith_NilQuery_Panics tests that a nil CTE query stores an error
@@ -152,10 +209,16 @@ func TestWith_NilQuery_Panics(t *testing.T) {
 	qb := &QueryBuilder{db: db}
 
 	sq := qb.Select("*").With("my_cte", nil)
-	assert.NotNil(t, sq.buildErr, "nil CTE query must store a build error")
-	assert.ErrorContains(t, sq.buildErr, "With()")
+	if sq.buildErr == nil {
+		t.Error("nil CTE query must store a build error")
+	}
+	if !strings.Contains(sq.buildErr.Error(), "With()") {
+		t.Errorf("%q does not contain %q", sq.buildErr.Error(), "With()")
+	}
 	q := sq.Build()
-	assert.NotNil(t, q.prepErr, "build error must propagate through Build()")
+	if q.prepErr == nil {
+		t.Error("build error must propagate through Build()")
+	}
 }
 
 // TestWith_AllDialects tests CTE with all three dialects
@@ -195,20 +258,33 @@ func TestWith_AllDialects(t *testing.T) {
 			main := qb.Select("*").With("adults", cte).From("adults")
 
 			query := main.Build()
-			require.NotNil(t, query)
+			if query == nil {
+				t.Fatal("expected non-nil")
+			}
 
 			// Verify quoting style
-			assert.Contains(t, query.sql, "WITH "+tt.expectedQuote+"adults"+tt.expectedQuote+" AS")
+			withClause := "WITH " + tt.expectedQuote + "adults" + tt.expectedQuote + " AS"
+			if !strings.Contains(query.sql, withClause) {
+				t.Errorf("%q does not contain %q", query.sql, withClause)
+			}
 
 			// Verify placeholder style
 			if tt.dialectName == "postgres" {
-				assert.Contains(t, query.sql, "age > $1")
+				if !strings.Contains(query.sql, "age > $1") {
+					t.Errorf("%q does not contain %q", query.sql, "age > $1")
+				}
 			} else {
-				assert.Contains(t, query.sql, "age > ?")
+				if !strings.Contains(query.sql, "age > ?") {
+					t.Errorf("%q does not contain %q", query.sql, "age > ?")
+				}
 			}
 
-			assert.Len(t, query.params, 1)
-			assert.Equal(t, 18, query.params[0])
+			if len(query.params) != 1 {
+				t.Errorf("expected length %d, got %d", 1, len(query.params))
+			}
+			if query.params[0] != 18 {
+				t.Errorf("got %v, want %v", query.params[0], 18)
+			}
 		})
 	}
 }
@@ -242,14 +318,23 @@ func TestWithRecursive_OrganizationHierarchy(t *testing.T) {
 		OrderBy("level", "name")
 
 	query := main.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify WITH RECURSIVE keyword
-	assert.Contains(t, query.sql, `WITH RECURSIVE "hierarchy" AS`)
-	assert.Contains(t, query.sql, `WHERE manager_id IS NULL`)
-	assert.Contains(t, query.sql, `UNION ALL`)
-	assert.Contains(t, query.sql, `INNER JOIN "hierarchy" AS "h"`)
-	assert.Contains(t, query.sql, `ORDER BY "level", "name"`)
+	checks := []string{
+		`WITH RECURSIVE "hierarchy" AS`,
+		`WHERE manager_id IS NULL`,
+		`UNION ALL`,
+		`INNER JOIN "hierarchy" AS "h"`,
+		`ORDER BY "level", "name"`,
+	}
+	for _, s := range checks {
+		if !strings.Contains(query.sql, s) {
+			t.Errorf("%q does not contain %q", query.sql, s)
+		}
+	}
 }
 
 // TestWithRecursive_WithoutUnion_Panics tests that a recursive CTE without UNION
@@ -262,10 +347,16 @@ func TestWithRecursive_WithoutUnion_Panics(t *testing.T) {
 	invalidCTE := qb.Select("id", "name").From("employees")
 
 	sq := qb.Select("*").WithRecursive("hierarchy", invalidCTE)
-	assert.NotNil(t, sq.buildErr, "recursive CTE without UNION must store a build error")
-	assert.ErrorContains(t, sq.buildErr, "WithRecursive()")
+	if sq.buildErr == nil {
+		t.Error("recursive CTE without UNION must store a build error")
+	}
+	if !strings.Contains(sq.buildErr.Error(), "WithRecursive()") {
+		t.Errorf("%q does not contain %q", sq.buildErr.Error(), "WithRecursive()")
+	}
 	q := sq.Build()
-	assert.NotNil(t, q.prepErr, "build error must propagate through Build()")
+	if q.prepErr == nil {
+		t.Error("build error must propagate through Build()")
+	}
 }
 
 // TestWithRecursive_UnionAll tests recursive CTE with UNION ALL
@@ -283,14 +374,27 @@ func TestWithRecursive_UnionAll(t *testing.T) {
 		From("numbers")
 
 	query := main.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, query.sql, `WITH RECURSIVE "numbers" AS`)
-	assert.Contains(t, query.sql, `SELECT "1" AS "n"`)
-	assert.Contains(t, query.sql, `UNION ALL`)
-	assert.Contains(t, query.sql, `SELECT "n + 1" FROM "numbers" WHERE n < $1`)
-	assert.Len(t, query.params, 1)
-	assert.Equal(t, 10, query.params[0])
+	checks := []string{
+		`WITH RECURSIVE "numbers" AS`,
+		`SELECT "1" AS "n"`,
+		`UNION ALL`,
+		`SELECT "n + 1" FROM "numbers" WHERE n < $1`,
+	}
+	for _, s := range checks {
+		if !strings.Contains(query.sql, s) {
+			t.Errorf("%q does not contain %q", query.sql, s)
+		}
+	}
+	if len(query.params) != 1 {
+		t.Errorf("expected length %d, got %d", 1, len(query.params))
+	}
+	if query.params[0] != 10 {
+		t.Errorf("got %v, want %v", query.params[0], 10)
+	}
 }
 
 // TestWithRecursive_ParameterMerging tests parameter ordering with recursive CTE
@@ -318,18 +422,34 @@ func TestWithRecursive_ParameterMerging(t *testing.T) {
 		Where("depth >= ?", 2)
 
 	query := main.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
 	// Verify parameter order: anchor → recursive → main
-	assert.Len(t, query.params, 3)
-	assert.Equal(t, 0, query.params[0]) // Anchor param
-	assert.Equal(t, 5, query.params[1]) // Recursive param
-	assert.Equal(t, 2, query.params[2]) // Main query param
+	if len(query.params) != 3 {
+		t.Errorf("expected length %d, got %d", 3, len(query.params))
+	}
+	if query.params[0] != 0 {
+		t.Errorf("got %v, want %v", query.params[0], 0) // Anchor param
+	}
+	if query.params[1] != 5 {
+		t.Errorf("got %v, want %v", query.params[1], 5) // Recursive param
+	}
+	if query.params[2] != 2 {
+		t.Errorf("got %v, want %v", query.params[2], 2) // Main query param
+	}
 
 	// Verify placeholders
-	assert.Contains(t, query.sql, "parent_id = $1") // Anchor
-	assert.Contains(t, query.sql, "t.depth < $2")   // Recursive
-	assert.Contains(t, query.sql, "depth >= $3")    // Main
+	if !strings.Contains(query.sql, "parent_id = $1") { // Anchor
+		t.Errorf("%q does not contain %q", query.sql, "parent_id = $1")
+	}
+	if !strings.Contains(query.sql, "t.depth < $2") { // Recursive
+		t.Errorf("%q does not contain %q", query.sql, "t.depth < $2")
+	}
+	if !strings.Contains(query.sql, "depth >= $3") { // Main
+		t.Errorf("%q does not contain %q", query.sql, "depth >= $3")
+	}
 }
 
 // TestWithRecursive_AllDialects tests recursive CTE with all dialects
@@ -355,13 +475,24 @@ func TestWithRecursive_AllDialects(t *testing.T) {
 
 			main := qb.Select("*").WithRecursive("seq", cte).From("seq")
 			query := main.Build()
-			require.NotNil(t, query)
+			if query == nil {
+				t.Fatal("expected non-nil")
+			}
 
 			// Verify WITH RECURSIVE with proper quoting
-			assert.Contains(t, query.sql, "WITH RECURSIVE "+tt.expectedQuote+"seq"+tt.expectedQuote+" AS")
-			assert.Contains(t, query.sql, "UNION ALL")
-			assert.Len(t, query.params, 1)
-			assert.Equal(t, 5, query.params[0])
+			withClause := "WITH RECURSIVE " + tt.expectedQuote + "seq" + tt.expectedQuote + " AS"
+			if !strings.Contains(query.sql, withClause) {
+				t.Errorf("%q does not contain %q", query.sql, withClause)
+			}
+			if !strings.Contains(query.sql, "UNION ALL") {
+				t.Errorf("%q does not contain %q", query.sql, "UNION ALL")
+			}
+			if len(query.params) != 1 {
+				t.Errorf("expected length %d, got %d", 1, len(query.params))
+			}
+			if query.params[0] != 5 {
+				t.Errorf("got %v, want %v", query.params[0], 5)
+			}
 		})
 	}
 }
@@ -389,13 +520,26 @@ func TestCTE_WithJoin(t *testing.T) {
 		OrderBy("t.total_sold DESC")
 
 	query := main.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, query.sql, `WITH "top_products" AS`)
-	assert.Contains(t, query.sql, `INNER JOIN "top_products" AS "t"`)
-	assert.Contains(t, query.sql, `ORDER BY "t"."total_sold" DESC`)
-	assert.Len(t, query.params, 1)
-	assert.Equal(t, 100, query.params[0])
+	checks := []string{
+		`WITH "top_products" AS`,
+		`INNER JOIN "top_products" AS "t"`,
+		`ORDER BY "t"."total_sold" DESC`,
+	}
+	for _, s := range checks {
+		if !strings.Contains(query.sql, s) {
+			t.Errorf("%q does not contain %q", query.sql, s)
+		}
+	}
+	if len(query.params) != 1 {
+		t.Errorf("expected length %d, got %d", 1, len(query.params))
+	}
+	if query.params[0] != 100 {
+		t.Errorf("got %v, want %v", query.params[0], 100)
+	}
 }
 
 // TestCTE_WithSubquery tests CTE combined with subquery in WHERE clause
@@ -415,15 +559,30 @@ func TestCTE_WithSubquery(t *testing.T) {
 		Where("id IN (SELECT user_id FROM orders WHERE created_at > ?)", "2024-01-01")
 
 	query := main.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, query.sql, `WITH "active_users" AS`)
-	assert.Contains(t, query.sql, `status = $1`)
-	assert.Contains(t, query.sql, `created_at > $2`)
-	assert.Contains(t, query.sql, `WHERE id IN (SELECT user_id FROM orders WHERE created_at > $2)`)
-	assert.Len(t, query.params, 2)
-	assert.Equal(t, "active", query.params[0])
-	assert.Equal(t, "2024-01-01", query.params[1])
+	checks := []string{
+		`WITH "active_users" AS`,
+		`status = $1`,
+		`created_at > $2`,
+		`WHERE id IN (SELECT user_id FROM orders WHERE created_at > $2)`,
+	}
+	for _, s := range checks {
+		if !strings.Contains(query.sql, s) {
+			t.Errorf("%q does not contain %q", query.sql, s)
+		}
+	}
+	if len(query.params) != 2 {
+		t.Errorf("expected length %d, got %d", 2, len(query.params))
+	}
+	if query.params[0] != "active" {
+		t.Errorf("got %v, want %v", query.params[0], "active")
+	}
+	if query.params[1] != "2024-01-01" {
+		t.Errorf("got %v, want %v", query.params[1], "2024-01-01")
+	}
 }
 
 // TestCTE_WithSetOperations tests CTE combined with UNION in main query
@@ -449,11 +608,19 @@ func TestCTE_WithSetOperations(t *testing.T) {
 
 	// Combine with UNION
 	query := q1.Union(q2).Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, query.sql, `WITH "expensive" AS`)
-	assert.Contains(t, query.sql, `price > $1`)
-	assert.Contains(t, query.sql, `UNION`)
+	if !strings.Contains(query.sql, `WITH "expensive" AS`) {
+		t.Errorf("%q does not contain %q", query.sql, `WITH "expensive" AS`)
+	}
+	if !strings.Contains(query.sql, `price > $1`) {
+		t.Errorf("%q does not contain %q", query.sql, `price > $1`)
+	}
+	if !strings.Contains(query.sql, `UNION`) {
+		t.Errorf("%q does not contain %q", query.sql, `UNION`)
+	}
 	// CTE appears only once at the beginning
 	firstIndex := -1
 	lastIndex := -1
@@ -469,8 +636,12 @@ func TestCTE_WithSetOperations(t *testing.T) {
 		}
 	}
 	// Verify CTE appears only once
-	assert.Equal(t, firstIndex, lastIndex, "CTE should appear only once")
-	assert.Len(t, query.params, 3)
+	if firstIndex != lastIndex {
+		t.Errorf("CTE should appear only once")
+	}
+	if len(query.params) != 3 {
+		t.Errorf("expected length %d, got %d", 3, len(query.params))
+	}
 }
 
 // TestCTE_NestedCTEs tests CTE referencing another CTE
@@ -496,14 +667,27 @@ func TestCTE_NestedCTEs(t *testing.T) {
 		InnerJoin("high_spenders h", "u.id = h.user_id")
 
 	query := main.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, query.sql, `WITH "user_stats" AS`)
-	assert.Contains(t, query.sql, `, "high_spenders" AS`)
-	assert.Contains(t, query.sql, `FROM "user_stats" WHERE total_spent > $1`)
-	assert.Contains(t, query.sql, `INNER JOIN "high_spenders"`)
-	assert.Len(t, query.params, 1)
-	assert.Equal(t, 5000, query.params[0])
+	checks := []string{
+		`WITH "user_stats" AS`,
+		`, "high_spenders" AS`,
+		`FROM "user_stats" WHERE total_spent > $1`,
+		`INNER JOIN "high_spenders"`,
+	}
+	for _, s := range checks {
+		if !strings.Contains(query.sql, s) {
+			t.Errorf("%q does not contain %q", query.sql, s)
+		}
+	}
+	if len(query.params) != 1 {
+		t.Errorf("expected length %d, got %d", 1, len(query.params))
+	}
+	if query.params[0] != 5000 {
+		t.Errorf("got %v, want %v", query.params[0], 5000)
+	}
 }
 
 // TestCTE_ComplexRecursive tests complex recursive CTE with multiple features
@@ -533,15 +717,32 @@ func TestCTE_ComplexRecursive(t *testing.T) {
 		Limit(100)
 
 	query := main.Build()
-	require.NotNil(t, query)
+	if query == nil {
+		t.Fatal("expected non-nil")
+	}
 
-	assert.Contains(t, query.sql, `WITH RECURSIVE "tree" AS`)
-	assert.Contains(t, query.sql, `UNION ALL`)
-	assert.Contains(t, query.sql, `level < $2`)
-	assert.Contains(t, query.sql, `level > $3`)
-	assert.Contains(t, query.sql, `LIMIT 100`)
-	assert.Len(t, query.params, 3)
-	assert.Equal(t, 1, query.params[0])
-	assert.Equal(t, 10, query.params[1])
-	assert.Equal(t, 1, query.params[2])
+	checks := []string{
+		`WITH RECURSIVE "tree" AS`,
+		`UNION ALL`,
+		`level < $2`,
+		`level > $3`,
+		`LIMIT 100`,
+	}
+	for _, s := range checks {
+		if !strings.Contains(query.sql, s) {
+			t.Errorf("%q does not contain %q", query.sql, s)
+		}
+	}
+	if len(query.params) != 3 {
+		t.Errorf("expected length %d, got %d", 3, len(query.params))
+	}
+	if query.params[0] != 1 {
+		t.Errorf("got %v, want %v", query.params[0], 1)
+	}
+	if query.params[1] != 10 {
+		t.Errorf("got %v, want %v", query.params[1], 10)
+	}
+	if query.params[2] != 1 {
+		t.Errorf("got %v, want %v", query.params[2], 1)
+	}
 }

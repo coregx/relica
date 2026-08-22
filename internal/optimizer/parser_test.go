@@ -2,9 +2,6 @@ package optimizer
 
 import (
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestParseWhereClause(t *testing.T) {
@@ -121,15 +118,27 @@ func TestParseWhereClause(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := ParseWhereClause(tt.sql)
-			require.NoError(t, err)
-			assert.Equal(t, tt.expected.Logic, result.Logic, "Logic type mismatch")
-			assert.Equal(t, len(tt.expected.Conditions), len(result.Conditions), "Condition count mismatch")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.Logic != tt.expected.Logic {
+				t.Errorf("Logic type mismatch: got %v, want %v", result.Logic, tt.expected.Logic)
+			}
+			if len(result.Conditions) != len(tt.expected.Conditions) {
+				t.Errorf("Condition count mismatch: got %v, want %v", len(result.Conditions), len(tt.expected.Conditions))
+			}
 
 			for i, expectedCond := range tt.expected.Conditions {
 				if i < len(result.Conditions) {
-					assert.Equal(t, expectedCond.Column, result.Conditions[i].Column, "Column mismatch at index %d", i)
-					assert.Equal(t, expectedCond.Operator, result.Conditions[i].Operator, "Operator mismatch at index %d", i)
-					assert.Equal(t, expectedCond.Function, result.Conditions[i].Function, "Function mismatch at index %d", i)
+					if result.Conditions[i].Column != expectedCond.Column {
+						t.Errorf("Column mismatch at index %d: got %v, want %v", i, result.Conditions[i].Column, expectedCond.Column)
+					}
+					if result.Conditions[i].Operator != expectedCond.Operator {
+						t.Errorf("Operator mismatch at index %d: got %v, want %v", i, result.Conditions[i].Operator, expectedCond.Operator)
+					}
+					if result.Conditions[i].Function != expectedCond.Function {
+						t.Errorf("Function mismatch at index %d: got %v, want %v", i, result.Conditions[i].Function, expectedCond.Function)
+					}
 				}
 			}
 		})
@@ -172,8 +181,12 @@ func TestExtractJoinColumns(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			leftCol, rightCol := extractJoinColumns(tt.join)
-			assert.Equal(t, tt.leftCol, leftCol, "Left column mismatch")
-			assert.Equal(t, tt.rightCol, rightCol, "Right column mismatch")
+			if leftCol != tt.leftCol {
+				t.Errorf("Left column mismatch: got %v, want %v", leftCol, tt.leftCol)
+			}
+			if rightCol != tt.rightCol {
+				t.Errorf("Right column mismatch: got %v, want %v", rightCol, tt.rightCol)
+			}
 		})
 	}
 }
@@ -204,7 +217,9 @@ func TestExtractTableNameFromColumn(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := extractTableNameFromColumn(tt.column)
-			assert.Equal(t, tt.expected, result)
+			if result != tt.expected {
+				t.Errorf("got %v, want %v", result, tt.expected)
+			}
 		})
 	}
 }
@@ -235,7 +250,9 @@ func TestExtractColumnName(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := extractColumnName(tt.column)
-			assert.Equal(t, tt.expected, result)
+			if result != tt.expected {
+				t.Errorf("got %v, want %v", result, tt.expected)
+			}
 		})
 	}
 }
@@ -266,7 +283,9 @@ func TestExtractJoinClauses(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			joins := extractJoinClauses(tt.sql)
-			assert.Equal(t, tt.expected, len(joins), "JOIN count mismatch")
+			if len(joins) != tt.expected {
+				t.Errorf("JOIN count mismatch: got %v, want %v", len(joins), tt.expected)
+			}
 		})
 	}
 }
@@ -312,7 +331,16 @@ func TestExtractSelectColumns(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := extractSelectColumns(tt.sql)
-			assert.Equal(t, tt.expected, result)
+			if len(result) != len(tt.expected) {
+				t.Errorf("got %v, want %v", result, tt.expected)
+				return
+			}
+			for i := range tt.expected {
+				if result[i] != tt.expected[i] {
+					t.Errorf("got %v, want %v", result, tt.expected)
+					break
+				}
+			}
 		})
 	}
 }
@@ -353,7 +381,9 @@ func TestNormalizeOperator(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := normalizeOperator(tt.operator)
-			assert.Equal(t, tt.expected, result)
+			if result != tt.expected {
+				t.Errorf("got %v, want %v", result, tt.expected)
+			}
 		})
 	}
 }

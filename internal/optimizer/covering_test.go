@@ -2,8 +2,6 @@ package optimizer
 
 import (
 	"testing"
-
-	"github.com/stretchr/testify/assert"
 )
 
 func TestAnalyzeCoveringIndex(t *testing.T) {
@@ -55,14 +53,24 @@ func TestAnalyzeCoveringIndex(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := AnalyzeCoveringIndex(tt.query)
-			assert.Equal(t, tt.recommended, result.Recommended, "Recommendation mismatch")
+			if result.Recommended != tt.recommended {
+				t.Errorf("Recommendation mismatch: got %v, want %v", result.Recommended, tt.recommended)
+			}
 
 			if tt.recommended {
-				assert.GreaterOrEqual(t, len(result.Columns), tt.minColumns, "Too few columns")
-				assert.LessOrEqual(t, len(result.Columns), tt.maxColumns, "Too many columns")
-				assert.NotEmpty(t, result.Benefit, "Benefit should be set")
+				if len(result.Columns) < tt.minColumns {
+					t.Errorf("Too few columns: expected %v >= %v", len(result.Columns), tt.minColumns)
+				}
+				if len(result.Columns) > tt.maxColumns {
+					t.Errorf("Too many columns: expected %v <= %v", len(result.Columns), tt.maxColumns)
+				}
+				if len(result.Benefit) == 0 {
+					t.Error("Benefit should be set")
+				}
 			} else {
-				assert.NotEmpty(t, result.Benefit, "Benefit explanation should be provided")
+				if len(result.Benefit) == 0 {
+					t.Error("Benefit explanation should be provided")
+				}
 			}
 		})
 	}
@@ -104,7 +112,16 @@ func TestCombineColumns(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := combineColumns(tt.whereCols, tt.selectCols)
-			assert.Equal(t, tt.expected, result)
+			if len(result) != len(tt.expected) {
+				t.Errorf("got %v, want %v", result, tt.expected)
+				return
+			}
+			for i := range tt.expected {
+				if result[i] != tt.expected[i] {
+					t.Errorf("got %v, want %v", result, tt.expected)
+					break
+				}
+			}
 		})
 	}
 }
@@ -140,7 +157,16 @@ func TestExtractWhereColumnsForCovering(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := extractWhereColumnsForCovering(tt.sql)
-			assert.Equal(t, tt.expected, result)
+			if len(result) != len(tt.expected) {
+				t.Errorf("got %v, want %v", result, tt.expected)
+				return
+			}
+			for i := range tt.expected {
+				if result[i] != tt.expected[i] {
+					t.Errorf("got %v, want %v", result, tt.expected)
+					break
+				}
+			}
 		})
 	}
 }

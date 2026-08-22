@@ -3,8 +3,6 @@ package core
 import (
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/assert"
 )
 
 // ModelTestUser is a test model with TableName() interface.
@@ -53,13 +51,17 @@ type TestComment struct {
 func TestInferTableName_WithTableNameMethod(t *testing.T) {
 	user := ModelTestUser{}
 	name := inferTableName(&user)
-	assert.Equal(t, "test_users", name, "Should use TableName() method")
+	if name != "test_users" {
+		t.Errorf("Should use TableName() method: got %v, want %v", name, "test_users")
+	}
 }
 
 func TestInferTableName_DefaultPluralization(t *testing.T) {
 	product := TestProduct{}
 	name := inferTableName(&product)
-	assert.Equal(t, "testproducts", name, "Should lowercase struct name + 's'")
+	if name != "testproducts" {
+		t.Errorf("Should lowercase struct name + 's': got %v, want %v", name, "testproducts")
+	}
 }
 
 func TestInferTableName_AlreadyPlural(t *testing.T) {
@@ -68,7 +70,9 @@ func TestInferTableName_AlreadyPlural(t *testing.T) {
 	}
 	news := News{}
 	name := inferTableName(&news)
-	assert.Equal(t, "news", name, "Should keep unchanged if already ends with 's'")
+	if name != "news" {
+		t.Errorf("Should keep unchanged if already ends with 's': got %v, want %v", name, "news")
+	}
 }
 
 func TestModelQuery_Table_Override(t *testing.T) {
@@ -80,7 +84,9 @@ func TestModelQuery_Table_Override(t *testing.T) {
 	}
 
 	mq.Table("archived_users")
-	assert.Equal(t, "archived_users", mq.table, "Should override table name")
+	if mq.table != "archived_users" {
+		t.Errorf("Should override table name: got %v, want %v", mq.table, "archived_users")
+	}
 }
 
 func TestModelQuery_Exclude(t *testing.T) {
@@ -93,9 +99,15 @@ func TestModelQuery_Exclude(t *testing.T) {
 
 	mq.Exclude("created_at", "status")
 
-	assert.True(t, mq.exclude["created_at"], "Should exclude created_at")
-	assert.True(t, mq.exclude["status"], "Should exclude status")
-	assert.False(t, mq.exclude["name"], "Should not exclude name")
+	if !mq.exclude["created_at"] {
+		t.Error("Should exclude created_at: expected true")
+	}
+	if !mq.exclude["status"] {
+		t.Error("Should exclude status: expected true")
+	}
+	if mq.exclude["name"] {
+		t.Error("Should not exclude name: expected false")
+	}
 }
 
 func TestModelQuery_FilterFields_OnlySpecified(t *testing.T) {
@@ -111,10 +123,18 @@ func TestModelQuery_FilterFields_OnlySpecified(t *testing.T) {
 
 	result := mq.filterFields(data, []string{"name", "email"})
 
-	assert.Equal(t, 2, len(result), "Should have 2 fields")
-	assert.Equal(t, "Alice", result["name"])
-	assert.Equal(t, "alice@example.com", result["email"])
-	assert.Nil(t, result["id"], "Should not include id")
+	if len(result) != 2 {
+		t.Errorf("Should have 2 fields: got %v, want %v", len(result), 2)
+	}
+	if result["name"] != "Alice" {
+		t.Errorf("got %v, want %v", result["name"], "Alice")
+	}
+	if result["email"] != "alice@example.com" {
+		t.Errorf("got %v, want %v", result["email"], "alice@example.com")
+	}
+	if result["id"] != nil {
+		t.Errorf("Should not include id: expected nil, got %v", result["id"])
+	}
 }
 
 func TestModelQuery_FilterFields_AllExceptExcluded(t *testing.T) {
@@ -135,12 +155,24 @@ func TestModelQuery_FilterFields_AllExceptExcluded(t *testing.T) {
 
 	result := mq.filterFields(data, nil)
 
-	assert.Equal(t, 3, len(result), "Should have 3 fields")
-	assert.Equal(t, 1, result["id"])
-	assert.Equal(t, "Alice", result["name"])
-	assert.Equal(t, "alice@example.com", result["email"])
-	assert.Nil(t, result["status"], "Should exclude status")
-	assert.Nil(t, result["created_at"], "Should exclude created_at")
+	if len(result) != 3 {
+		t.Errorf("Should have 3 fields: got %v, want %v", len(result), 3)
+	}
+	if result["id"] != 1 {
+		t.Errorf("got %v, want %v", result["id"], 1)
+	}
+	if result["name"] != "Alice" {
+		t.Errorf("got %v, want %v", result["name"], "Alice")
+	}
+	if result["email"] != "alice@example.com" {
+		t.Errorf("got %v, want %v", result["email"], "alice@example.com")
+	}
+	if result["status"] != nil {
+		t.Errorf("Should exclude status: expected nil, got %v", result["status"])
+	}
+	if result["created_at"] != nil {
+		t.Errorf("Should exclude created_at: expected nil, got %v", result["created_at"])
+	}
 }
 
 func TestModelQuery_FilterFields_OnlyWithExclude(t *testing.T) {
@@ -159,9 +191,15 @@ func TestModelQuery_FilterFields_OnlyWithExclude(t *testing.T) {
 	// Only takes precedence, but excluded fields still filtered.
 	result := mq.filterFields(data, []string{"name", "email"})
 
-	assert.Equal(t, 1, len(result), "Should have 1 field")
-	assert.Equal(t, "Alice", result["name"])
-	assert.Nil(t, result["email"], "Should exclude even if in only list")
+	if len(result) != 1 {
+		t.Errorf("Should have 1 field: got %v, want %v", len(result), 1)
+	}
+	if result["name"] != "Alice" {
+		t.Errorf("got %v, want %v", result["name"], "Alice")
+	}
+	if result["email"] != nil {
+		t.Errorf("Should exclude even if in only list: expected nil, got %v", result["email"])
+	}
 }
 
 func TestModelQuery_GetPrimaryKeys_SinglePK_IDField(t *testing.T) {
@@ -172,11 +210,19 @@ func TestModelQuery_GetPrimaryKeys_SinglePK_IDField(t *testing.T) {
 	}
 
 	cols, vals, err := mq.getPrimaryKeys()
-	assert.NoError(t, err)
-	assert.Equal(t, []string{"id"}, cols, "Should find primary key by ID field name")
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if len(cols) != 1 || cols[0] != "id" {
+		t.Errorf("Should find primary key by ID field name: got %v, want %v", cols, []string{"id"})
+	}
 	// ID is int in ModelTestUser
-	assert.Len(t, vals, 1)
-	assert.Equal(t, 123, vals[0], "Should return primary key value")
+	if len(vals) != 1 {
+		t.Errorf("expected length %d, got %d", 1, len(vals))
+	}
+	if vals[0] != 123 {
+		t.Errorf("Should return primary key value: got %v, want %v", vals[0], 123)
+	}
 }
 
 func TestModelQuery_GetPrimaryKeys_SinglePK_ExplicitTag(t *testing.T) {
@@ -187,9 +233,16 @@ func TestModelQuery_GetPrimaryKeys_SinglePK_ExplicitTag(t *testing.T) {
 	}
 
 	cols, vals, err := mq.getPrimaryKeys()
-	assert.NoError(t, err)
-	assert.Equal(t, []string{"post_id"}, cols, "Should find primary key by db:\"column,pk\" tag")
-	assert.Equal(t, []interface{}{456}, vals, "Should return primary key value")
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if len(cols) != 1 || cols[0] != "post_id" {
+		t.Errorf(`Should find primary key by db:"column,pk" tag: got %v, want %v`, cols, []string{"post_id"})
+	}
+	want := []interface{}{456}
+	if len(vals) != len(want) || vals[0] != want[0] {
+		t.Errorf("Should return primary key value: got %v, want %v", vals, want)
+	}
 }
 
 func TestModelQuery_GetPrimaryKeys_CompositePK(t *testing.T) {
@@ -200,9 +253,17 @@ func TestModelQuery_GetPrimaryKeys_CompositePK(t *testing.T) {
 	}
 
 	cols, vals, err := mq.getPrimaryKeys()
-	assert.NoError(t, err)
-	assert.Equal(t, []string{"order_id", "product_id"}, cols, "Should find both PK columns")
-	assert.Equal(t, []interface{}{100, 200}, vals, "Should return both PK values")
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	wantCols := []string{"order_id", "product_id"}
+	if len(cols) != len(wantCols) || cols[0] != wantCols[0] || cols[1] != wantCols[1] {
+		t.Errorf("Should find both PK columns: got %v, want %v", cols, wantCols)
+	}
+	wantVals := []interface{}{100, 200}
+	if len(vals) != len(wantVals) || vals[0] != wantVals[0] || vals[1] != wantVals[1] {
+		t.Errorf("Should return both PK values: got %v, want %v", vals, wantVals)
+	}
 }
 
 func TestModelQuery_GetPrimaryKeys_IDFieldWithDbTag(t *testing.T) {
@@ -213,10 +274,17 @@ func TestModelQuery_GetPrimaryKeys_IDFieldWithDbTag(t *testing.T) {
 	}
 
 	cols, vals, err := mq.getPrimaryKeys()
-	assert.NoError(t, err)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
 	// Should find by "ID" field name, but use db tag value "comment_id"
-	assert.Equal(t, []string{"comment_id"}, cols, "Should use db tag value for column name")
-	assert.Equal(t, []interface{}{789}, vals, "Should return primary key value")
+	if len(cols) != 1 || cols[0] != "comment_id" {
+		t.Errorf("Should use db tag value for column name: got %v, want %v", cols, []string{"comment_id"})
+	}
+	want := []interface{}{789}
+	if len(vals) != len(want) || vals[0] != want[0] {
+		t.Errorf("Should return primary key value: got %v, want %v", vals, want)
+	}
 }
 
 func TestModelQuery_GetPrimaryKeys_NotFound(t *testing.T) {
@@ -229,9 +297,15 @@ func TestModelQuery_GetPrimaryKeys_NotFound(t *testing.T) {
 	}
 
 	cols, vals, err := mq.getPrimaryKeys()
-	assert.Error(t, err, "Should return error for missing PK")
-	assert.Nil(t, cols, "Should return nil columns")
-	assert.Nil(t, vals, "Should return nil values")
+	if err == nil {
+		t.Error("Should return error for missing PK: expected error")
+	}
+	if cols != nil {
+		t.Errorf("Should return nil columns: expected nil, got %v", cols)
+	}
+	if vals != nil {
+		t.Errorf("Should return nil values: expected nil, got %v", vals)
+	}
 }
 
 func TestModelQuery_GetPrimaryKeys_ExplicitPK_TakesPrecedence(t *testing.T) {
@@ -246,8 +320,15 @@ func TestModelQuery_GetPrimaryKeys_ExplicitPK_TakesPrecedence(t *testing.T) {
 	}
 
 	cols, vals, err := mq.getPrimaryKeys()
-	assert.NoError(t, err)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
 	// Explicit pk tag takes precedence
-	assert.Equal(t, []string{"tenant_id"}, cols, "Explicit pk tag should take precedence")
-	assert.Equal(t, []interface{}{222}, vals)
+	if len(cols) != 1 || cols[0] != "tenant_id" {
+		t.Errorf("Explicit pk tag should take precedence: got %v, want %v", cols, []string{"tenant_id"})
+	}
+	want := []interface{}{222}
+	if len(vals) != len(want) || vals[0] != want[0] {
+		t.Errorf("got %v, want %v", vals, want)
+	}
 }

@@ -14,10 +14,11 @@
 
 ## ✨ Features
 
-- **Zero Production Dependencies** - Uses only Go standard library
+- **Zero Dependencies** - Truly empty go.mod, uses only Go standard library
 - **High Performance** - LRU statement cache, batch operations (3.3x faster)
 - **Type-Safe** - Generic `One[T]`/`All[T]`/`Scalar[T]` + reflection-based struct scanning
 - **Model() API** - ORM-style CRUD with auto-populated IDs (int + UUID via `autoincrement` tag), composite PKs
+- **AutoID** - Stripe-like prefixed IDs (`usr_`, `ord_`) with dual-key pattern, `FindByPublicID()`, prefix validation
 - **NullStringMap** - Dynamic scanning without predefined structs
 - **Named Placeholders** - `{:name}` syntax with `Bind(Params{})` for readable queries
 - **Functional Expressions** - CASE, COALESCE, NULLIF, GREATEST, LEAST, CONCAT
@@ -35,7 +36,7 @@
 - **Set Operations** - UNION, UNION ALL, INTERSECT, EXCEPT
 - **Common Table Expressions** - WITH clause, recursive CTEs
 - **Multi-Database** - PostgreSQL, MySQL 8.0+, SQLite 3.25+ support
-- **Well-Tested** - 1850+ test cases, ~90% coverage
+- **Well-Tested** - 85%+ coverage, stdlib testing only
 - **Clean API** - Fluent builder pattern with context support
 
 > **Latest Release:** See [CHANGELOG.md](CHANGELOG.md) for version history and [GitHub Releases](https://github.com/coregx/relica/releases) for release notes.
@@ -905,6 +906,61 @@ if err != nil {
 // Commit transaction
 return tx.Commit()
 ```
+
+### AutoID — Enterprise ID Pattern
+
+**Stripe-like prefixed IDs** with dual-key pattern. First query builder with native support.
+
+```go
+// 1. Define model — one tag per field:
+type User struct {
+    ID       int64  `db:"id,pk"`                    // internal PK (auto-increment)
+    PublicID string `db:"public_id,autoid:usr"`      // external ID (auto-generated)
+    Name     string `db:"name"`
+}
+
+// 2. Insert — PublicID auto-generated, ID auto-populated:
+user := User{Name: "Alice"}
+db.Model(&user).Insert()
+fmt.Println(user.PublicID) // "usr_019078fa-b37e-7abc-..."
+fmt.Println(user.ID)       // 42
+
+// 3. Lookup by public ID (one-liner with prefix validation):
+var found User
+err := db.Model(&found).FindByPublicID("usr_019078fa-b37e-7abc-...")
+
+// 4. Wrong prefix → safe error (prevents cross-model lookups):
+err = db.Model(&found).FindByPublicID("ord_019078fa-...")
+// errors.Is(err, relica.ErrAutoIDPrefixMismatch) == true
+
+// 5. Pre-set ID for testing (not overwritten):
+user := User{PublicID: "usr_test-id", Name: "Test"}
+db.Model(&user).Insert() // PublicID stays "usr_test-id"
+```
+
+**BeforeInserter hook** for custom pre-insert logic:
+
+```go
+func (u *User) BeforeInsert() error {
+    u.CreatedAt = time.Now()
+    return nil // return error to abort insert
+}
+```
+
+**Custom generators** (ULID, Snowflake, etc.):
+
+```go
+relica.RegisterIDGenerator("ulid", func() string {
+    return ulid.Make().String()
+})
+
+type Event struct {
+    ID       int64  `db:"id,pk"`
+    PublicID string `db:"public_id,autoid:evt,gen=ulid"` // "evt_01H9XZ..."
+}
+```
+
+See [Primary Key Strategy](docs/guides/BEST_PRACTICES.md#-primary-key-strategy) for when to use autoincrement vs UUID v7 vs dual-key pattern.
 
 ### Batch Operations
 

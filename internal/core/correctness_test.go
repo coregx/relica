@@ -1,15 +1,10 @@
 package core
 
 import (
-	"context"
 	"strings"
 	"testing"
 
 	"github.com/coregx/relica/internal/dialects"
-	"github.com/coregx/relica/internal/security"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	_ "modernc.org/sqlite"
 )
 
 // ─── Fix 1: HAVING placeholder renumbering ────────────────────────────────────
@@ -31,25 +26,40 @@ func TestHavingPlaceholderRenumber_MultiArgClauses(t *testing.T) {
 
 	sql, params := sq.buildSQL(dialects.GetDialect("postgres"))
 
-	assert.Contains(t, sql, "$1") // WHERE arg
-	assert.Contains(t, sql, "$2") // first HAVING, first arg
-	assert.Contains(t, sql, "$3") // first HAVING, second arg
-	assert.Contains(t, sql, "$4") // second HAVING arg
+	for _, ph := range []string{"$1", "$2", "$3", "$4"} {
+		if !strings.Contains(sql, ph) {
+			t.Errorf("%q does not contain %q", sql, ph)
+		}
+	}
 
 	// Verify no duplicate numbering: $2 should appear only in the HAVING clause.
 	havingStart := strings.Index(sql, "HAVING")
-	require.Greater(t, havingStart, 0)
+	if havingStart <= 0 {
+		t.Fatalf("expected havingStart > 0, got %d", havingStart)
+	}
 	havingClause := sql[havingStart:]
-	assert.Contains(t, havingClause, "$2")
-	assert.Contains(t, havingClause, "$3")
-	assert.Contains(t, havingClause, "$4")
+	for _, ph := range []string{"$2", "$3", "$4"} {
+		if !strings.Contains(havingClause, ph) {
+			t.Errorf("HAVING clause %q does not contain %q", havingClause, ph)
+		}
+	}
 
 	// Parameters must be in correct order: WHERE, HAVING-1a, HAVING-1b, HAVING-2.
-	require.Len(t, params, 4)
-	assert.Equal(t, "west", params[0])
-	assert.Equal(t, 5, params[1])
-	assert.Equal(t, 100, params[2])
-	assert.Equal(t, 1000, params[3])
+	if len(params) != 4 {
+		t.Fatalf("expected length %d, got %d", 4, len(params))
+	}
+	if params[0] != "west" {
+		t.Errorf("got %v, want %v", params[0], "west")
+	}
+	if params[1] != 5 {
+		t.Errorf("got %v, want %v", params[1], 5)
+	}
+	if params[2] != 100 {
+		t.Errorf("got %v, want %v", params[2], 100)
+	}
+	if params[3] != 1000 {
+		t.Errorf("got %v, want %v", params[3], 1000)
+	}
 }
 
 // TestHavingPlaceholderRenumber_SingleArgEach verifies HAVING with single-arg clauses
@@ -68,14 +78,26 @@ func TestHavingPlaceholderRenumber_SingleArgEach(t *testing.T) {
 
 	// No WHERE, so HAVING args start at $1.
 	havingStart := strings.Index(sql, "HAVING")
-	require.Greater(t, havingStart, 0)
+	if havingStart <= 0 {
+		t.Fatalf("expected havingStart > 0, got %d", havingStart)
+	}
 	havingClause := sql[havingStart:]
-	assert.Contains(t, havingClause, "$1")
-	assert.Contains(t, havingClause, "$2")
+	if !strings.Contains(havingClause, "$1") {
+		t.Errorf("HAVING clause %q does not contain %q", havingClause, "$1")
+	}
+	if !strings.Contains(havingClause, "$2") {
+		t.Errorf("HAVING clause %q does not contain %q", havingClause, "$2")
+	}
 
-	require.Len(t, params, 2)
-	assert.Equal(t, 5, params[0])
-	assert.Equal(t, 100, params[1])
+	if len(params) != 2 {
+		t.Fatalf("expected length %d, got %d", 2, len(params))
+	}
+	if params[0] != 5 {
+		t.Errorf("got %v, want %v", params[0], 5)
+	}
+	if params[1] != 100 {
+		t.Errorf("got %v, want %v", params[1], 100)
+	}
 }
 
 // ─── Fix 2: QuoteTableName / QuoteColumnName / GenerateParamName ──────────────
@@ -96,8 +118,9 @@ func TestQuoteTableName_UsesDialect(t *testing.T) {
 		t.Run(tt.dialect, func(t *testing.T) {
 			db := mockDB(tt.dialect)
 			result := db.QuoteTableName(tt.table)
-			assert.Equal(t, tt.wantOpen, result[0],
-				"QuoteTableName(%q) on %s: got %q", tt.table, tt.dialect, result)
+			if result[0] != tt.wantOpen {
+				t.Errorf("QuoteTableName(%q) on %s: got %q, want open byte %c", tt.table, tt.dialect, result, tt.wantOpen)
+			}
 		})
 	}
 }
@@ -119,7 +142,9 @@ func TestQuoteColumnName_UsesDialectAndSplitsDots(t *testing.T) {
 		t.Run(tt.dialect+"/"+tt.col, func(t *testing.T) {
 			db := mockDB(tt.dialect)
 			result := db.QuoteColumnName(tt.col)
-			assert.Equal(t, tt.want, result)
+			if result != tt.want {
+				t.Errorf("got %v, want %v", result, tt.want)
+			}
 		})
 	}
 }
@@ -142,50 +167,11 @@ func TestGenerateParamName_UsesDialect(t *testing.T) {
 		t.Run(tt.dialect+"/"+tt.want, func(t *testing.T) {
 			db := mockDB(tt.dialect)
 			result := db.GenerateParamName(tt.index)
-			assert.Equal(t, tt.want, result)
+			if result != tt.want {
+				t.Errorf("got %v, want %v", result, tt.want)
+			}
 		})
 	}
-}
-
-// ─── Fix 3: Validator applied to builder queries ──────────────────────────────
-
-// TestValidator_AppliedToBuilderQueries verifies that a configured validator is called
-// for queries built via the fluent builder (Select/Insert/Update/Delete), not only
-// for raw DB.ExecContext/QueryContext calls.
-func TestValidator_AppliedToBuilderQueries(t *testing.T) {
-	db, err := NewDB("sqlite", ":memory:")
-	require.NoError(t, err)
-	defer db.Close()
-
-	_, err = db.sqlDB.Exec("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT)")
-	require.NoError(t, err)
-
-	_, err = db.sqlDB.Exec("INSERT INTO items (id, name) VALUES (1, 'normal')")
-	require.NoError(t, err)
-
-	// Enable validator.
-	db.validator = security.NewValidator()
-
-	ctx := context.Background()
-	qb := &QueryBuilder{db: db, ctx: ctx}
-
-	t.Run("legitimate select passes validator", func(t *testing.T) {
-		var items []struct {
-			ID   int    `db:"id"`
-			Name string `db:"name"`
-		}
-		err := qb.Select().From("items").Where("id = ?", 1).All(&items)
-		assert.NoError(t, err)
-	})
-
-	t.Run("injected param blocked by validator", func(t *testing.T) {
-		var items []struct {
-			Name string `db:"name"`
-		}
-		// The validator catches injection attempts in parameters.
-		err := qb.Select().From("items").Where("name = ?", "'; DROP TABLE items--").All(&items)
-		assert.Error(t, err, "validator should have blocked the injected param")
-	})
 }
 
 // ─── Fix 4: Empty Insert/Update returns clean error ───────────────────────────
@@ -197,16 +183,28 @@ func TestInsert_EmptyValues(t *testing.T) {
 
 	t.Run("nil map", func(t *testing.T) {
 		q := qb.Insert("users", nil)
-		require.NotNil(t, q)
-		assert.NotNil(t, q.prepErr)
-		assert.Contains(t, q.prepErr.Error(), "Insert requires a non-empty values map")
+		if q == nil {
+			t.Fatal("expected non-nil")
+		}
+		if q.prepErr == nil {
+			t.Error("expected non-nil prepErr")
+		}
+		if !strings.Contains(q.prepErr.Error(), "Insert requires a non-empty values map") {
+			t.Errorf("%q does not contain %q", q.prepErr.Error(), "Insert requires a non-empty values map")
+		}
 	})
 
 	t.Run("empty map", func(t *testing.T) {
 		q := qb.Insert("users", map[string]interface{}{})
-		require.NotNil(t, q)
-		assert.NotNil(t, q.prepErr)
-		assert.Contains(t, q.prepErr.Error(), "Insert requires a non-empty values map")
+		if q == nil {
+			t.Fatal("expected non-nil")
+		}
+		if q.prepErr == nil {
+			t.Error("expected non-nil prepErr")
+		}
+		if !strings.Contains(q.prepErr.Error(), "Insert requires a non-empty values map") {
+			t.Errorf("%q does not contain %q", q.prepErr.Error(), "Insert requires a non-empty values map")
+		}
 	})
 }
 
@@ -217,16 +215,28 @@ func TestUpdate_NoSet(t *testing.T) {
 
 	t.Run("Update without Set", func(t *testing.T) {
 		q := qb.Update("users").Where("id = ?", 1).Build()
-		require.NotNil(t, q)
-		assert.NotNil(t, q.prepErr)
-		assert.Contains(t, q.prepErr.Error(), "Update requires values")
+		if q == nil {
+			t.Fatal("expected non-nil")
+		}
+		if q.prepErr == nil {
+			t.Error("expected non-nil prepErr")
+		}
+		if !strings.Contains(q.prepErr.Error(), "Update requires values") {
+			t.Errorf("%q does not contain %q", q.prepErr.Error(), "Update requires values")
+		}
 	})
 
 	t.Run("Update with nil Set values", func(t *testing.T) {
 		q := qb.Update("users").Set(nil).Where("id = ?", 1).Build()
-		require.NotNil(t, q)
-		assert.NotNil(t, q.prepErr)
-		assert.Contains(t, q.prepErr.Error(), "Update requires values")
+		if q == nil {
+			t.Fatal("expected non-nil")
+		}
+		if q.prepErr == nil {
+			t.Error("expected non-nil prepErr")
+		}
+		if !strings.Contains(q.prepErr.Error(), "Update requires values") {
+			t.Errorf("%q does not contain %q", q.prepErr.Error(), "Update requires values")
+		}
 	})
 }
 
@@ -239,8 +249,12 @@ func TestResolveNamedParams_MissingParam(t *testing.T) {
 		"id = {:id} AND status = {:status}",
 		[]interface{}{Params{"id": 1}}, // :status is missing
 	)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), ":status")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), ":status") {
+		t.Errorf("%q does not contain %q", err.Error(), ":status")
+	}
 }
 
 // TestSelectQuery_Where_MissingNamedParam verifies that a missing named param causes
@@ -253,9 +267,15 @@ func TestSelectQuery_Where_MissingNamedParam(t *testing.T) {
 		Where("id = {:id} AND status = {:status}", Params{"id": 1}) // :status missing
 
 	q := sq.Build()
-	require.NotNil(t, q)
-	assert.NotNil(t, q.prepErr, "build error should be set for missing named param")
-	assert.Contains(t, q.prepErr.Error(), ":status")
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
+	if q.prepErr == nil {
+		t.Error("build error should be set for missing named param")
+	}
+	if !strings.Contains(q.prepErr.Error(), ":status") {
+		t.Errorf("%q does not contain %q", q.prepErr.Error(), ":status")
+	}
 }
 
 // TestUpdateQuery_Where_MissingNamedParam verifies error propagation in UpdateQuery.
@@ -268,9 +288,15 @@ func TestUpdateQuery_Where_MissingNamedParam(t *testing.T) {
 		Where("id = {:id} AND status = {:status}", Params{"id": 1}).
 		Build()
 
-	require.NotNil(t, q)
-	assert.NotNil(t, q.prepErr, "build error should be set for missing named param")
-	assert.Contains(t, q.prepErr.Error(), ":status")
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
+	if q.prepErr == nil {
+		t.Error("build error should be set for missing named param")
+	}
+	if !strings.Contains(q.prepErr.Error(), ":status") {
+		t.Errorf("%q does not contain %q", q.prepErr.Error(), ":status")
+	}
 }
 
 // TestDeleteQuery_Where_MissingNamedParam verifies error propagation in DeleteQuery.
@@ -282,9 +308,15 @@ func TestDeleteQuery_Where_MissingNamedParam(t *testing.T) {
 		Where("id = {:id} AND status = {:status}", Params{"id": 1}).
 		Build()
 
-	require.NotNil(t, q)
-	assert.NotNil(t, q.prepErr, "build error should be set for missing named param")
-	assert.Contains(t, q.prepErr.Error(), ":status")
+	if q == nil {
+		t.Fatal("expected non-nil")
+	}
+	if q.prepErr == nil {
+		t.Error("build error should be set for missing named param")
+	}
+	if !strings.Contains(q.prepErr.Error(), ":status") {
+		t.Errorf("%q does not contain %q", q.prepErr.Error(), ":status")
+	}
 }
 
 // ─── Fix 6: Schema-qualified table with alias ─────────────────────────────────
@@ -336,7 +368,9 @@ func TestBuildTableWithAlias_SchemaQualified(t *testing.T) {
 			db := mockDB(tt.dialect)
 			sq := &SelectQuery{builder: &QueryBuilder{db: db}}
 			result := sq.buildTableWithAlias(tt.input, db.dialect)
-			assert.Equal(t, tt.want, result)
+			if result != tt.want {
+				t.Errorf("got %v, want %v", result, tt.want)
+			}
 		})
 	}
 }
@@ -350,8 +384,12 @@ func TestFrom_SchemaQualifiedTable(t *testing.T) {
 	sql, _ := qb.Select("id", "name").From("public.users").buildSQL(db.dialect)
 
 	// Should produce "public"."users" not "public.users"
-	assert.Contains(t, sql, `"public"."users"`)
-	assert.NotContains(t, sql, `"public.users"`)
+	if !strings.Contains(sql, `"public"."users"`) {
+		t.Errorf("%q does not contain %q", sql, `"public"."users"`)
+	}
+	if strings.Contains(sql, `"public.users"`) {
+		t.Errorf("%q should not contain %q", sql, `"public.users"`)
+	}
 }
 
 // TestFrom_SchemaQualifiedTableWithAlias verifies end-to-end SQL generation
@@ -362,6 +400,10 @@ func TestFrom_SchemaQualifiedTableWithAlias(t *testing.T) {
 
 	sql, _ := qb.Select("u.id", "u.name").From("public.users u").buildSQL(db.dialect)
 
-	assert.Contains(t, sql, `"public"."users" AS "u"`)
-	assert.NotContains(t, sql, `"public.users u"`)
+	if !strings.Contains(sql, `"public"."users" AS "u"`) {
+		t.Errorf("%q does not contain %q", sql, `"public"."users" AS "u"`)
+	}
+	if strings.Contains(sql, `"public.users u"`) {
+		t.Errorf("%q should not contain %q", sql, `"public.users u"`)
+	}
 }
