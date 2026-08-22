@@ -1395,8 +1395,7 @@ func (mq *ModelQuery) FindByPublicID(publicID string) error {
 //	defer cancel()
 //	err := db.Model(&user).WithContext(ctx).Insert()
 func (mq *ModelQuery) WithContext(ctx context.Context) *ModelQuery {
-	mq.mq.SetContext(ctx)
-	return mq
+	return &ModelQuery{mq: mq.mq.WithContext(ctx)}
 }
 
 // ============================================================================
