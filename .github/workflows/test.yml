@@ -200,6 +200,33 @@ jobs:
       run: |
         go test -v -tags=integration ./... -run MySQL
 
+  # Integration tests - SQLite (embedded, no container needed)
+  integration-tests-sqlite:
+    name: Integration Tests - sqlite
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25'
+        cache: true
+        cache-dependency-path: "test/go.sum"
+
+    - name: Download integration test dependencies
+      working-directory: test
+      run: |
+        go mod download
+        go mod verify
+
+    - name: Run SQLite integration tests
+      working-directory: test
+      run: |
+        go test -v -tags=integration ./... -run SQLite
+
   # Benchmarks
   benchmark:
     name: Benchmark
