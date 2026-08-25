@@ -1290,3 +1290,14 @@ Relica is released under the [MIT License](LICENSE).
 **Made with ❤️ by Andrey Kolkov and CoreGX contributors**
 
 *Relica - Lightweight, Fast, Zero-Dependency Database Query Builder for Go*
+
+
+## Star History
+
+<a href="https://starhistory.io">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.starhistory.io/png?repos=coregx/relica&style=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.starhistory.io/png?repos=coregx/relica&style=professional" />
+   <img alt="Star History Chart" src="https://api.starhistory.io/png?repos=coregx/relica" width="800" />
+ </picture>
+</a>
