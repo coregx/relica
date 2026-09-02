@@ -517,21 +517,66 @@ func (mq *ModelQuery) Upsert(fields ...string) error {
 		ctx: mq.ctx,
 	}
 
-	upsertQuery := qb.Upsert(mq.table, dataMap).
+	q := qb.Upsert(mq.table, dataMap).
 		OnConflict(pkCols...).
-		DoUpdate(updateCols...)
+		DoUpdate(updateCols...).
+		Build()
 
-	q := upsertQuery.Build()
+	return mq.executeUpsertQuery(q)
+}
 
-	// PostgreSQL: use RETURNING to auto-populate single PK.
+// UpsertOn performs INSERT ... ON CONFLICT with custom conflict columns.
+// Use when the conflict target is a UNIQUE constraint, not the primary key.
+//
+// Example:
+//
+//	// Schema: UNIQUE(project_id, qualified_name)
+//	db.Model(&node).UpsertOn([]string{"project_id", "qualified_name"}, "name", "label")
+//	// ON CONFLICT ("project_id", "qualified_name") DO UPDATE SET name=EXCLUDED.name, label=EXCLUDED.label
+func (mq *ModelQuery) UpsertOn(conflictColumns []string, fields ...string) error {
+	if mq.table == "" {
+		return errors.New("model: table name not specified")
+	}
+
+	if len(conflictColumns) == 0 {
+		return errors.New("model: UpsertOn requires at least one conflict column")
+	}
+
+	if err := mq.callBeforeInsert(); err != nil {
+		return err
+	}
+
+	mq.populateAutoIDFields()
+
+	dataMap, err := util.StructToMap(mq.model)
+	if err != nil {
+		return err
+	}
+
+	updateCols := mq.buildUpsertUpdateCols(dataMap, conflictColumns, fields)
+
+	qb := &QueryBuilder{
+		db:  mq.db,
+		tx:  mq.tx,
+		ctx: mq.ctx,
+	}
+
+	q := qb.Upsert(mq.table, dataMap).
+		OnConflict(conflictColumns...).
+		DoUpdate(updateCols...).
+		Build()
+
+	return mq.executeUpsertQuery(q)
+}
+
+// executeUpsertQuery handles RETURNING (PostgreSQL) or LastInsertId (MySQL/SQLite).
+func (mq *ModelQuery) executeUpsertQuery(q *Query) error {
 	needsReturning, pkCol := mq.needsPostgresReturning()
 	if needsReturning {
-		returningClause := " RETURNING " + mq.db.dialect.QuoteIdentifier(pkCol)
-		q.appendSQL(returningClause)
+		q.appendSQL(" RETURNING " + mq.db.dialect.QuoteIdentifier(pkCol))
 		return mq.scanReturningID(q, pkCol)
 	}
 
-	// MySQL/SQLite: standard Execute + LastInsertId.
 	result, err := q.Execute()
 	if err != nil {
 		return err

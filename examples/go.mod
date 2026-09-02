@@ -1,6 +1,6 @@
 module github.com/coregx/relica/examples
 
-go 1.25
+go 1.25.0
 
 replace github.com/coregx/relica => ../
 
