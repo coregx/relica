@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.16.2] - 2026-09-03
+
+### Fixed
+
+- **`Model().Upsert()` with non-PK UNIQUE constraints** — `Upsert()` hardcoded PK as conflict target, failing when actual conflict happens on a UNIQUE column (e.g., `UNIQUE(email)` or composite `UNIQUE(project_id, qualified_name)`). Added `UpsertOn(conflictColumns, fields...)` to specify custom conflict columns
+- **Batch upsert missing** — `BatchInsert` had no conflict handling. Added `OnConflict()`, `DoUpdate()`, `DoNothing()` methods on `BatchInsertQuery` for multi-row INSERT with ON CONFLICT support across all three databases
+- **Upsert RETURNING/LastInsertId duplication** — extracted shared `executeUpsertQuery()` helper, eliminating code duplication between `Upsert()` and `UpsertOn()`
+
+---
+
 ## [0.16.1] - 2026-08-07
 
 ### Fixed

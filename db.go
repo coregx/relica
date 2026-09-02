@@ -1318,6 +1318,26 @@ func (mq *ModelQuery) Upsert(fields ...string) error {
 	return mq.mq.Upsert(fields...)
 }
 
+// UpsertOn performs INSERT ... ON CONFLICT with custom conflict columns.
+// Use when the conflict target is a UNIQUE constraint, not the primary key.
+//
+// The first argument specifies conflict columns (the UNIQUE constraint).
+// Remaining arguments specify which fields to update on conflict.
+// If no fields are specified, all non-conflict columns are updated.
+//
+// Example:
+//
+//	// Schema: UNIQUE(project_id, qualified_name)
+//	err := db.Model(&node).UpsertOn([]string{"project_id", "qualified_name"})
+//	// ON CONFLICT ("project_id","qualified_name") DO UPDATE SET name=EXCLUDED.name, ...
+//
+//	// Selective update on conflict:
+//	err := db.Model(&node).UpsertOn([]string{"email"}, "name", "status")
+//	// ON CONFLICT ("email") DO UPDATE SET name=EXCLUDED.name, status=EXCLUDED.status
+func (mq *ModelQuery) UpsertOn(conflictColumns []string, fields ...string) error {
+	return mq.mq.UpsertOn(conflictColumns, fields...)
+}
+
 // UpdateChanged updates only the fields that differ between the current model
 // and the original snapshot.
 //

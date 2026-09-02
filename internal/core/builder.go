@@ -2151,12 +2151,15 @@ func (dq *DeleteQuery) ToSQL() (string, []interface{}) {
 // BatchInsertQuery represents a batch INSERT query being built.
 // It allows inserting multiple rows with a single SQL statement for performance.
 type BatchInsertQuery struct {
-	builder  *QueryBuilder
-	table    string
-	columns  []string
-	rows     [][]interface{}
-	ctx      context.Context // context for this specific query
-	buildErr error           // stored programming error (replaces panic in fluent chain)
+	builder         *QueryBuilder
+	table           string
+	columns         []string
+	rows            [][]interface{}
+	conflictColumns []string
+	updateColumns   []string
+	doNothing       bool
+	ctx             context.Context // context for this specific query
+	buildErr        error           // stored programming error (replaces panic in fluent chain)
 }
 
 // WithContext sets the context for this batch INSERT query.
@@ -2206,8 +2209,32 @@ func (biq *BatchInsertQuery) ValuesMap(values map[string]interface{}) *BatchInse
 	return biq.Values(row...)
 }
 
+// OnConflict specifies the conflict columns for upsert behavior.
+// Generates ON CONFLICT (cols) clause (PostgreSQL/SQLite) or ON DUPLICATE KEY (MySQL).
+func (biq *BatchInsertQuery) OnConflict(columns ...string) *BatchInsertQuery {
+	biq.conflictColumns = columns
+	return biq
+}
+
+// DoUpdate specifies which columns to update on conflict.
+// If not called (but OnConflict is set), all non-conflict columns are updated.
+func (biq *BatchInsertQuery) DoUpdate(columns ...string) *BatchInsertQuery {
+	biq.updateColumns = columns
+	biq.doNothing = false
+	return biq
+}
+
+// DoNothing specifies that conflicting rows should be skipped.
+// PostgreSQL/SQLite: ON CONFLICT DO NOTHING. MySQL: INSERT IGNORE.
+func (biq *BatchInsertQuery) DoNothing() *BatchInsertQuery {
+	biq.doNothing = true
+	biq.updateColumns = nil
+	return biq
+}
+
 // Build constructs the Query object from BatchInsertQuery.
 // Generates SQL in the form: INSERT INTO table (cols) VALUES (?, ?), (?, ?), ...
+// If OnConflict is set, appends the appropriate conflict resolution clause.
 // If a programming error was stored (e.g., wrong Values count or no rows added),
 // it is propagated through the Query and returned by Execute at call time.
 func (biq *BatchInsertQuery) Build() *Query {
@@ -2260,6 +2287,8 @@ func (biq *BatchInsertQuery) Build() *Query {
 		" (" + strings.Join(quotedColumns, ", ") + ") VALUES " +
 		strings.Join(valueClauses, ", ")
 
+	query += biq.buildConflictClause()
+
 	return &Query{
 		sql:    query,
 		params: params,
@@ -2267,6 +2296,31 @@ func (biq *BatchInsertQuery) Build() *Query {
 		tx:     biq.builder.tx,
 		ctx:    ctx,
 	}
+}
+
+// buildConflictClause generates the ON CONFLICT suffix if conflict columns are set.
+func (biq *BatchInsertQuery) buildConflictClause() string {
+	if !biq.doNothing && len(biq.conflictColumns) == 0 {
+		return ""
+	}
+
+	quoteSlice := func(cols []string) []string {
+		q := make([]string, len(cols))
+		for i, c := range cols {
+			q[i] = biq.builder.db.dialect.QuoteIdentifier(c)
+		}
+		return q
+	}
+
+	if biq.doNothing {
+		return biq.builder.db.dialect.UpsertSQL(biq.table, quoteSlice(biq.conflictColumns), nil)
+	}
+
+	updateCols := biq.updateColumns
+	if len(updateCols) == 0 {
+		updateCols = filterKeys(biq.columns, biq.conflictColumns)
+	}
+	return biq.builder.db.dialect.UpsertSQL(biq.table, quoteSlice(biq.conflictColumns), quoteSlice(updateCols))
 }
 
 // Execute executes the batch INSERT query and returns the result.
