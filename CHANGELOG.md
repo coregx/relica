@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.17.0] - 2026-09-03
+
+### Added
+
+- **`SelectQuery.Model(&struct)`** — fetch by PK directly from SelectQuery chain. PK values read from struct fields (no separate arguments). Supports composite PK, auto-table detection, WHERE append, partial column reads via `.Select("col1", "col2")`. Compatible with `ForUpdate()`, `WithContext()`, transactions. Port of ozzo-dbx `SelectQuery.Model()` with composite PK support and improved zero-value safety (explicit error instead of silent skip)
+
+### Documentation
+
+- Comprehensive JOIN documentation: string ON vs Expression ON with decision table
+- `DISTINCT` common mistake warning (`Select("DISTINCT col")` → `.Distinct()`)
+- All v0.16.6 API methods documented (SqlDB, PingContext, ForUpdate, Find, IsNull)
+
+---
+
 ## [0.16.7] - 2026-09-03
 
 ### Fixed

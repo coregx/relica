@@ -12,6 +12,16 @@
 **ALWAYS use Model() API for struct-based operations:**
 
 ```go
+// FIND by primary key (one-liner)
+var user User
+err := db.Model(&user).Find(42)
+// Composite PK: db.Model(&item).Find(orderId, itemId)
+
+// FIND with column selection and filters (PK from struct)
+user = User{ID: 42}
+err = db.Select("name", "email").Where(relica.IsNull("deleted_at")).Model(&user)
+// SELECT name, email FROM users WHERE deleted_at IS NULL AND id = 42 LIMIT 1
+
 // INSERT - CORRECT
 user := User{Name: "Alice", Email: "alice@example.com"}
 err := db.Model(&user).Insert()
@@ -78,6 +88,15 @@ db.Select().From("users").
 db.Select().From("orders").
     Where(relica.Between("created_at", start, end)).
     All(&orders)
+
+// CORRECT - NULL checks (explicit, preferred over Eq(col, nil))
+db.Select().From("users").
+    Where(relica.IsNull("deleted_at")).
+    All(&activeUsers)
+
+db.Select().From("orders").
+    Where(relica.IsNotNull("shipped_at")).
+    All(&shippedOrders)
 
 // CORRECT - Column-to-column comparison (for JOINs and correlated subqueries)
 db.Select().From("orders o").
@@ -154,10 +173,12 @@ db.Model(&user).Insert()
 
 ## JOIN Operations
 
-**All JOIN types are supported. Use `EqCol()` for type-safe ON conditions:**
+**All JOIN types are supported. The `on` parameter accepts both strings and Expressions:**
+
+### String ON (simple, most common)
 
 ```go
-// INNER JOIN
+// INNER JOIN — static ON condition, no user input
 db.Select("u.name", "o.total").
     From("users u").
     InnerJoin("orders o", "o.user_id = u.id").
@@ -177,22 +198,44 @@ db.Select("u.name", "o.total", "p.name as product").
     InnerJoin("products p", "p.id = o.product_id").
     Where(relica.Eq("o.status", "paid")).
     All(&results)
+```
 
-// JOIN with Expression API (complex ON conditions)
-db.Select().
-    From("messages m").
-    InnerJoin("users u", relica.And(
-        relica.NewExp("m.user_id = u.id"),
-        relica.GreaterThan("u.status", 0),
-    )).
-    All(&results)
+### Expression ON (parameterized, type-safe)
 
-// JOIN with EqCol (type-safe column-to-column)
+Use `Expression` when the ON condition contains **user-supplied values** (SQL injection protection)
+or when you need **composable conditions**:
+
+```go
+// EqCol — type-safe column-to-column (PREFERRED for simple ON)
 db.Select("u.name", "o.total").
     From("users u").
     InnerJoin("orders o", relica.EqCol("o.user_id", "u.id")).
     All(&results)
+
+// NewExp with parameters — ON condition with user values (SQL injection safe)
+db.Select().
+    From("orders o").
+    InnerJoin("users u", relica.NewExp("o.user_id = u.id AND u.tenant_id = ?", tenantID)).
+    All(&results)
+
+// And/Or — complex composite ON conditions
+db.Select().
+    From("messages m").
+    InnerJoin("users u", relica.And(
+        relica.EqCol("m.user_id", "u.id"),
+        relica.GreaterThan("u.status", 0),
+    )).
+    All(&results)
 ```
+
+### When to use which
+
+| Pattern | When to use |
+|---------|-------------|
+| `"a.id = b.id"` (string) | Static ON, no user input — simplest |
+| `relica.EqCol("a.id", "b.id")` | Column-to-column — type-safe, quoting handled |
+| `relica.NewExp("a.id = b.id AND a.x = ?", val)` | ON with user values — SQL injection protection |
+| `relica.And(expr1, expr2)` | Multiple conditions — composable |
 
 ### All JOIN Types
 
@@ -207,7 +250,18 @@ db.Select("u.name", "o.total").
 The `on` parameter accepts:
 - `string` — raw SQL condition: `"o.user_id = u.id"`
 - `Expression` — type-safe: `relica.EqCol("o.user_id", "u.id")`
-- `relica.And(...)` / `relica.Or(...)` — complex conditions
+- `relica.NewExp("...", args...)` — parameterized (SQL injection safe)
+- `relica.And(...)` / `relica.Or(...)` — composite conditions
+
+### Common Mistakes
+
+```go
+// WRONG — DISTINCT is NOT a column name, use .Distinct() method
+db.Select("DISTINCT u.name").From("users u").InnerJoin(...)
+
+// CORRECT
+db.Select("u.name").From("users u").InnerJoin(...).Distinct()
+```
 
 ---
 
@@ -290,7 +344,61 @@ if err != nil {
 return tx.Commit()
 ```
 
-**All methods available on Tx**: Select, Insert, Update, Delete, Model, BatchInsert, BatchUpdate, Upsert, InsertStruct, BatchInsertStruct, NewQuery.
+**All methods available on Tx**: Select, Insert, Update, Delete, Model, BatchInsert, BatchUpdate, Upsert, InsertStruct, BatchInsertStruct, NewQuery, ExecContext, QueryContext, QueryRowContext.
+
+```go
+// Raw SQL within transaction (for migrations, DDL, etc.)
+tx.ExecContext(ctx, "CREATE INDEX idx_users_email ON users(email)")
+```
+
+---
+
+## Row Locking (FOR UPDATE / FOR SHARE)
+
+**Pessimistic locking for concurrent access. Silently ignored for SQLite.**
+
+```go
+// Exclusive lock (block reads and writes by other transactions)
+tx.Select().From("accounts").
+    Where(relica.Eq("id", accountID)).
+    ForUpdate().
+    One(&account)
+
+// Shared lock (allow concurrent reads, block writes)
+tx.Select().From("products").
+    Where(relica.Eq("id", productID)).
+    ForShare().
+    One(&product)
+
+// Non-blocking lock — skip already-locked rows (job queue pattern)
+tx.Select().From("tasks").
+    Where(relica.Eq("status", "pending")).
+    ForUpdateSkipLocked().
+    Limit(10).
+    All(&tasks)
+```
+
+| Method | SQL | Use case |
+|--------|-----|----------|
+| `ForUpdate()` | `FOR UPDATE` | Exclusive row lock |
+| `ForShare()` | `FOR SHARE` | Shared row lock |
+| `ForUpdateSkipLocked()` | `FOR UPDATE SKIP LOCKED` | Job queues, non-blocking |
+
+---
+
+## Connection Inspection
+
+```go
+// Access underlying *sql.DB for pool tuning
+sqlDB := db.SqlDB()
+sqlDB.SetMaxOpenConns(100)
+
+// Health check
+err := db.PingContext(ctx)
+
+// Driver name
+db.DriverName() // "postgres", "mysql", "sqlite3"
+```
 
 ---
 

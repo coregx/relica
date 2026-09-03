@@ -2153,6 +2153,27 @@ func (sq *SelectQuery) Build() *Query {
 	return &Query{q: sq.sq.Build()}
 }
 
+// Model reads PK values from dest struct, auto-detects table (if From not set),
+// appends PK WHERE conditions, and scans a single row into dest.
+// Terminal method — executes the query and returns error.
+//
+// Example:
+//
+//	// Simple PK fetch
+//	user := User{ID: 42}
+//	err := db.Select().Model(&user)
+//
+//	// Partial read with WHERE filter
+//	user := User{ID: 42}
+//	err := db.Select("name", "email").Where(relica.IsNull("deleted_at")).Model(&user)
+//
+//	// Composite PK
+//	item := OrderItem{OrderID: 100, ItemID: 20}
+//	err := db.Select().Model(&item)
+func (sq *SelectQuery) Model(dest any) error {
+	return sq.sq.Model(dest)
+}
+
 // One scans a single row into dest.
 //
 // Returns sql.ErrNoRows if no row is found.

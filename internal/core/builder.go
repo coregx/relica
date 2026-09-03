@@ -3,13 +3,16 @@ package core
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/coregx/relica/internal/analyzer"
 	"github.com/coregx/relica/internal/dialects"
+	"github.com/coregx/relica/internal/util"
 )
 
 // selectAliasRegex matches explicit "AS alias" in SELECT columns.
@@ -1350,6 +1353,63 @@ func (sq *SelectQuery) Build() *Query {
 		tx:     sq.builder.tx,
 		ctx:    ctx,
 	}
+}
+
+// validateModelDest validates dest is a non-nil struct pointer and returns the dereferenced Value.
+func validateModelDest(dest any) (reflect.Value, error) {
+	v := reflect.ValueOf(dest)
+	if v.Kind() != reflect.Pointer || v.IsNil() {
+		return reflect.Value{}, errors.New("model: dest must be a non-nil pointer to struct")
+	}
+	v = v.Elem()
+	if v.Kind() != reflect.Struct {
+		return reflect.Value{}, errors.New("model: dest must be a pointer to struct")
+	}
+	return v, nil
+}
+
+// extractNonZeroPK extracts PK info from struct and validates at least one PK field is non-zero.
+func extractNonZeroPK(v reflect.Value) (*util.PrimaryKeyInfo, error) {
+	pkInfo, err := util.FindPrimaryKeyFields(v)
+	if err != nil {
+		return nil, errors.New("model: primary key not found")
+	}
+	for _, val := range pkInfo.Values {
+		if !util.IsPrimaryKeyZero(val) {
+			return pkInfo, nil
+		}
+	}
+	return nil, errors.New("model: primary key not set (all PK fields are zero)")
+}
+
+// Model reads PK values from dest struct fields, auto-detects table (if From not set),
+// appends PK WHERE conditions, and scans a single row into dest.
+// Terminal method — returns error, not *SelectQuery.
+// Returns error if all PK fields are zero or struct has no PK.
+func (sq *SelectQuery) Model(dest any) error {
+	v, err := validateModelDest(dest)
+	if err != nil {
+		return err
+	}
+
+	if sq.table == "" && sq.fromSrc == nil {
+		tableName := inferTableName(dest)
+		if tableName == "" {
+			return errors.New("model: cannot infer table name")
+		}
+		sq.From(tableName)
+	}
+
+	pkInfo, err := extractNonZeroPK(v)
+	if err != nil {
+		return err
+	}
+
+	for i, col := range pkInfo.Columns {
+		sq.Where(Eq(col, pkInfo.Values[i].Interface()))
+	}
+
+	return sq.Limit(1).One(dest)
 }
 
 // One scans a single row into dest.

@@ -621,12 +621,19 @@ func (s *memStmt) execSelect(db *memDatabase, args []driver.Value) (driver.Rows,
 	} else {
 		tableName = strings.ToLower(unquoteIdent(rest))
 	}
-	// Strip ORDER BY if present
-	if i := strings.Index(strings.ToUpper(tableName), " ORDER BY"); i >= 0 {
-		tableName = unquoteIdent(tableName[:i])
+	// Strip ORDER BY / LIMIT / OFFSET from table name (can appear before WHERE if no WHERE).
+	for _, clause := range []string{" ORDER BY", " LIMIT", " OFFSET"} {
+		if i := strings.Index(strings.ToUpper(tableName), clause); i >= 0 {
+			tableName = tableName[:i]
+		}
 	}
-	if i := strings.Index(strings.ToUpper(whereClause), " ORDER BY"); i >= 0 {
-		whereClause = whereClause[:i]
+	tableName = strings.TrimSpace(unquoteIdent(tableName))
+
+	// Strip ORDER BY / LIMIT / OFFSET from WHERE clause.
+	for _, clause := range []string{" ORDER BY", " LIMIT", " OFFSET"} {
+		if i := strings.Index(strings.ToUpper(whereClause), clause); i >= 0 {
+			whereClause = whereClause[:i]
+		}
 	}
 	tableName = strings.ToLower(strings.TrimSpace(tableName))
 
