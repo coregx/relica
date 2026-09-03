@@ -59,9 +59,10 @@ All(&stats)
 ### IN Subquery
 
 ```go
-subquery := db.Select("DISTINCT user_id").
+subquery := db.Select("user_id").
     From("orders").
-    Where("status = ?", "completed")
+    Where("status = ?", "completed").
+    Distinct()
 
 db.Select().
     From("users").

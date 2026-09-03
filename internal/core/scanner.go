@@ -165,6 +165,10 @@ func (s *scanner) scanRow(rows *sql.Rows, dest any) error {
 	scanDests := make([]any, len(columns))
 	for i, colName := range columns {
 		colName = strings.ToLower(colName)
+		// Strip table prefix (e.g., "src.qualified_name" → "qualified_name")
+		if dotIdx := strings.LastIndex(colName, "."); dotIdx >= 0 {
+			colName = colName[dotIdx+1:]
+		}
 
 		if fieldInfo, ok := fieldMap[colName]; ok {
 			// Get field value by index path
@@ -242,6 +246,10 @@ func (s *scanner) scanRows(rows *sql.Rows, dest any) error {
 		scanDests := make([]any, len(columns))
 		for i, colName := range columns {
 			colName = strings.ToLower(colName)
+			// Strip table prefix (e.g., "src.qualified_name" → "qualified_name")
+			if dotIdx := strings.LastIndex(colName, "."); dotIdx >= 0 {
+				colName = colName[dotIdx+1:]
+			}
 
 			if fieldInfo, ok := fieldMap[colName]; ok {
 				// Get field value by index path
