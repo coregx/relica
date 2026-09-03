@@ -17,8 +17,8 @@ import (
 // Optimizer interface for query optimization analysis.
 // Forward declaration to avoid import cycle.
 type Optimizer interface {
-	Analyze(ctx context.Context, query string, args []interface{}, executionTime time.Duration) (interface{}, error)
-	Suggest(analysis interface{}) []interface{}
+	Analyze(ctx context.Context, query string, args []any, executionTime time.Duration) (any, error)
+	Suggest(analysis any) []any
 }
 
 // DB represents the main database connection with caching and query hooks.
@@ -501,7 +501,7 @@ func (db *DB) UnpinQuery(query string) bool {
 // validateQueryAndParams validates query and parameters if validator is enabled.
 // Logs security events if auditor is enabled.
 // Returns error if validation fails.
-func (db *DB) validateQueryAndParams(ctx context.Context, query string, args []interface{}) error {
+func (db *DB) validateQueryAndParams(ctx context.Context, query string, args []any) error {
 	if db.validator == nil {
 		return nil
 	}
@@ -526,7 +526,7 @@ func (db *DB) validateQueryAndParams(ctx context.Context, query string, args []i
 // ExecContext executes a raw SQL query (INSERT/UPDATE/DELETE).
 // If a validator is configured, the query and parameters are validated before execution.
 // If an auditor is configured, the operation is logged to the audit trail.
-func (db *DB) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+func (db *DB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	// Track execution time for audit log
 	start := time.Now()
 
@@ -552,7 +552,7 @@ func (db *DB) ExecContext(ctx context.Context, query string, args ...interface{}
 // QueryContext executes a raw SQL query and returns rows.
 // If a validator is configured, the query and parameters are validated before execution.
 // If an auditor is configured, the operation is logged to the audit trail.
-func (db *DB) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+func (db *DB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	// Track execution time for audit log
 	start := time.Now()
 
@@ -577,7 +577,7 @@ func (db *DB) QueryContext(ctx context.Context, query string, args ...interface{
 // QueryRowContext executes a raw SQL query expected to return at most one row.
 // Note: Due to database/sql API constraints, QueryRowContext does NOT support validation.
 // Use QueryContext() instead if you need validation, or ensure the query is safe before calling this method.
-func (db *DB) QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row {
+func (db *DB) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
 	// Note: We cannot validate here because QueryRowContext cannot return errors.
 	// Validation must be done at a higher level (QueryBuilder) or users should use QueryContext.
 	return db.sqlDB.QueryRowContext(ctx, query, args...)

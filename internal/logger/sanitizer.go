@@ -54,7 +54,7 @@ func NewSanitizer(sensitiveFields []string) *Sanitizer {
 // MaskParams masks sensitive parameters based on field names detected in the SQL query.
 // It returns a new slice with sensitive values replaced by the mask value.
 // Original parameters are not modified.
-func (s *Sanitizer) MaskParams(sql string, params []interface{}) []interface{} {
+func (s *Sanitizer) MaskParams(sql string, params []any) []any {
 	if len(params) == 0 {
 		return params
 	}
@@ -75,7 +75,7 @@ func (s *Sanitizer) MaskParams(sql string, params []interface{}) []interface{} {
 	}
 
 	// Create masked copy
-	masked := make([]interface{}, len(params))
+	masked := make([]any, len(params))
 	for i, param := range params {
 		if s.isSensitiveParam(sql, i, param) {
 			masked[i] = s.maskValue
@@ -89,7 +89,7 @@ func (s *Sanitizer) MaskParams(sql string, params []interface{}) []interface{} {
 
 // isSensitiveParam determines if a parameter should be masked.
 // It uses heuristics based on SQL structure and parameter value types.
-func (s *Sanitizer) isSensitiveParam(sql string, _ int, param interface{}) bool {
+func (s *Sanitizer) isSensitiveParam(sql string, _ int, param any) bool {
 	// For now, mask all params if sensitive fields are detected in SQL
 	// Future enhancement: parse SQL to determine exact parameter positions
 	sqlLower := strings.ToLower(sql)
@@ -117,7 +117,7 @@ func (s *Sanitizer) containsSensitivePattern(sql string) bool {
 
 // FormatParams converts parameters to a safe string representation for logging.
 // Sensitive values should be masked using MaskParams before calling this.
-func (s *Sanitizer) FormatParams(params []interface{}) string {
+func (s *Sanitizer) FormatParams(params []any) string {
 	if len(params) == 0 {
 		return "[]"
 	}
@@ -132,7 +132,7 @@ func (s *Sanitizer) FormatParams(params []interface{}) string {
 
 // formatValue formats a single parameter value for logging.
 // Truncates very long strings to prevent log pollution.
-func (s *Sanitizer) formatValue(v interface{}) string {
+func (s *Sanitizer) formatValue(v any) string {
 	if v == nil {
 		return "NULL"
 	}

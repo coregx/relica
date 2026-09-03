@@ -306,7 +306,7 @@ func FindAutoIDFields(v reflect.Value) []AutoIDInfo {
 
 // ModelToColumns extracts database columns from struct tags.
 // Handles composite PK syntax: db:"column_name,pk" -> column_name.
-func ModelToColumns(model interface{}) map[string]string {
+func ModelToColumns(model any) map[string]string {
 	t := reflect.TypeOf(model)
 	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
@@ -326,7 +326,7 @@ func ModelToColumns(model interface{}) map[string]string {
 	return columns
 }
 
-// StructToMap converts a struct to map[string]interface{} using db tags.
+// StructToMap converts a struct to map[string]any using db tags.
 //
 // Rules:
 //   - Unexported fields are skipped.
@@ -338,7 +338,7 @@ func ModelToColumns(model interface{}) map[string]string {
 // Returns error if:
 //   - data is not a struct or *struct.
 //   - data is nil pointer.
-func StructToMap(data interface{}) (map[string]interface{}, error) {
+func StructToMap(data any) (map[string]any, error) {
 	v := reflect.ValueOf(data)
 	if v.Kind() == reflect.Pointer {
 		if v.IsNil() {
@@ -352,7 +352,7 @@ func StructToMap(data interface{}) (map[string]interface{}, error) {
 	}
 
 	t := v.Type()
-	result := make(map[string]interface{})
+	result := make(map[string]any)
 
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)

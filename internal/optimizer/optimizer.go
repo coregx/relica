@@ -14,7 +14,7 @@ import (
 type Optimizer interface {
 	// Analyze examines a query's execution metrics and generates an analysis report.
 	// It uses the analyzer package to get query plans and combines them with runtime metrics.
-	Analyze(ctx context.Context, query string, args []interface{}, executionTime time.Duration) (*Analysis, error)
+	Analyze(ctx context.Context, query string, args []any, executionTime time.Duration) (*Analysis, error)
 
 	// Suggest generates actionable optimization suggestions based on analysis results.
 	Suggest(analysis *Analysis) []Suggestion

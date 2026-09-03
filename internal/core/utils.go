@@ -18,7 +18,7 @@ func DefaultFieldMapFunc(field string) string {
 }
 
 // GetTableName extracts the database table name from a model struct or interface.
-func GetTableName(model interface{}) string {
+func GetTableName(model any) string {
 	if tm, ok := model.(TableModel); ok {
 		return tm.TableName()
 	}

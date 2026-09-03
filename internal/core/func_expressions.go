@@ -20,14 +20,14 @@ import (
 type CaseExp struct {
 	column    string       // For simple CASE: CASE column WHEN ...
 	whens     []whenClause // WHEN conditions
-	elseValue interface{}  // ELSE value (optional)
+	elseValue any          // ELSE value (optional)
 	alias     string       // AS alias
 }
 
 // whenClause represents a single WHEN clause in a CASE expression.
 type whenClause struct {
-	condition interface{} // For simple CASE: value to match; for searched: condition string
-	result    interface{} // THEN result
+	condition any // For simple CASE: value to match; for searched: condition string
+	result    any // THEN result
 }
 
 // Case creates a simple CASE expression.
@@ -64,13 +64,13 @@ func CaseWhen() *CaseExp {
 }
 
 // When adds a WHEN clause to the CASE expression.
-func (c *CaseExp) When(condition, result interface{}) *CaseExp {
+func (c *CaseExp) When(condition, result any) *CaseExp {
 	c.whens = append(c.whens, whenClause{condition: condition, result: result})
 	return c
 }
 
 // Else sets the ELSE value for the CASE expression.
-func (c *CaseExp) Else(value interface{}) *CaseExp {
+func (c *CaseExp) Else(value any) *CaseExp {
 	c.elseValue = value
 	return c
 }
@@ -82,14 +82,14 @@ func (c *CaseExp) As(alias string) *CaseExp {
 }
 
 // Build implements the Expression interface.
-func (c *CaseExp) Build(dialect dialects.Dialect) (string, []interface{}) {
+func (c *CaseExp) Build(dialect dialects.Dialect) (string, []any) {
 	if len(c.whens) == 0 {
 		return "", nil
 	}
 
 	var sql strings.Builder
 	// Pre-allocate for WHEN results + potential conditions + ELSE
-	args := make([]interface{}, 0, len(c.whens)*2+1)
+	args := make([]any, 0, len(c.whens)*2+1)
 
 	// Start CASE
 	if c.column != "" {
@@ -142,7 +142,7 @@ func (c *CaseExp) Build(dialect dialects.Dialect) (string, []interface{}) {
 // CoalesceExp represents a SQL COALESCE expression.
 // Returns the first non-NULL value from the list.
 type CoalesceExp struct {
-	values []interface{}
+	values []any
 	alias  string
 }
 
@@ -153,7 +153,7 @@ type CoalesceExp struct {
 //	relica.Coalesce("nickname", "first_name", "'Anonymous'").As("display_name")
 //
 // Generates: COALESCE("nickname", "first_name", 'Anonymous') AS "display_name"
-func Coalesce(values ...interface{}) *CoalesceExp {
+func Coalesce(values ...any) *CoalesceExp {
 	return &CoalesceExp{values: values}
 }
 
@@ -164,13 +164,13 @@ func (c *CoalesceExp) As(alias string) *CoalesceExp {
 }
 
 // Build implements the Expression interface.
-func (c *CoalesceExp) Build(dialect dialects.Dialect) (string, []interface{}) {
+func (c *CoalesceExp) Build(dialect dialects.Dialect) (string, []any) {
 	if len(c.values) == 0 {
 		return "", nil
 	}
 
 	var parts []string
-	var args []interface{}
+	var args []any
 
 	for _, val := range c.values {
 		switch v := val.(type) {
@@ -211,8 +211,8 @@ func (c *CoalesceExp) Build(dialect dialects.Dialect) (string, []interface{}) {
 // NullIfExp represents a SQL NULLIF expression.
 // Returns NULL if the two expressions are equal, otherwise returns the first expression.
 type NullIfExp struct {
-	expr1 interface{}
-	expr2 interface{}
+	expr1 any
+	expr2 any
 	alias string
 }
 
@@ -223,7 +223,7 @@ type NullIfExp struct {
 //	relica.NullIf("email", "''").As("valid_email")
 //
 // Generates: NULLIF("email", ”) AS "valid_email"
-func NullIf(expr1, expr2 interface{}) *NullIfExp {
+func NullIf(expr1, expr2 any) *NullIfExp {
 	return &NullIfExp{expr1: expr1, expr2: expr2}
 }
 
@@ -234,7 +234,7 @@ func (n *NullIfExp) As(alias string) *NullIfExp {
 }
 
 // buildExprValue builds a single value for use in SQL functions.
-func buildExprValue(val interface{}, dialect dialects.Dialect) (string, []interface{}) {
+func buildExprValue(val any, dialect dialects.Dialect) (string, []any) {
 	switch v := val.(type) {
 	case string:
 		// Check if it's a column name (no quotes) or literal (with quotes)
@@ -247,16 +247,16 @@ func buildExprValue(val interface{}, dialect dialects.Dialect) (string, []interf
 	case Expression:
 		return v.Build(dialect)
 	default:
-		return "?", []interface{}{v}
+		return "?", []any{v}
 	}
 }
 
 // Build implements the Expression interface.
-func (n *NullIfExp) Build(dialect dialects.Dialect) (string, []interface{}) {
+func (n *NullIfExp) Build(dialect dialects.Dialect) (string, []any) {
 	sql1, args1 := buildExprValue(n.expr1, dialect)
 	sql2, args2 := buildExprValue(n.expr2, dialect)
 
-	args := make([]interface{}, 0, len(args1)+len(args2))
+	args := make([]any, 0, len(args1)+len(args2))
 	args = append(args, args1...)
 	args = append(args, args2...)
 
@@ -275,7 +275,7 @@ func (n *NullIfExp) Build(dialect dialects.Dialect) (string, []interface{}) {
 
 // GreatestLeastExp represents a SQL GREATEST or LEAST expression.
 type GreatestLeastExp struct {
-	values  []interface{}
+	values  []any
 	funcSQL string // "GREATEST" or "LEAST"
 	alias   string
 }
@@ -290,7 +290,7 @@ type GreatestLeastExp struct {
 // Generates: GREATEST("price", "discount_price", "sale_price") AS "max_price"
 //
 // Note: SQLite does not have GREATEST/LEAST - use MAX/MIN in subquery instead.
-func Greatest(values ...interface{}) *GreatestLeastExp {
+func Greatest(values ...any) *GreatestLeastExp {
 	return &GreatestLeastExp{values: values, funcSQL: "GREATEST"}
 }
 
@@ -302,7 +302,7 @@ func Greatest(values ...interface{}) *GreatestLeastExp {
 //	relica.Least("price", "discount_price", "sale_price").As("min_price")
 //
 // Generates: LEAST("price", "discount_price", "sale_price") AS "min_price"
-func Least(values ...interface{}) *GreatestLeastExp {
+func Least(values ...any) *GreatestLeastExp {
 	return &GreatestLeastExp{values: values, funcSQL: "LEAST"}
 }
 
@@ -313,13 +313,13 @@ func (g *GreatestLeastExp) As(alias string) *GreatestLeastExp {
 }
 
 // Build implements the Expression interface.
-func (g *GreatestLeastExp) Build(dialect dialects.Dialect) (string, []interface{}) {
+func (g *GreatestLeastExp) Build(dialect dialects.Dialect) (string, []any) {
 	if len(g.values) == 0 {
 		return "", nil
 	}
 
 	parts := make([]string, 0, len(g.values))
-	args := make([]interface{}, 0, len(g.values))
+	args := make([]any, 0, len(g.values))
 
 	for _, val := range g.values {
 		sql, subArgs := buildExprValue(val, dialect)
@@ -356,7 +356,7 @@ func (g *GreatestLeastExp) Build(dialect dialects.Dialect) (string, []interface{
 //   - PostgreSQL/SQLite: value1 || value2 || value3
 //   - MySQL: CONCAT(value1, value2, value3)
 type ConcatExp struct {
-	values []interface{}
+	values []any
 	alias  string
 }
 
@@ -368,7 +368,7 @@ type ConcatExp struct {
 //
 // PostgreSQL/SQLite: "first_name" || ' ' || "last_name" AS "full_name"
 // MySQL: CONCAT("first_name", ' ', "last_name") AS "full_name"
-func Concat(values ...interface{}) *ConcatExp {
+func Concat(values ...any) *ConcatExp {
 	return &ConcatExp{values: values}
 }
 
@@ -379,13 +379,13 @@ func (c *ConcatExp) As(alias string) *ConcatExp {
 }
 
 // Build implements the Expression interface.
-func (c *ConcatExp) Build(dialect dialects.Dialect) (string, []interface{}) {
+func (c *ConcatExp) Build(dialect dialects.Dialect) (string, []any) {
 	if len(c.values) == 0 {
 		return "", nil
 	}
 
 	parts := make([]string, 0, len(c.values))
-	args := make([]interface{}, 0, len(c.values))
+	args := make([]any, 0, len(c.values))
 
 	for _, val := range c.values {
 		sql, subArgs := buildExprValue(val, dialect)

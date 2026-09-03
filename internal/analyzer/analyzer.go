@@ -50,12 +50,12 @@ type QueryPlan struct {
 type Analyzer interface {
 	// Explain analyzes query execution plan without executing the query.
 	// Returns QueryPlan with estimated metrics.
-	Explain(ctx context.Context, query string, args []interface{}) (*QueryPlan, error)
+	Explain(ctx context.Context, query string, args []any) (*QueryPlan, error)
 
 	// ExplainAnalyze analyzes query execution plan AND executes the query.
 	// Returns QueryPlan with actual execution metrics.
 	// Not all databases support this (e.g., older MySQL versions).
-	ExplainAnalyze(ctx context.Context, query string, args []interface{}) (*QueryPlan, error)
+	ExplainAnalyze(ctx context.Context, query string, args []any) (*QueryPlan, error)
 }
 
 // ExplainMode indicates the type of EXPLAIN operation.

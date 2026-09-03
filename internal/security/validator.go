@@ -108,7 +108,7 @@ func (v *Validator) ValidateQuery(query string) error {
 
 // ValidateParams checks query parameters for SQL injection attempts.
 // Looks for suspicious string patterns that may bypass prepared statements.
-func (v *Validator) ValidateParams(params []interface{}) error {
+func (v *Validator) ValidateParams(params []any) error {
 	for i, param := range params {
 		str, ok := param.(string)
 		if !ok {

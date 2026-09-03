@@ -22,7 +22,7 @@ const (
 type ModelQuery struct {
 	db      *DB
 	tx      *sql.Tx // nil for non-transactional queries
-	model   interface{}
+	model   any
 	table   string
 	exclude map[string]bool
 	ctx     context.Context // nil means use background context
@@ -40,7 +40,7 @@ func (mq *ModelQuery) WithContext(ctx context.Context) *ModelQuery {
 }
 
 // Model creates a new ModelQuery for the given struct.
-func (db *DB) Model(model interface{}) *ModelQuery {
+func (db *DB) Model(model any) *ModelQuery {
 	return &ModelQuery{
 		db:      db,
 		tx:      nil,
@@ -51,7 +51,7 @@ func (db *DB) Model(model interface{}) *ModelQuery {
 }
 
 // Model creates a ModelQuery within transaction context.
-func (tx *Tx) Model(model interface{}) *ModelQuery {
+func (tx *Tx) Model(model any) *ModelQuery {
 	db := tx.builder.db
 	return &ModelQuery{
 		db:      db,
@@ -66,7 +66,7 @@ func (tx *Tx) Model(model interface{}) *ModelQuery {
 // inferTableName determines table name from struct.
 // Returns an empty string if model is nil; callers that need the table name
 // must handle the empty-string case (ModelQuery operations return an error).
-func inferTableName(model interface{}) string {
+func inferTableName(model any) string {
 	if model == nil {
 		return ""
 	}
@@ -98,7 +98,7 @@ func inferTableName(model interface{}) string {
 //   - columns: slice of column names in struct declaration order
 //   - values: slice of values in struct declaration order
 //   - error: if no primary key found
-func (mq *ModelQuery) getPrimaryKeys() ([]string, []interface{}, error) {
+func (mq *ModelQuery) getPrimaryKeys() ([]string, []any, error) {
 	v := reflect.ValueOf(mq.model)
 	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
@@ -109,7 +109,7 @@ func (mq *ModelQuery) getPrimaryKeys() ([]string, []interface{}, error) {
 		return nil, nil, err
 	}
 
-	values := make([]interface{}, len(pkInfo.Values))
+	values := make([]any, len(pkInfo.Values))
 	for i, val := range pkInfo.Values {
 		values[i] = val.Interface()
 	}
@@ -118,8 +118,8 @@ func (mq *ModelQuery) getPrimaryKeys() ([]string, []interface{}, error) {
 }
 
 // filterFields applies only/exclude filters.
-func (mq *ModelQuery) filterFields(data map[string]interface{}, only []string) map[string]interface{} {
-	result := make(map[string]interface{})
+func (mq *ModelQuery) filterFields(data map[string]any, only []string) map[string]any {
+	result := make(map[string]any)
 
 	// If only specified - take only those.
 	if len(only) > 0 {
@@ -514,6 +514,9 @@ func (mq *ModelQuery) Upsert(fields ...string) error {
 		return errors.New("model: primary key not found for upsert conflict detection")
 	}
 
+	// Remove zero single PK from INSERT (let database auto-increment).
+	mq.removeZeroPK(dataMap)
+
 	// Build update columns: either specified fields or all non-PK fields.
 	updateCols := mq.buildUpsertUpdateCols(dataMap, pkCols, fields)
 
@@ -560,6 +563,9 @@ func (mq *ModelQuery) UpsertOn(conflictColumns []string, fields ...string) error
 		return err
 	}
 
+	// Remove zero single PK from INSERT (let database auto-increment).
+	mq.removeZeroPK(dataMap)
+
 	updateCols := mq.buildUpsertUpdateCols(dataMap, conflictColumns, fields)
 
 	qb := &QueryBuilder{
@@ -574,6 +580,21 @@ func (mq *ModelQuery) UpsertOn(conflictColumns []string, fields ...string) error
 		Build()
 
 	return mq.executeUpsertQuery(q)
+}
+
+// removeZeroPK removes zero single PK from dataMap so database auto-increments.
+func (mq *ModelQuery) removeZeroPK(dataMap map[string]any) {
+	v := reflect.ValueOf(mq.model)
+	if v.Kind() == reflect.Pointer {
+		v = v.Elem()
+	}
+	pkInfo, err := util.FindPrimaryKeyFields(v)
+	if err != nil || pkInfo == nil || !pkInfo.IsSingle() {
+		return
+	}
+	if util.IsPrimaryKeyZero(pkInfo.Values[0]) {
+		delete(dataMap, pkInfo.Columns[0])
+	}
 }
 
 // executeUpsertQuery handles RETURNING (PostgreSQL/SQLite) or LastInsertId (MySQL).
@@ -596,7 +617,7 @@ func (mq *ModelQuery) executeUpsertQuery(q *Query) error {
 // buildUpsertUpdateCols builds the list of columns to update on conflict.
 // If fields are specified, use only those (minus any PKs).
 // Otherwise, use all non-PK fields.
-func (mq *ModelQuery) buildUpsertUpdateCols(dataMap map[string]interface{}, pkCols, fields []string) []string {
+func (mq *ModelQuery) buildUpsertUpdateCols(dataMap map[string]any, pkCols, fields []string) []string {
 	pkSet := make(map[string]bool, len(pkCols))
 	for _, pk := range pkCols {
 		pkSet[pk] = true
@@ -701,7 +722,7 @@ func scanReturningIntoField(q *Query, pkField reflect.Value) error {
 //
 //	err := db.Model(&user).UpdateChanged(&original)
 //	// UPDATE users SET name=?, status=? WHERE id=?
-func (mq *ModelQuery) UpdateChanged(original interface{}) error {
+func (mq *ModelQuery) UpdateChanged(original any) error {
 	if mq.table == "" {
 		return errors.New("model: table name not specified")
 	}
@@ -747,7 +768,7 @@ func (mq *ModelQuery) UpdateChanged(original interface{}) error {
 // whose values have changed, excluding primary key fields.
 //
 //nolint:cyclop // Acceptable complexity for field comparison across all reflect kinds.
-func (mq *ModelQuery) diffFields(original interface{}) (map[string]interface{}, error) {
+func (mq *ModelQuery) diffFields(original any) (map[string]any, error) {
 	current := mq.model
 
 	// Dereference pointers.
@@ -780,7 +801,7 @@ func (mq *ModelQuery) diffFields(original interface{}) (map[string]interface{}, 
 	pkSet := buildPKSet(pkInfo)
 
 	t := currentVal.Type()
-	changed := make(map[string]interface{})
+	changed := make(map[string]any)
 
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)

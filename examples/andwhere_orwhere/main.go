@@ -35,7 +35,7 @@ func main() {
 	}
 
 	// Insert test data.
-	users := []map[string]interface{}{
+	users := []map[string]any{
 		{"id": 1, "name": "Alice", "age": 25, "status": 1, "role": "user"},
 		{"id": 2, "name": "Bob", "age": 17, "status": 1, "role": "user"},
 		{"id": 3, "name": "Charlie", "age": 30, "status": 0, "role": "user"},
@@ -125,7 +125,7 @@ func main() {
 	// Update status for users who are either inactive OR too young.
 	result, err := db.Builder().
 		Update("users").
-		Set(map[string]interface{}{"status": 0}).
+		Set(map[string]any{"status": 0}).
 		Where("status = ?", 0).
 		OrWhere("age < ?", 18).
 		Execute()
