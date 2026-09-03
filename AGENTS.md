@@ -17,6 +17,11 @@ var user User
 err := db.Model(&user).Find(42)
 // Composite PK: db.Model(&item).Find(orderId, itemId)
 
+// FIND with column selection and filters (PK from struct)
+user = User{ID: 42}
+err = db.Select("name", "email").Where(relica.IsNull("deleted_at")).Model(&user)
+// SELECT name, email FROM users WHERE deleted_at IS NULL AND id = 42 LIMIT 1
+
 // INSERT - CORRECT
 user := User{Name: "Alice", Email: "alice@example.com"}
 err := db.Model(&user).Insert()

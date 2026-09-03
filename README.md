@@ -120,6 +120,10 @@ func main() {
     var user User
     err = db.Model(&user).Find(42)
 
+    // FIND with column selection and filters (PK from struct)
+    user = User{ID: 42}
+    err = db.Select("name", "email").Where(relica.IsNull("deleted_at")).Model(&user)
+
     // INSERT with Model() API (PREFERRED)
     newUser := User{Name: "Alice", Email: "alice@example.com"}
     err = db.Model(&newUser).Insert()

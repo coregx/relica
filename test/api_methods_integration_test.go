@@ -344,3 +344,136 @@ func TestForShare_SQLite_NoError(t *testing.T) {
 	require.Len(t, rows, 1)
 	assert.Equal(t, "shared", rows[0].Label)
 }
+
+// ─── SelectQuery.Model ────────────────────────────────────────────────────────
+
+// modelTestUser is the model used by SelectQuery.Model integration tests.
+type modelTestUser struct {
+	ID    int64  `db:"id,pk"`
+	Name  string `db:"name"`
+	Email string `db:"email"`
+}
+
+// TableName makes the table name explicit and stable across tests.
+func (modelTestUser) TableName() string { return "model_test_users" }
+
+// setupModelTable creates the model_test_users table and inserts a seed row.
+// Returns the inserted row's ID.
+func setupModelTable(t *testing.T, db *relica.DB) int64 {
+	t.Helper()
+	ctx := context.Background()
+
+	_, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS model_test_users (
+		id    INTEGER PRIMARY KEY AUTOINCREMENT,
+		name  TEXT    NOT NULL,
+		email TEXT    NOT NULL
+	)`)
+	require.NoError(t, err)
+
+	res, err := db.ExecContext(ctx,
+		`INSERT INTO model_test_users (name, email) VALUES (?, ?)`,
+		"Alice", "alice@example.com",
+	)
+	require.NoError(t, err)
+
+	id, err := res.LastInsertId()
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), `DROP TABLE IF EXISTS model_test_users`)
+	})
+
+	return id
+}
+
+// TestSelectQuery_Model_SinglePK_SQLite inserts a row, then calls Select().Model()
+// with the PK set and verifies all fields are populated.
+func TestSelectQuery_Model_SinglePK_SQLite(t *testing.T) {
+	ds := SetupSQLiteTestDB(t)
+	defer ds.Close()
+
+	db := ds.DB
+	id := setupModelTable(t, db)
+
+	dest := modelTestUser{ID: id}
+	err := db.Select().Model(&dest)
+	require.NoError(t, err, "Select().Model() must succeed for existing PK")
+
+	assert.Equal(t, id, dest.ID, "ID must match the inserted row")
+	assert.Equal(t, "Alice", dest.Name, "Name must be populated")
+	assert.Equal(t, "alice@example.com", dest.Email, "Email must be populated")
+}
+
+// TestSelectQuery_Model_PartialRead_SQLite verifies that specifying column names
+// in Select() limits which fields are populated; unselected fields stay zero.
+func TestSelectQuery_Model_PartialRead_SQLite(t *testing.T) {
+	ds := SetupSQLiteTestDB(t)
+	defer ds.Close()
+
+	db := ds.DB
+	id := setupModelTable(t, db)
+
+	// Select only "name" — email must remain empty string.
+	dest := modelTestUser{ID: id}
+	err := db.Select("name").Model(&dest)
+	require.NoError(t, err, "Select(\"name\").Model() must succeed")
+
+	assert.Equal(t, "Alice", dest.Name, "Name must be populated")
+	// Email was not selected, so it stays as the zero value.
+	assert.Empty(t, dest.Email, "Email must not be populated when not selected")
+}
+
+// TestSelectQuery_Model_WithWhere_SQLite verifies that an additional Where()
+// clause is ANDed with the PK condition so only the matching row is returned.
+func TestSelectQuery_Model_WithWhere_SQLite(t *testing.T) {
+	ds := SetupSQLiteTestDB(t)
+	defer ds.Close()
+
+	db := ds.DB
+	id := setupModelTable(t, db)
+
+	// Pre-set WHERE matching the existing row — query must succeed.
+	dest := modelTestUser{ID: id}
+	err := db.Select().
+		Where("name = ?", "Alice").
+		Model(&dest)
+	require.NoError(t, err, "Select().Where(name=Alice).Model() must succeed")
+	assert.Equal(t, "Alice", dest.Name)
+}
+
+// TestSelectQuery_Model_NotFound_SQLite verifies that Model() with a non-existent PK
+// returns ErrNotFound.
+func TestSelectQuery_Model_NotFound_SQLite(t *testing.T) {
+	ds := SetupSQLiteTestDB(t)
+	defer ds.Close()
+
+	db := ds.DB
+	setupModelTable(t, db)
+
+	dest := modelTestUser{ID: 999999}
+	err := db.Select().Model(&dest)
+
+	require.Error(t, err, "Model() with non-existent PK must return an error")
+	assert.True(t, errors.Is(err, relica.ErrNotFound),
+		"error must wrap ErrNotFound; got: %v", err)
+}
+
+// TestSelectQuery_Model_AllPKZero_SQLite verifies that Model() returns an error
+// before executing any query when all PK fields are zero.
+func TestSelectQuery_Model_AllPKZero_SQLite(t *testing.T) {
+	ds := SetupSQLiteTestDB(t)
+	defer ds.Close()
+
+	db := ds.DB
+	setupModelTable(t, db)
+
+	dest := modelTestUser{} // ID == 0
+	err := db.Select().Model(&dest)
+
+	require.Error(t, err, "Model() with zero PK must return an error")
+	// Must not be ErrNotFound — error must occur before the query is issued.
+	assert.False(t, errors.Is(err, relica.ErrNotFound),
+		"zero-PK error must not be ErrNotFound (no query should be issued)")
+	assert.True(t, strings.Contains(err.Error(), "primary key"),
+		"error message must mention 'primary key'; got: %v", err)
+}

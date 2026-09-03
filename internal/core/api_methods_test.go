@@ -428,3 +428,194 @@ func TestFind_CompositePK_WrongArgCount(t *testing.T) {
 		t.Fatal("Find(1) on composite-PK model: expected error, got nil")
 	}
 }
+
+// ─── SelectQuery.Model — error cases ─────────────────────────────────────────
+
+// TestSelectQuery_Model_NilDest verifies that Model(nil) returns an error.
+func TestSelectQuery_Model_NilDest(t *testing.T) {
+	db := openCovDB(t)
+	defer db.Close()
+
+	qb := &QueryBuilder{db: db}
+	err := qb.Select().From("some_table").Model(nil)
+	if err == nil {
+		t.Fatal("Model(nil): expected error, got nil")
+	}
+}
+
+// TestSelectQuery_Model_NotPointer verifies that Model with a non-pointer value returns an error.
+func TestSelectQuery_Model_NotPointer(t *testing.T) {
+	db := openCovDB(t)
+	defer db.Close()
+
+	type Row struct {
+		ID int `db:"id"`
+	}
+
+	qb := &QueryBuilder{db: db}
+	err := qb.Select().From("rows").Model(Row{ID: 1})
+	if err == nil {
+		t.Fatal("Model(non-pointer): expected error, got nil")
+	}
+}
+
+// TestSelectQuery_Model_NotStruct verifies that Model with a pointer to a non-struct returns an error.
+func TestSelectQuery_Model_NotStruct(t *testing.T) {
+	db := openCovDB(t)
+	defer db.Close()
+
+	qb := &QueryBuilder{db: db}
+	n := 42
+	err := qb.Select().From("some_table").Model(&n)
+	if err == nil {
+		t.Fatal("Model(pointer-to-int): expected error, got nil")
+	}
+}
+
+// TestSelectQuery_Model_NoPK verifies that Model returns an error when the struct has no PK field.
+func TestSelectQuery_Model_NoPK(t *testing.T) {
+	db := openCovDB(t)
+	defer db.Close()
+
+	// Struct without db:"pk" tag, without "ID"/"Id" field.
+	type NoPKRow struct {
+		Name  string `db:"name"`
+		Email string `db:"email"`
+	}
+
+	qb := &QueryBuilder{db: db}
+	dest := NoPKRow{Name: "alice", Email: "a@b.com"}
+	err := qb.Select().From("no_pk_rows").Model(&dest)
+	if err == nil {
+		t.Fatal("Model on struct without PK: expected error, got nil")
+	}
+}
+
+// TestSelectQuery_Model_AllPKZero verifies that Model returns an error when all PK fields are zero.
+func TestSelectQuery_Model_AllPKZero(t *testing.T) {
+	db := openCovDB(t)
+	defer db.Close()
+
+	type ZeroItem struct {
+		ID   int    `db:"id,pk"`
+		Name string `db:"name"`
+	}
+
+	qb := &QueryBuilder{db: db}
+	dest := ZeroItem{} // ID == 0 (zero value)
+	err := qb.Select().From("zero_items").Model(&dest)
+	if err == nil {
+		t.Fatal("Model with all-zero PK: expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "primary key not set") {
+		t.Errorf("expected 'primary key not set' in error, got: %v", err)
+	}
+}
+
+// TestSelectQuery_Model_AutoTable verifies that Model infers the table name from the struct type
+// when no From() has been called.
+func TestSelectQuery_Model_AutoTable(t *testing.T) {
+	db := openCovDB(t)
+	defer db.Close()
+
+	// Table name should be inferred as "model_items" (struct name lowercased + 's').
+	type ModelItem struct {
+		ID   int64  `db:"id,pk"`
+		Name string `db:"name"`
+	}
+
+	ctx := context.Background()
+	// Create table using the inferred name.
+	_, err := db.ExecContext(ctx,
+		`CREATE TABLE modelitems (id INTEGER, name TEXT)`)
+	if err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	_, err = db.ExecContext(ctx,
+		`INSERT INTO modelitems (id, name) VALUES (7, 'auto')`)
+	if err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	dest := ModelItem{ID: 7}
+	qb := &QueryBuilder{db: db}
+	// No From() — table must be inferred as "modelitems".
+	err = qb.Select().Model(&dest)
+	if err != nil {
+		t.Fatalf("Model() auto-table: unexpected error: %v", err)
+	}
+	if dest.Name != "auto" {
+		t.Errorf("Model() auto-table: expected Name='auto', got %q", dest.Name)
+	}
+}
+
+// TestSelectQuery_Model_ExplicitFrom verifies that an explicit From() overrides auto-detection.
+func TestSelectQuery_Model_ExplicitFrom(t *testing.T) {
+	db := openCovDB(t)
+	defer db.Close()
+
+	type Anything struct {
+		ID    int64  `db:"id,pk"`
+		Label string `db:"label"`
+	}
+
+	ctx := context.Background()
+	_, err := db.ExecContext(ctx,
+		`CREATE TABLE explicit_tbl (id INTEGER, label TEXT)`)
+	if err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	_, err = db.ExecContext(ctx,
+		`INSERT INTO explicit_tbl (id, label) VALUES (3, 'explicit')`)
+	if err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	dest := Anything{ID: 3}
+	qb := &QueryBuilder{db: db}
+	// From("explicit_tbl") must win over auto-inferred "anythings".
+	err = qb.Select().From("explicit_tbl").Model(&dest)
+	if err != nil {
+		t.Fatalf("Model() explicit From: unexpected error: %v", err)
+	}
+	if dest.Label != "explicit" {
+		t.Errorf("Model() explicit From: expected Label='explicit', got %q", dest.Label)
+	}
+}
+
+// TestSelectQuery_Model_WhereAppend verifies that a pre-set WHERE clause is combined
+// with the PK condition (AND) so both filters are applied.
+func TestSelectQuery_Model_WhereAppend(t *testing.T) {
+	db := openCovDB(t)
+	defer db.Close()
+
+	type StatusItem struct {
+		ID     int64  `db:"id,pk"`
+		Status int64  `db:"status"`
+		Name   string `db:"name"`
+	}
+
+	ctx := context.Background()
+	_, err := db.ExecContext(ctx,
+		`CREATE TABLE status_items (id INTEGER, status INTEGER, name TEXT)`)
+	if err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	// Two rows with the same id but different status (unusual, just to test filter).
+	_, err = db.ExecContext(ctx,
+		`INSERT INTO status_items (id, status, name) VALUES (10, 1, 'active')`)
+	if err != nil {
+		t.Fatalf("insert row 1: %v", err)
+	}
+
+	dest := StatusItem{ID: 10}
+	qb := &QueryBuilder{db: db}
+	// Pre-set WHERE to require status=1. This should be ANDed with id=10.
+	err = qb.Select().From("status_items").Where("status = ?", int64(1)).Model(&dest)
+	if err != nil {
+		t.Fatalf("Model() with WHERE: unexpected error: %v", err)
+	}
+	if dest.Name != "active" {
+		t.Errorf("Model() with WHERE: expected Name='active', got %q", dest.Name)
+	}
+}
