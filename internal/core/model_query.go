@@ -14,6 +14,8 @@ import (
 const (
 	driverPostgres = "postgres"
 	driverPgx      = "pgx"
+	driverSQLite   = "sqlite"
+	driverSQLite3  = "sqlite3"
 )
 
 // ModelQuery handles CRUD operations on struct models.
@@ -245,7 +247,7 @@ func (mq *ModelQuery) Insert(attrs ...string) error {
 
 	// Check if we need PostgreSQL RETURNING clause for auto-ID.
 	// Only for single PK - composite PKs don't support auto-populate.
-	needsReturning, pkCol := mq.needsPostgresReturning()
+	needsReturning, pkCol := mq.needsReturning()
 	if needsReturning {
 		// PostgreSQL: Use RETURNING clause (lib/pq doesn't support LastInsertId).
 		return mq.insertWithReturning(query, pkCol)
@@ -332,19 +334,24 @@ func isPKNumeric(pkValue reflect.Value) bool {
 		kind >= reflect.Uint && kind <= reflect.Uint64
 }
 
-// needsPostgresReturning checks if we need PostgreSQL RETURNING clause.
-// Returns (needsReturning bool, pkColumnName string).
+// needsReturning checks if we need the RETURNING clause for auto-ID population.
+// PostgreSQL: always (lib/pq doesn't support LastInsertId).
+// SQLite: for upsert and insert (last_insert_rowid() not updated on ON CONFLICT DO UPDATE).
 //
 // Returns true for single PK when:
 //   - PK is numeric (auto-increment by convention), OR
 //   - PK is non-numeric (string/UUID) with explicit `autoincrement` tag.
 //
 // Composite PKs do not support auto-populate.
-func (mq *ModelQuery) needsPostgresReturning() (bool, string) {
-	// Check if database is PostgreSQL (check driver name, not dialect).
+func (mq *ModelQuery) needsReturning() (bool, string) {
 	driverName := mq.db.DriverName()
-	if driverName != driverPostgres && driverName != driverPgx {
-		return false, ""
+	switch driverName {
+	case driverPostgres, driverPgx:
+		// PostgreSQL: always use RETURNING (lib/pq doesn't support LastInsertId).
+	case driverSQLite, driverSQLite3:
+		// SQLite 3.35+: use RETURNING (last_insert_rowid() not updated on upsert UPDATE path).
+	default:
+		return false, "" // MySQL: uses LastInsertId (works for upsert).
 	}
 
 	// Find primary key fields.
@@ -569,9 +576,9 @@ func (mq *ModelQuery) UpsertOn(conflictColumns []string, fields ...string) error
 	return mq.executeUpsertQuery(q)
 }
 
-// executeUpsertQuery handles RETURNING (PostgreSQL) or LastInsertId (MySQL/SQLite).
+// executeUpsertQuery handles RETURNING (PostgreSQL/SQLite) or LastInsertId (MySQL).
 func (mq *ModelQuery) executeUpsertQuery(q *Query) error {
-	needsReturning, pkCol := mq.needsPostgresReturning()
+	needsReturning, pkCol := mq.needsReturning()
 	if needsReturning {
 		q.appendSQL(" RETURNING " + mq.db.dialect.QuoteIdentifier(pkCol))
 		return mq.scanReturningID(q, pkCol)

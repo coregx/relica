@@ -18,7 +18,7 @@ func mockDBFull(driverName string) *DB {
 	}
 }
 
-// ─── needsPostgresReturning: autoincrement tag ────────────────────────────────────
+// ─── needsReturning: autoincrement tag ────────────────────────────────────
 
 // TestNeedsPostgresReturning_NumericPK verifies backward-compatible behavior
 // for numeric PKs: RETURNING is used without any explicit tag.
@@ -37,7 +37,7 @@ func TestNeedsPostgresReturning_NumericPK(t *testing.T) {
 		exclude: make(map[string]bool),
 	}
 
-	needs, col := mq.needsPostgresReturning()
+	needs, col := mq.needsReturning()
 	if !needs {
 		t.Error("numeric PK should trigger RETURNING")
 	}
@@ -63,7 +63,7 @@ func TestNeedsPostgresReturning_NumericPKNonZero(t *testing.T) {
 		exclude: make(map[string]bool),
 	}
 
-	needs, _ := mq.needsPostgresReturning()
+	needs, _ := mq.needsReturning()
 	if needs {
 		t.Error("non-zero PK must not trigger RETURNING")
 	}
@@ -86,7 +86,7 @@ func TestNeedsPostgresReturning_StringPKWithAutoIncrementTag(t *testing.T) {
 		exclude: make(map[string]bool),
 	}
 
-	needs, col := mq.needsPostgresReturning()
+	needs, col := mq.needsReturning()
 	if !needs {
 		t.Error("string PK with autoincrement tag should trigger RETURNING")
 	}
@@ -113,33 +113,56 @@ func TestNeedsPostgresReturning_StringPKWithoutAutoIncrementTag(t *testing.T) {
 		exclude: make(map[string]bool),
 	}
 
-	needs, _ := mq.needsPostgresReturning()
+	needs, _ := mq.needsReturning()
 	if needs {
 		t.Error("string PK without autoincrement tag must not trigger RETURNING")
 	}
 }
 
-// TestNeedsPostgresReturning_NonPostgres verifies that non-PostgreSQL drivers
-// always return false regardless of PK type or tag.
-func TestNeedsPostgresReturning_NonPostgres(t *testing.T) {
+// TestNeedsReturning_MySQL verifies that MySQL does not trigger RETURNING.
+func TestNeedsReturning_MySQL(t *testing.T) {
 	type UserUUIDPK struct {
 		ID   string `db:"id,pk,autoincrement"`
 		Name string `db:"name"`
 	}
 
-	for _, driver := range []string{"mysql", "sqlite"} {
+	db := mockDBFull("mysql")
+	mq := &ModelQuery{
+		db:      db,
+		model:   &UserUUIDPK{Name: "Alice"},
+		table:   "users",
+		exclude: make(map[string]bool),
+	}
+
+	needs, _ := mq.needsReturning()
+	if needs {
+		t.Error("mysql must not trigger RETURNING")
+	}
+}
+
+// TestNeedsReturning_SQLite verifies that SQLite DOES trigger RETURNING.
+func TestNeedsReturning_SQLite(t *testing.T) {
+	type User struct {
+		ID   int64  `db:"id,pk"`
+		Name string `db:"name"`
+	}
+
+	for _, driver := range []string{"sqlite", "sqlite3"} {
 		t.Run(driver, func(t *testing.T) {
 			db := mockDBFull(driver)
 			mq := &ModelQuery{
 				db:      db,
-				model:   &UserUUIDPK{Name: "Alice"},
+				model:   &User{Name: "Alice"}, // ID=0 (zero)
 				table:   "users",
 				exclude: make(map[string]bool),
 			}
 
-			needs, _ := mq.needsPostgresReturning()
-			if needs {
-				t.Error("non-postgres driver must not trigger RETURNING")
+			needs, col := mq.needsReturning()
+			if !needs {
+				t.Error("sqlite must trigger RETURNING for zero PK")
+			}
+			if col != "id" {
+				t.Errorf("expected pk column 'id', got %q", col)
 			}
 		})
 	}
@@ -163,7 +186,7 @@ func TestNeedsPostgresReturning_CompositePK(t *testing.T) {
 		exclude: make(map[string]bool),
 	}
 
-	needs, _ := mq.needsPostgresReturning()
+	needs, _ := mq.needsReturning()
 	if needs {
 		t.Error("composite PK must not trigger RETURNING")
 	}
