@@ -2483,6 +2483,33 @@ func (biq *BatchInsertQuery) Build() *Query {
 	return &Query{q: biq.biq.Build()}
 }
 
+// OnConflict specifies the conflict columns for upsert behavior.
+//
+// Example:
+//
+//	db.BatchInsert("nodes", []string{"name", "label"}).
+//	    Values("Foo", "struct").
+//	    OnConflict("project_id", "qualified_name").
+//	    DoUpdate("name", "label").
+//	    Execute()
+func (biq *BatchInsertQuery) OnConflict(columns ...string) *BatchInsertQuery {
+	biq.biq.OnConflict(columns...)
+	return biq
+}
+
+// DoUpdate specifies which columns to update on conflict.
+// If not called (but OnConflict is set), all non-conflict columns are updated.
+func (biq *BatchInsertQuery) DoUpdate(columns ...string) *BatchInsertQuery {
+	biq.biq.DoUpdate(columns...)
+	return biq
+}
+
+// DoNothing specifies that conflicting rows should be silently ignored.
+func (biq *BatchInsertQuery) DoNothing() *BatchInsertQuery {
+	biq.biq.DoNothing()
+	return biq
+}
+
 // Execute executes the batch INSERT query.
 func (biq *BatchInsertQuery) Execute() (sql.Result, error) {
 	return biq.Build().Execute()
