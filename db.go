@@ -379,6 +379,24 @@ func (d *DB) Close() error {
 	return d.db.Close()
 }
 
+// SqlDB returns the underlying *sql.DB connection.
+// Useful for connection pool tuning, health checks, or database/sql methods.
+// Do NOT call Close() on the returned value — use [DB.Close] instead.
+func (d *DB) SqlDB() *sql.DB {
+	return d.db.SqlDB()
+}
+
+// PingContext verifies the database connection is alive.
+// Use for health checks and connection validation at startup.
+func (d *DB) PingContext(ctx context.Context) error {
+	return d.db.PingContext(ctx)
+}
+
+// DriverName returns the database driver name (e.g., "postgres", "mysql", "sqlite3").
+func (d *DB) DriverName() string {
+	return d.db.DriverName()
+}
+
 // WithContext returns a new DB with the given context.
 //
 // The context will be used for all subsequent query operations
@@ -1164,6 +1182,21 @@ func (t *Tx) Unwrap() *core.Tx {
 	return t.tx
 }
 
+// ExecContext executes a raw SQL query within the transaction.
+func (t *Tx) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return t.tx.ExecContext(ctx, query, args...)
+}
+
+// QueryContext executes a raw SQL query within the transaction and returns rows.
+func (t *Tx) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return t.tx.QueryContext(ctx, query, args...)
+}
+
+// QueryRowContext executes a raw SQL query within the transaction returning one row.
+func (t *Tx) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	return t.tx.QueryRowContext(ctx, query, args...)
+}
+
 // Model creates a ModelQuery within transaction context.
 //
 // All operations performed through this ModelQuery will execute
@@ -1336,6 +1369,23 @@ func (mq *ModelQuery) Upsert(fields ...string) error {
 //	// ON CONFLICT ("email") DO UPDATE SET name=EXCLUDED.name, status=EXCLUDED.status
 func (mq *ModelQuery) UpsertOn(conflictColumns []string, fields ...string) error {
 	return mq.mq.UpsertOn(conflictColumns, fields...)
+}
+
+// Find fetches a record by primary key and populates the model.
+// For single PK, pass one value. For composite PK, pass values
+// in struct field declaration order. Returns ErrNotFound if not found.
+//
+// Example:
+//
+//	var user User
+//	err := db.Model(&user).Find(42)
+//	// SELECT * FROM users WHERE id = ? LIMIT 1
+//
+//	// Composite PK:
+//	var item OrderItem
+//	err := db.Model(&item).Find(orderId, itemId)
+func (mq *ModelQuery) Find(pk ...any) error {
+	return mq.mq.Find(pk...)
 }
 
 // UpdateChanged updates only the fields that differ between the current model
@@ -1985,6 +2035,27 @@ func (sq *SelectQuery) Having(condition any, args ...any) *SelectQuery {
 //	// SELECT DISTINCT "category" FROM "products"
 func (sq *SelectQuery) Distinct() *SelectQuery {
 	sq.sq.Distinct()
+	return sq
+}
+
+// ForUpdate adds FOR UPDATE clause for pessimistic row-level exclusive locking.
+// Silently ignored for SQLite (uses database-level locking).
+func (sq *SelectQuery) ForUpdate() *SelectQuery {
+	sq.sq.ForUpdate()
+	return sq
+}
+
+// ForShare adds FOR SHARE clause for shared row-level locking.
+// Silently ignored for SQLite.
+func (sq *SelectQuery) ForShare() *SelectQuery {
+	sq.sq.ForShare()
+	return sq
+}
+
+// ForUpdateSkipLocked adds FOR UPDATE SKIP LOCKED for non-blocking lock acquisition.
+// Useful for job queue patterns. PostgreSQL 9.5+ and MySQL 8.0+. Silently ignored for SQLite.
+func (sq *SelectQuery) ForUpdateSkipLocked() *SelectQuery {
+	sq.sq.ForUpdateSkipLocked()
 	return sq
 }
 
@@ -3012,6 +3083,18 @@ func GreaterThanCol(col1, col2 string) Expression { return core.GreaterThanCol(c
 
 // LessThanCol creates a column-to-column less-than expression (col1 < col2).
 func LessThanCol(col1, col2 string) Expression { return core.LessThanCol(col1, col2) }
+
+// GreaterOrEqualCol creates a column-to-column >= expression (col1 >= col2).
+func GreaterOrEqualCol(col1, col2 string) Expression { return core.GreaterOrEqualCol(col1, col2) }
+
+// LessOrEqualCol creates a column-to-column <= expression (col1 <= col2).
+func LessOrEqualCol(col1, col2 string) Expression { return core.LessOrEqualCol(col1, col2) }
+
+// IsNull creates an IS NULL expression. Equivalent to Eq(col, nil) but more explicit.
+func IsNull(col string) Expression { return core.Eq(col, nil) }
+
+// IsNotNull creates an IS NOT NULL expression. Equivalent to NotEq(col, nil) but more explicit.
+func IsNotNull(col string) Expression { return core.NotEq(col, nil) }
 
 // GreaterOrEqual creates a greater-or-equal expression (column >= value).
 func GreaterOrEqual(col string, value any) Expression {

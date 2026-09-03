@@ -267,6 +267,16 @@ func LessThanCol(col1, col2 string) Expression {
 	return &ColumnCompareExp{Col1: col1, Col2: col2, Operator: "<"}
 }
 
+// GreaterOrEqualCol generates a column-to-column >= expression (col1 >= col2).
+func GreaterOrEqualCol(col1, col2 string) Expression {
+	return &ColumnCompareExp{Col1: col1, Col2: col2, Operator: ">="}
+}
+
+// LessOrEqualCol generates a column-to-column <= expression (col1 <= col2).
+func LessOrEqualCol(col1, col2 string) Expression {
+	return &ColumnCompareExp{Col1: col1, Col2: col2, Operator: "<="}
+}
+
 // Build converts a ColumnCompareExp into a SQL fragment.
 // Returns no bind parameters since both sides are column references, not values.
 func (e *ColumnCompareExp) Build(dialect dialects.Dialect) (string, []any) {

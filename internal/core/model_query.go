@@ -938,3 +938,44 @@ func (mq *ModelQuery) FindByPublicID(publicID string) error {
 		Limit(1).
 		One(mq.model)
 }
+
+// Find fetches a record by primary key and populates the model.
+// For single PK, pass one value. For composite PK, pass values
+// in struct field declaration order.
+// Returns ErrNotFound if no record matches.
+func (mq *ModelQuery) Find(pk ...any) error {
+	if mq.table == "" {
+		return errors.New("model: table name not specified")
+	}
+
+	v := reflect.ValueOf(mq.model)
+	if v.Kind() == reflect.Pointer {
+		v = v.Elem()
+	}
+
+	pkInfo, err := util.FindPrimaryKeyFields(v)
+	if err != nil {
+		return errors.New("model: primary key not found")
+	}
+
+	if len(pk) != len(pkInfo.Columns) {
+		return errors.New("model: Find requires exactly one value per PK column")
+	}
+
+	qb := &QueryBuilder{
+		db:  mq.db,
+		tx:  mq.tx,
+		ctx: mq.ctx,
+	}
+
+	sq := qb.Select().From(mq.table)
+	for i, col := range pkInfo.Columns {
+		if i == 0 {
+			sq = sq.Where(Eq(col, pk[i])) //nolint:gosec // G602: bounds checked above
+		} else {
+			sq = sq.AndWhere(Eq(col, pk[i])) //nolint:gosec // G602: bounds checked above
+		}
+	}
+
+	return sq.Limit(1).One(mq.model)
+}
