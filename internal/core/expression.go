@@ -23,10 +23,14 @@ const (
 
 // quoteColumn quotes a dotted identifier, splitting each part separately.
 // "col" → "col", "t.col" → "t"."col", "schema.t.col" → "schema"."t"."col"
+// "t.*" → "t".* — wildcard is never quoted.
 // Function calls like COUNT(*), MAX(price) are returned as-is.
 func quoteColumn(col string, dialect dialects.Dialect) string {
 	if strings.Contains(col, "(") {
 		return col
+	}
+	if col == "*" {
+		return "*"
 	}
 	if !strings.Contains(col, ".") {
 		return dialect.QuoteIdentifier(col)
@@ -34,7 +38,11 @@ func quoteColumn(col string, dialect dialects.Dialect) string {
 	parts := strings.Split(col, ".")
 	quoted := make([]string, len(parts))
 	for i, p := range parts {
-		quoted[i] = dialect.QuoteIdentifier(p)
+		if p == "*" {
+			quoted[i] = "*"
+		} else {
+			quoted[i] = dialect.QuoteIdentifier(p)
+		}
 	}
 	return strings.Join(quoted, ".")
 }

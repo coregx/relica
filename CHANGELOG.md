@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.17.1] - 2026-09-04
+
+### Fixed
+
+- **Wildcard quoting in `Select("table.*")`** — `Select("n.*")` incorrectly generated `"n"."*"` (quoting wildcard as identifier), causing `no such column: n.*` on SQLite. Now correctly generates `"n".*`. Also fixed in `quoteColumn()` for WHERE/JOIN expressions containing wildcards
+
+---
+
 ## [0.17.0] - 2026-09-03
 
 ### Added
