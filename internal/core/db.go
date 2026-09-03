@@ -245,6 +245,16 @@ func (db *DB) DriverName() string {
 	return db.driverName
 }
 
+// SqlDB returns the underlying *sql.DB connection.
+func (db *DB) SqlDB() *sql.DB {
+	return db.sqlDB
+}
+
+// PingContext verifies the database connection is alive.
+func (db *DB) PingContext(ctx context.Context) error {
+	return db.sqlDB.PingContext(ctx)
+}
+
 // WithContext returns a new DB with the given context.
 func (db *DB) WithContext(ctx context.Context) *DB {
 	newDB := *db
@@ -329,6 +339,21 @@ func (tx *Tx) Commit() error {
 // Rollback rolls back the transaction.
 func (tx *Tx) Rollback() error {
 	return tx.tx.Rollback()
+}
+
+// ExecContext executes a raw SQL query within the transaction.
+func (tx *Tx) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return tx.tx.ExecContext(ctx, query, args...)
+}
+
+// QueryContext executes a raw SQL query within the transaction and returns rows.
+func (tx *Tx) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return tx.tx.QueryContext(ctx, query, args...)
+}
+
+// QueryRowContext executes a raw SQL query within the transaction returning one row.
+func (tx *Tx) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	return tx.tx.QueryRowContext(ctx, query, args...)
 }
 
 // NewQuery creates a raw SQL query that executes within the transaction.

@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.16.6] - 2026-09-03
+
+### Added
+
+- **`DB.SqlDB() *sql.DB`** — access underlying connection for pool tuning, migrations, prepared statements
+- **`DB.PingContext(ctx) error`** — health check (complements existing `IsHealthy()`)
+- **`DB.DriverName() string`** — returns driver name ("postgres", "mysql", "sqlite3")
+- **`Tx.ExecContext()` / `QueryContext()` / `QueryRowContext()`** — raw SQL within transactions (parity with DB)
+- **`SelectQuery.ForUpdate()`** — pessimistic row-level exclusive locking (silently ignored for SQLite)
+- **`SelectQuery.ForShare()`** — shared row-level locking (silently ignored for SQLite)
+- **`SelectQuery.ForUpdateSkipLocked()`** — non-blocking lock for job queue patterns (PostgreSQL 9.5+, MySQL 8.0+)
+- **`IsNull(col)` / `IsNotNull(col)`** — explicit IS NULL / IS NOT NULL expressions (alias for `Eq(col, nil)`)
+- **`GreaterOrEqualCol(col1, col2)` / `LessOrEqualCol(col1, col2)`** — column-to-column >= and <= comparisons (completes Col set)
+- **`ModelQuery.Find(pk ...any)`** — one-liner fetch by primary key, supports composite PKs
+
+---
+
 ## [0.16.5] - 2026-09-03
 
 ### Fixed

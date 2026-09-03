@@ -155,8 +155,30 @@ type SelectQuery struct {
 	unions          []unionInfo     // Set operations: UNION, INTERSECT, EXCEPT
 	ctes            []cteInfo       // Common Table Expressions (CTEs)
 	distinct        bool            // SELECT DISTINCT flag
+	lockClause      string          // FOR UPDATE, FOR SHARE, etc. (empty = no lock)
 	ctx             context.Context // context for this specific query
 	buildErr        error           // stored programming error (replaces panic in fluent chain)
+}
+
+// ForUpdate adds FOR UPDATE clause for pessimistic row-level locking.
+// Silently ignored for SQLite (uses database-level locking).
+func (sq *SelectQuery) ForUpdate() *SelectQuery {
+	sq.lockClause = "FOR UPDATE"
+	return sq
+}
+
+// ForShare adds FOR SHARE clause for shared row-level locking.
+// Silently ignored for SQLite.
+func (sq *SelectQuery) ForShare() *SelectQuery {
+	sq.lockClause = "FOR SHARE"
+	return sq
+}
+
+// ForUpdateSkipLocked adds FOR UPDATE SKIP LOCKED for non-blocking lock acquisition.
+// Useful for job queue patterns. Silently ignored for SQLite.
+func (sq *SelectQuery) ForUpdateSkipLocked() *SelectQuery {
+	sq.lockClause = "FOR UPDATE SKIP LOCKED"
+	return sq
 }
 
 // WithContext sets the context for this SELECT query.
@@ -1136,7 +1158,7 @@ func (sq *SelectQuery) buildWithClause(dialect dialects.Dialect) (string, []any)
 // This is the core implementation shared by both Build() and the Expression interface.
 // Parameter ordering: CTEs → SelectExprs → SubExprs → FROM subquery → JOINs → WHERE → HAVING → GroupByExprs → OrderByExprs
 //
-//nolint:cyclop // Central query assembly requires sequential clause building; splitting would reduce clarity.
+//nolint:cyclop,gocognit,funlen // Central query assembly requires sequential clause building; splitting would reduce clarity.
 func (sq *SelectQuery) buildSQL(dialect dialects.Dialect) (string, []any) {
 	// Collect all parameters in correct order
 	var allParams []any
@@ -1218,8 +1240,17 @@ func (sq *SelectQuery) buildSQL(dialect dialects.Dialect) (string, []any) {
 	// 12. Build LIMIT/OFFSET clause
 	limitOffsetClause := sq.buildLimitOffset()
 
-	// Construct SQL: SELECT ... FROM ... JOIN ... WHERE ... GROUP BY ... HAVING ... ORDER BY ... LIMIT ... OFFSET
-	query := "SELECT " + cols + fromClause + joinClause + whereClause + groupByClause + havingClause + orderByClause + limitOffsetClause
+	// 13. Build lock clause (FOR UPDATE/FOR SHARE — skip for SQLite)
+	lockClause := ""
+	if sq.lockClause != "" && sq.builder != nil {
+		dn := sq.builder.db.DriverName()
+		if dn != "sqlite" && dn != "sqlite3" {
+			lockClause = " " + sq.lockClause
+		}
+	}
+
+	// Construct SQL: SELECT ... FROM ... JOIN ... WHERE ... GROUP BY ... HAVING ... ORDER BY ... LIMIT ... OFFSET ... FOR UPDATE
+	query := "SELECT " + cols + fromClause + joinClause + whereClause + groupByClause + havingClause + orderByClause + limitOffsetClause + lockClause
 
 	// 12. Handle set operations (UNION, INTERSECT, EXCEPT)
 	if len(sq.unions) > 0 {
