@@ -30,7 +30,7 @@
 - **Enterprise Security** - SQL injection prevention, audit logging, compliance
 - **Batch Operations** - Efficient multi-row INSERT and UPDATE
 - **JOIN Operations** - INNER, LEFT, RIGHT, FULL, CROSS JOIN support
-- **Sorting & Pagination** - ORDER BY, LIMIT, OFFSET, DISTINCT
+- **Sorting & Pagination** - ORDER BY, LIMIT, OFFSET, DISTINCT, FOR UPDATE/FOR SHARE
 - **Aggregate Functions** - COUNT, SUM, AVG, MIN, MAX, GROUP BY, HAVING
 - **Subqueries** - IN, EXISTS, FROM subqueries, scalar subqueries
 - **Set Operations** - UNION, UNION ALL, INTERSECT, EXCEPT
@@ -115,6 +115,10 @@ func main() {
             relica.Eq("status", "active"),
         )).
         All(&users)
+
+    // FIND by primary key (one-liner)
+    var user User
+    err = db.Model(&user).Find(42)
 
     // INSERT with Model() API (PREFERRED)
     newUser := User{Name: "Alice", Email: "alice@example.com"}
@@ -267,6 +271,19 @@ db.Select().From("users").
     All(&products)
 
 // Available: Eq, NotEq, GreaterThan, LessThan, GreaterOrEqual, LessOrEqual
+```
+
+#### NULL Checks
+
+```go
+// IS NULL / IS NOT NULL
+db.Select().From("users").
+    Where(relica.IsNull("deleted_at")).
+    All(&activeUsers)
+
+db.Select().From("orders").
+    Where(relica.IsNotNull("shipped_at")).
+    All(&shippedOrders)
 ```
 
 #### IN and BETWEEN
@@ -622,6 +639,39 @@ db.Select().
 ```
 
 **Performance**: 100x memory reduction (fetch only what you need vs all rows), 6x faster.
+
+### DISTINCT
+
+```go
+// Eliminate duplicate rows
+db.Select("category").From("products").Distinct().All(&categories)
+// SELECT DISTINCT "category" FROM "products"
+```
+
+### Row Locking (FOR UPDATE / FOR SHARE)
+
+**Pessimistic locking** for concurrent data access. Silently ignored for SQLite (database-level locking).
+
+```go
+// Exclusive lock — block other transactions from reading/writing
+db.Select().From("accounts").
+    Where(relica.Eq("id", accountID)).
+    ForUpdate().
+    One(&account)
+
+// Shared lock — allow concurrent reads, block writes
+db.Select().From("products").
+    Where(relica.Eq("id", productID)).
+    ForShare().
+    One(&product)
+
+// Non-blocking lock — skip locked rows (job queue pattern)
+db.Select().From("tasks").
+    Where(relica.Eq("status", "pending")).
+    ForUpdateSkipLocked().
+    Limit(10).
+    All(&tasks)
+```
 
 ### Aggregate Functions
 
@@ -1133,6 +1183,24 @@ defer sqlDB.Close()  // NOT db.Close()
 - Each `WrapDB()` call creates a new Relica instance with its own statement cache
 - The caller is responsible for closing the underlying `*sql.DB` connection
 - Multiple wraps of the same connection are isolated (separate caches)
+
+#### Connection Inspection
+
+Access the underlying connection for pool tuning, health checks, or driver identification:
+
+```go
+// Get underlying *sql.DB for direct pool configuration
+sqlDB := db.SqlDB()
+sqlDB.SetMaxOpenConns(100)
+
+// Health check
+if err := db.PingContext(ctx); err != nil {
+    log.Fatal("database unreachable:", err)
+}
+
+// Driver name (useful for dialect-specific logic)
+fmt.Println(db.DriverName()) // "postgres", "mysql", or "sqlite3"
+```
 
 ## 🛡️ Enterprise Security
 
