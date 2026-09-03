@@ -129,7 +129,7 @@ func (s *scanner) buildStructInfo(typ reflect.Type, index []int) (*structInfo, e
 }
 
 // scanRow scans a single SQL row into dest struct.
-func (s *scanner) scanRow(rows *sql.Rows, dest interface{}) error {
+func (s *scanner) scanRow(rows *sql.Rows, dest any) error {
 	destValue := reflect.ValueOf(dest)
 	if destValue.Kind() != reflect.Pointer {
 		return fmt.Errorf("scanner: dest must be pointer to struct, got %T", dest)
@@ -162,7 +162,7 @@ func (s *scanner) scanRow(rows *sql.Rows, dest interface{}) error {
 	}
 
 	// Prepare scan destinations
-	scanDests := make([]interface{}, len(columns))
+	scanDests := make([]any, len(columns))
 	for i, colName := range columns {
 		colName = strings.ToLower(colName)
 
@@ -177,7 +177,7 @@ func (s *scanner) scanRow(rows *sql.Rows, dest interface{}) error {
 			scanDests[i] = fieldValue.Addr().Interface()
 		} else {
 			// Column not mapped to any field - scan into dummy variable
-			var dummy interface{}
+			var dummy any
 			scanDests[i] = &dummy
 		}
 	}
@@ -191,7 +191,7 @@ func (s *scanner) scanRow(rows *sql.Rows, dest interface{}) error {
 }
 
 // scanRows scans multiple SQL rows into dest slice.
-func (s *scanner) scanRows(rows *sql.Rows, dest interface{}) error {
+func (s *scanner) scanRows(rows *sql.Rows, dest any) error {
 	destValue := reflect.ValueOf(dest)
 	if destValue.Kind() != reflect.Pointer {
 		return fmt.Errorf("scanner: dest must be pointer to slice, got %T", dest)
@@ -239,7 +239,7 @@ func (s *scanner) scanRows(rows *sql.Rows, dest interface{}) error {
 		elemValue := reflect.New(elemType).Elem()
 
 		// Prepare scan destinations
-		scanDests := make([]interface{}, len(columns))
+		scanDests := make([]any, len(columns))
 		for i, colName := range columns {
 			colName = strings.ToLower(colName)
 
@@ -254,7 +254,7 @@ func (s *scanner) scanRows(rows *sql.Rows, dest interface{}) error {
 				scanDests[i] = fieldValue.Addr().Interface()
 			} else {
 				// Column not mapped to any field
-				var dummy interface{}
+				var dummy any
 				scanDests[i] = &dummy
 			}
 		}
@@ -290,7 +290,7 @@ func (s *scanner) scanMapRow(rows *sql.Rows, dest *NullStringMap) error {
 
 	// Prepare scan destinations - all as NullString
 	values := make([]sql.NullString, len(columns))
-	scanDests := make([]interface{}, len(columns))
+	scanDests := make([]any, len(columns))
 	for i := range values {
 		scanDests[i] = &values[i]
 	}
@@ -321,7 +321,7 @@ func (s *scanner) scanMapRows(rows *sql.Rows, dest *[]NullStringMap) error {
 	for rows.Next() {
 		// Prepare scan destinations - all as NullString
 		values := make([]sql.NullString, len(columns))
-		scanDests := make([]interface{}, len(columns))
+		scanDests := make([]any, len(columns))
 		for i := range values {
 			scanDests[i] = &values[i]
 		}

@@ -37,7 +37,7 @@
 //
 //	// UPDATE
 //	db.Update("users").
-//	    Set(map[string]interface{}{"status": "active"}).
+//	    Set(map[string]any{"status": "active"}).
 //	    Where(relica.Eq("id", 123)).
 //	    Execute()
 //
@@ -278,7 +278,7 @@ type Expression = core.Expression
 // HashExp provides a convenient map syntax for simple equality conditions.
 // Special values are handled automatically:
 //   - nil → "column IS NULL"
-//   - []interface{} → "column IN (...)"
+//   - []any → "column IN (...)"
 //
 // Example:
 //
@@ -552,7 +552,7 @@ func (d *DB) NewQuery(query string) *Query {
 //	// Field control.
 //	err = db.Model(&user).Exclude("CreatedAt", "UpdatedAt").Insert()
 //	err = db.Model(&user).Table("users_archive").Insert()
-func (d *DB) Model(model interface{}) *ModelQuery {
+func (d *DB) Model(model any) *ModelQuery {
 	return &ModelQuery{mq: d.db.Model(model)}
 }
 
@@ -590,7 +590,7 @@ func (d *DB) Select(cols ...string) *SelectQuery {
 //
 // Example:
 //
-//	result, err := db.Insert("users", map[string]interface{}{
+//	result, err := db.Insert("users", map[string]any{
 //	    "name":  "Alice",
 //	    "email": "alice@example.com",
 //	}).Execute()
@@ -606,7 +606,7 @@ func (d *DB) Select(cols ...string) *SelectQuery {
 //	    Values("Alice", "alice@example.com").
 //	    Values("Bob", "bob@example.com").
 //	    Execute()
-func (d *DB) Insert(table string, data map[string]interface{}) *Query {
+func (d *DB) Insert(table string, data map[string]any) *Query {
 	return d.Builder().Insert(table, data)
 }
 
@@ -634,7 +634,7 @@ func (d *DB) Insert(table string, data map[string]interface{}) *Query {
 //	if err != nil {
 //	    return err
 //	}
-func (d *DB) InsertStruct(table string, data interface{}) *Query {
+func (d *DB) InsertStruct(table string, data any) *Query {
 	return d.Builder().InsertStruct(table, data)
 }
 
@@ -659,7 +659,7 @@ func (d *DB) InsertStruct(table string, data interface{}) *Query {
 //	}
 //
 // For single struct inserts, use InsertStruct instead.
-func (d *DB) BatchInsertStruct(table string, data interface{}) *Query {
+func (d *DB) BatchInsertStruct(table string, data any) *Query {
 	return d.Builder().BatchInsertStruct(table, data)
 }
 
@@ -684,7 +684,7 @@ func (d *DB) BatchInsertStruct(table string, data interface{}) *Query {
 //
 // For automatic WHERE clause based on primary key, consider using
 // the Model() API (available in v0.6.0+).
-func (d *DB) UpdateStruct(table string, data interface{}) *UpdateQuery {
+func (d *DB) UpdateStruct(table string, data any) *UpdateQuery {
 	return d.Builder().UpdateStruct(table, data)
 }
 
@@ -696,7 +696,7 @@ func (d *DB) UpdateStruct(table string, data interface{}) *UpdateQuery {
 // Example:
 //
 //	_, err := db.Update("users").
-//	    Set(map[string]interface{}{"status": "active"}).
+//	    Set(map[string]any{"status": "active"}).
 //	    Where("id = ?", 123).
 //	    Execute()
 //	if err != nil {
@@ -706,8 +706,8 @@ func (d *DB) UpdateStruct(table string, data interface{}) *UpdateQuery {
 //	// For batch operations, use Builder()
 //	_, err := db.Builder().
 //	    BatchUpdate("users", "id").
-//	    Set(1, map[string]interface{}{"status": "active"}).
-//	    Set(2, map[string]interface{}{"status": "inactive"}).
+//	    Set(1, map[string]any{"status": "active"}).
+//	    Set(2, map[string]any{"status": "inactive"}).
 //	    Execute()
 func (d *DB) Update(table string) *UpdateQuery {
 	return d.Builder().Update(table)
@@ -755,8 +755,8 @@ func (d *DB) BatchInsert(table string, columns []string) *BatchInsertQuery {
 // Example:
 //
 //	result, err := db.BatchUpdate("users", "id").
-//	    Set(1, map[string]interface{}{"name": "Alice"}).
-//	    Set(2, map[string]interface{}{"name": "Bob"}).
+//	    Set(1, map[string]any{"name": "Alice"}).
+//	    Set(2, map[string]any{"name": "Bob"}).
 //	    Execute()
 func (d *DB) BatchUpdate(table, keyColumn string) *BatchUpdateQuery {
 	return d.Builder().BatchUpdate(table, keyColumn)
@@ -768,11 +768,11 @@ func (d *DB) BatchUpdate(table, keyColumn string) *BatchUpdateQuery {
 //
 // Example:
 //
-//	result, err := db.Upsert("users", map[string]interface{}{
+//	result, err := db.Upsert("users", map[string]any{
 //	    "email": "alice@example.com",
 //	    "name":  "Alice",
 //	}).OnConflict("email").DoUpdate("name").Execute()
-func (d *DB) Upsert(table string, values map[string]interface{}) *UpsertQuery {
+func (d *DB) Upsert(table string, values map[string]any) *UpsertQuery {
 	return d.Builder().Upsert(table, values)
 }
 
@@ -894,7 +894,7 @@ func (d *DB) TransactionalTx(ctx context.Context, opts *TxOptions, f func(*Tx) e
 //	    return err
 //	}
 //	rowsAffected, _ := result.RowsAffected()
-func (d *DB) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+func (d *DB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return d.db.ExecContext(ctx, query, args...)
 }
 
@@ -915,7 +915,7 @@ func (d *DB) ExecContext(ctx context.Context, query string, args ...interface{})
 //	for rows.Next() {
 //	    // Process rows
 //	}
-func (d *DB) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+func (d *DB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	return d.db.QueryContext(ctx, query, args...)
 }
 
@@ -928,7 +928,7 @@ func (d *DB) QueryContext(ctx context.Context, query string, args ...interface{}
 //	var count int
 //	err := db.QueryRowContext(ctx,
 //	    "SELECT COUNT(*) FROM users").Scan(&count)
-func (d *DB) QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row {
+func (d *DB) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
 	return d.db.QueryRowContext(ctx, query, args...)
 }
 
@@ -1030,7 +1030,7 @@ func (t *Tx) Select(cols ...string) *SelectQuery {
 //
 // Example:
 //
-//	_, err := tx.Insert("users", map[string]interface{}{
+//	_, err := tx.Insert("users", map[string]any{
 //	    "name":  "Alice",
 //	    "email": "alice@example.com",
 //	}).Execute()
@@ -1038,7 +1038,7 @@ func (t *Tx) Select(cols ...string) *SelectQuery {
 //	    tx.Rollback()
 //	    return err
 //	}
-func (t *Tx) Insert(table string, data map[string]interface{}) *Query {
+func (t *Tx) Insert(table string, data map[string]any) *Query {
 	return t.Builder().Insert(table, data)
 }
 
@@ -1055,7 +1055,7 @@ func (t *Tx) Insert(table string, data map[string]interface{}) *Query {
 //	    tx.Rollback()
 //	    return err
 //	}
-func (t *Tx) InsertStruct(table string, data interface{}) *Query {
+func (t *Tx) InsertStruct(table string, data any) *Query {
 	return t.Builder().InsertStruct(table, data)
 }
 
@@ -1075,7 +1075,7 @@ func (t *Tx) InsertStruct(table string, data interface{}) *Query {
 //	    tx.Rollback()
 //	    return err
 //	}
-func (t *Tx) BatchInsertStruct(table string, data interface{}) *Query {
+func (t *Tx) BatchInsertStruct(table string, data any) *Query {
 	return t.Builder().BatchInsertStruct(table, data)
 }
 
@@ -1094,7 +1094,7 @@ func (t *Tx) BatchInsertStruct(table string, data interface{}) *Query {
 //	    tx.Rollback()
 //	    return err
 //	}
-func (t *Tx) UpdateStruct(table string, data interface{}) *UpdateQuery {
+func (t *Tx) UpdateStruct(table string, data any) *UpdateQuery {
 	return t.Builder().UpdateStruct(table, data)
 }
 
@@ -1105,7 +1105,7 @@ func (t *Tx) UpdateStruct(table string, data interface{}) *UpdateQuery {
 // Example:
 //
 //	_, err := tx.Update("users").
-//	    Set(map[string]interface{}{"status": "active"}).
+//	    Set(map[string]any{"status": "active"}).
 //	    Where("id = ?", 123).
 //	    Execute()
 //	if err != nil {
@@ -1181,7 +1181,7 @@ func (t *Tx) Unwrap() *core.Tx {
 //	}
 //
 //	return tx.Commit()
-func (t *Tx) Model(model interface{}) *ModelQuery {
+func (t *Tx) Model(model any) *ModelQuery {
 	return &ModelQuery{mq: t.tx.Model(model)}
 }
 
@@ -1206,8 +1206,8 @@ func (t *Tx) BatchInsert(table string, columns []string) *BatchInsertQuery {
 // Example:
 //
 //	result, err := tx.BatchUpdate("users", "id").
-//	    Set(1, map[string]interface{}{"name": "Alice"}).
-//	    Set(2, map[string]interface{}{"name": "Bob"}).
+//	    Set(1, map[string]any{"name": "Alice"}).
+//	    Set(2, map[string]any{"name": "Bob"}).
 //	    Execute()
 func (t *Tx) BatchUpdate(table, keyColumn string) *BatchUpdateQuery {
 	return t.Builder().BatchUpdate(table, keyColumn)
@@ -1219,11 +1219,11 @@ func (t *Tx) BatchUpdate(table, keyColumn string) *BatchUpdateQuery {
 //
 // Example:
 //
-//	result, err := tx.Upsert("users", map[string]interface{}{
+//	result, err := tx.Upsert("users", map[string]any{
 //	    "email": "alice@example.com",
 //	    "name":  "Alice",
 //	}).OnConflict("email").DoUpdate("name").Execute()
-func (t *Tx) Upsert(table string, values map[string]interface{}) *UpsertQuery {
+func (t *Tx) Upsert(table string, values map[string]any) *UpsertQuery {
 	return t.Builder().Upsert(table, values)
 }
 
@@ -1359,7 +1359,7 @@ func (mq *ModelQuery) UpsertOn(conflictColumns []string, fields ...string) error
 //
 //	err := db.Model(&user).UpdateChanged(&original)
 //	// UPDATE users SET name=?, status=? WHERE id=?
-func (mq *ModelQuery) UpdateChanged(original interface{}) error {
+func (mq *ModelQuery) UpdateChanged(original any) error {
 	return mq.mq.UpdateChanged(original)
 }
 
@@ -1455,12 +1455,12 @@ func (qb *QueryBuilder) Select(cols ...string) *SelectQuery {
 //
 // Example:
 //
-//	result, err := db.Builder().Insert("users", map[string]interface{}{
+//	result, err := db.Builder().Insert("users", map[string]any{
 //	    "name": "Alice",
 //	    "email": "alice@example.com",
 //	    "status": 1,
 //	}).Execute()
-func (qb *QueryBuilder) Insert(table string, values map[string]interface{}) *Query {
+func (qb *QueryBuilder) Insert(table string, values map[string]any) *Query {
 	return &Query{q: qb.qb.Insert(table, values)}
 }
 
@@ -1473,7 +1473,7 @@ func (qb *QueryBuilder) Insert(table string, values map[string]interface{}) *Que
 //
 //	user := User{Name: "Alice", Email: "alice@example.com"}
 //	result, err := db.Builder().InsertStruct("users", &user).Execute()
-func (qb *QueryBuilder) InsertStruct(table string, data interface{}) *Query {
+func (qb *QueryBuilder) InsertStruct(table string, data any) *Query {
 	dataMap, err := util.StructToMap(data)
 	if err != nil {
 		return &Query{q: nil, err: err}
@@ -1509,7 +1509,7 @@ func (qb *QueryBuilder) InsertStruct(table string, data interface{}) *Query {
 //	result, err := db.Builder().BatchInsertStruct("users", users).Execute()
 //
 //nolint:cyclop // Slice validation + PK detection + column extraction + row iteration require sequential steps.
-func (qb *QueryBuilder) BatchInsertStruct(table string, data interface{}) *Query {
+func (qb *QueryBuilder) BatchInsertStruct(table string, data any) *Query {
 	// Validate input is a slice.
 	v := reflect.ValueOf(data)
 	if v.Kind() != reflect.Slice {
@@ -1557,7 +1557,7 @@ func (qb *QueryBuilder) BatchInsertStruct(table string, data interface{}) *Query
 		}
 
 		// Extract values in column order.
-		values := make([]interface{}, len(columns))
+		values := make([]any, len(columns))
 		for j, col := range columns {
 			values[j] = rowMap[col]
 		}
@@ -1579,7 +1579,7 @@ func (qb *QueryBuilder) BatchInsertStruct(table string, data interface{}) *Query
 //	result, err := db.Builder().UpdateStruct("users", &user).
 //	    Where("id = ?", user.ID).
 //	    Execute()
-func (qb *QueryBuilder) UpdateStruct(table string, data interface{}) *UpdateQuery {
+func (qb *QueryBuilder) UpdateStruct(table string, data any) *UpdateQuery {
 	dataMap, err := util.StructToMap(data)
 	if err != nil {
 		// Return UpdateQuery with error that will fail on Execute.
@@ -1595,7 +1595,7 @@ func (qb *QueryBuilder) UpdateStruct(table string, data interface{}) *UpdateQuer
 // Example:
 //
 //	db.Builder().Update("users").
-//	    Set(map[string]interface{}{"status": 2}).
+//	    Set(map[string]any{"status": 2}).
 //	    Where("id = ?", 123).
 //	    Execute()
 func (qb *QueryBuilder) Update(table string) *UpdateQuery {
@@ -1638,8 +1638,8 @@ func (qb *QueryBuilder) BatchInsert(table string, columns []string) *BatchInsert
 // Example:
 //
 //	db.Builder().BatchUpdate("users", "id").
-//	    Set(1, map[string]interface{}{"status": 2}).
-//	    Set(2, map[string]interface{}{"status": 3}).
+//	    Set(1, map[string]any{"status": 2}).
+//	    Set(2, map[string]any{"status": 3}).
 //	    Execute()
 func (qb *QueryBuilder) BatchUpdate(table, keyColumn string) *BatchUpdateQuery {
 	return &BatchUpdateQuery{buq: qb.qb.BatchUpdate(table, keyColumn)}
@@ -1653,12 +1653,12 @@ func (qb *QueryBuilder) BatchUpdate(table, keyColumn string) *BatchUpdateQuery {
 //
 // Example:
 //
-//	db.Builder().Upsert("users", map[string]interface{}{
+//	db.Builder().Upsert("users", map[string]any{
 //	    "id": 1,
 //	    "name": "Alice",
 //	    "email": "alice@example.com",
 //	}).OnConflict("id").DoUpdate("name", "email").Execute()
-func (qb *QueryBuilder) Upsert(table string, values map[string]interface{}) *UpsertQuery {
+func (qb *QueryBuilder) Upsert(table string, values map[string]any) *UpsertQuery {
 	return &UpsertQuery{uq: qb.qb.Upsert(table, values)}
 }
 
@@ -1721,7 +1721,7 @@ func (sq *SelectQuery) FromSelect(subquery *SelectQuery, alias string) *SelectQu
 //	db.Builder().Select("id", "name").
 //	    SelectExpr("(SELECT COUNT(*) FROM orders WHERE orders.user_id = users.id)", "order_count").
 //	    From("users").All(&results)
-func (sq *SelectQuery) SelectExpr(expr string, args ...interface{}) *SelectQuery {
+func (sq *SelectQuery) SelectExpr(expr string, args ...any) *SelectQuery {
 	sq.sq.SelectExpr(expr, args...)
 	return sq
 }
@@ -1775,7 +1775,7 @@ func (sq *SelectQuery) SelectSub(exp Expression, alias string) *SelectQuery {
 //	    relica.Eq("status", 1),
 //	    relica.GreaterThan("age", 18),
 //	))
-func (sq *SelectQuery) Where(condition interface{}, params ...interface{}) *SelectQuery {
+func (sq *SelectQuery) Where(condition any, params ...any) *SelectQuery {
 	sq.sq.Where(condition, params...)
 	return sq
 }
@@ -1788,7 +1788,7 @@ func (sq *SelectQuery) Where(condition interface{}, params ...interface{}) *Sele
 //	db.Builder().Select("*").From("users").
 //	    Where("status = ?", 1).
 //	    AndWhere("age > ?", 18)
-func (sq *SelectQuery) AndWhere(condition interface{}, params ...interface{}) *SelectQuery {
+func (sq *SelectQuery) AndWhere(condition any, params ...any) *SelectQuery {
 	sq.sq.AndWhere(condition, params...)
 	return sq
 }
@@ -1801,7 +1801,7 @@ func (sq *SelectQuery) AndWhere(condition interface{}, params ...interface{}) *S
 //	db.Builder().Select("*").From("users").
 //	    Where("status = ?", 1).
 //	    OrWhere("role = ?", "admin")
-func (sq *SelectQuery) OrWhere(condition interface{}, params ...interface{}) *SelectQuery {
+func (sq *SelectQuery) OrWhere(condition any, params ...any) *SelectQuery {
 	sq.sq.OrWhere(condition, params...)
 	return sq
 }
@@ -1814,7 +1814,7 @@ func (sq *SelectQuery) OrWhere(condition interface{}, params ...interface{}) *Se
 //	    From("users u").
 //	    InnerJoin("orders o", "o.user_id = u.id").
 //	    All(&results)
-func (sq *SelectQuery) InnerJoin(table string, on interface{}) *SelectQuery {
+func (sq *SelectQuery) InnerJoin(table string, on any) *SelectQuery {
 	sq.sq.InnerJoin(table, on)
 	return sq
 }
@@ -1827,7 +1827,7 @@ func (sq *SelectQuery) InnerJoin(table string, on interface{}) *SelectQuery {
 //	    From("users u").
 //	    LeftJoin("orders o", "o.user_id = u.id").
 //	    All(&results)
-func (sq *SelectQuery) LeftJoin(table string, on interface{}) *SelectQuery {
+func (sq *SelectQuery) LeftJoin(table string, on any) *SelectQuery {
 	sq.sq.LeftJoin(table, on)
 	return sq
 }
@@ -1840,7 +1840,7 @@ func (sq *SelectQuery) LeftJoin(table string, on interface{}) *SelectQuery {
 //	    From("users u").
 //	    RightJoin("orders o", "o.user_id = u.id").
 //	    All(&results)
-func (sq *SelectQuery) RightJoin(table string, on interface{}) *SelectQuery {
+func (sq *SelectQuery) RightJoin(table string, on any) *SelectQuery {
 	sq.sq.RightJoin(table, on)
 	return sq
 }
@@ -1855,7 +1855,7 @@ func (sq *SelectQuery) RightJoin(table string, on interface{}) *SelectQuery {
 //	    From("users u").
 //	    FullJoin("orders o", "o.user_id = u.id").
 //	    All(&results)
-func (sq *SelectQuery) FullJoin(table string, on interface{}) *SelectQuery {
+func (sq *SelectQuery) FullJoin(table string, on any) *SelectQuery {
 	sq.sq.FullJoin(table, on)
 	return sq
 }
@@ -1893,7 +1893,7 @@ func (sq *SelectQuery) OrderBy(columns ...string) *SelectQuery {
 //
 //	OrderByExpr("CASE WHEN status = ? THEN 0 ELSE 1 END", "active")
 //	OrderByExpr("FIELD(id, ?, ?, ?)", 3, 1, 2)
-func (sq *SelectQuery) OrderByExpr(expr string, args ...interface{}) *SelectQuery {
+func (sq *SelectQuery) OrderByExpr(expr string, args ...any) *SelectQuery {
 	sq.sq.OrderByExpr(expr, args...)
 	return sq
 }
@@ -1954,7 +1954,7 @@ func (sq *SelectQuery) GroupBy(columns ...string) *SelectQuery {
 //
 //	GroupByExpr("DATE(created_at)")
 //	GroupByExpr("EXTRACT(YEAR FROM order_date)")
-func (sq *SelectQuery) GroupByExpr(expr string, args ...interface{}) *SelectQuery {
+func (sq *SelectQuery) GroupByExpr(expr string, args ...any) *SelectQuery {
 	sq.sq.GroupByExpr(expr, args...)
 	return sq
 }
@@ -1972,7 +1972,7 @@ func (sq *SelectQuery) GroupBySub(exp Expression) *SelectQuery {
 // Example:
 //
 //	Having("COUNT(*) > ?", 100)
-func (sq *SelectQuery) Having(condition interface{}, args ...interface{}) *SelectQuery {
+func (sq *SelectQuery) Having(condition any, args ...any) *SelectQuery {
 	sq.sq.Having(condition, args...)
 	return sq
 }
@@ -2091,7 +2091,7 @@ func (sq *SelectQuery) Build() *Query {
 //	var user User
 //	err := db.Builder().Select("*").From("users").
 //	    Where("id = ?", 123).One(&user)
-func (sq *SelectQuery) One(dest interface{}) error {
+func (sq *SelectQuery) One(dest any) error {
 	return sq.sq.One(dest)
 }
 
@@ -2101,7 +2101,7 @@ func (sq *SelectQuery) One(dest interface{}) error {
 //
 //	var users []User
 //	err := db.Builder().Select("*").From("users").All(&users)
-func (sq *SelectQuery) All(dest interface{}) error {
+func (sq *SelectQuery) All(dest any) error {
 	return sq.sq.All(dest)
 }
 
@@ -2114,7 +2114,7 @@ func (sq *SelectQuery) All(dest interface{}) error {
 //	var age int
 //	err := db.Builder().Select("name", "age").From("users").
 //	    Where("id = ?", 1).Row(&name, &age)
-func (sq *SelectQuery) Row(dest ...interface{}) error {
+func (sq *SelectQuery) Row(dest ...any) error {
 	return sq.sq.Row(dest...)
 }
 
@@ -2126,7 +2126,7 @@ func (sq *SelectQuery) Row(dest ...interface{}) error {
 //	var ids []int
 //	err := db.Builder().Select("id").From("users").
 //	    Where("status = ?", "active").Column(&ids)
-func (sq *SelectQuery) Column(slice interface{}) error {
+func (sq *SelectQuery) Column(slice any) error {
 	return sq.sq.Column(slice)
 }
 
@@ -2155,7 +2155,7 @@ func (sq *SelectQuery) Exists() (bool, error) {
 // Example:
 //
 //	sql, params := db.Select().From("users").Where(relica.Eq("id", 1)).ToSQL()
-func (sq *SelectQuery) ToSQL() (string, []interface{}) {
+func (sq *SelectQuery) ToSQL() (string, []any) {
 	return sq.sq.ToSQL()
 }
 
@@ -2232,8 +2232,8 @@ func (uq *UpdateQuery) WithContext(ctx context.Context) *UpdateQuery {
 //
 // Example:
 //
-//	Update("users").Set(map[string]interface{}{"status": 2})
-func (uq *UpdateQuery) Set(values map[string]interface{}) *UpdateQuery {
+//	Update("users").Set(map[string]any{"status": 2})
+func (uq *UpdateQuery) Set(values map[string]any) *UpdateQuery {
 	uq.uq.Set(values)
 	return uq
 }
@@ -2243,7 +2243,7 @@ func (uq *UpdateQuery) Set(values map[string]interface{}) *UpdateQuery {
 // Example:
 //
 //	Update("users").Set(...).Where("id = ?", 123)
-func (uq *UpdateQuery) Where(condition interface{}, params ...interface{}) *UpdateQuery {
+func (uq *UpdateQuery) Where(condition any, params ...any) *UpdateQuery {
 	uq.uq.Where(condition, params...)
 	return uq
 }
@@ -2254,10 +2254,10 @@ func (uq *UpdateQuery) Where(condition interface{}, params ...interface{}) *Upda
 // Example:
 //
 //	db.Builder().Update("users").
-//	    Set(map[string]interface{}{"status": 2}).
+//	    Set(map[string]any{"status": 2}).
 //	    Where("id > ?", 100).
 //	    AndWhere("active = ?", true)
-func (uq *UpdateQuery) AndWhere(condition interface{}, params ...interface{}) *UpdateQuery {
+func (uq *UpdateQuery) AndWhere(condition any, params ...any) *UpdateQuery {
 	uq.uq.AndWhere(condition, params...)
 	return uq
 }
@@ -2268,10 +2268,10 @@ func (uq *UpdateQuery) AndWhere(condition interface{}, params ...interface{}) *U
 // Example:
 //
 //	db.Builder().Update("users").
-//	    Set(map[string]interface{}{"status": 0}).
+//	    Set(map[string]any{"status": 0}).
 //	    Where("banned = ?", true).
 //	    OrWhere("deleted = ?", true)
-func (uq *UpdateQuery) OrWhere(condition interface{}, params ...interface{}) *UpdateQuery {
+func (uq *UpdateQuery) OrWhere(condition any, params ...any) *UpdateQuery {
 	uq.uq.OrWhere(condition, params...)
 	return uq
 }
@@ -2297,8 +2297,8 @@ func (uq *UpdateQuery) Execute() (sql.Result, error) {
 //
 // Example:
 //
-//	sql, params := db.Update("users").Set(map[string]interface{}{"status": 1}).Where(relica.Eq("id", 1)).ToSQL()
-func (uq *UpdateQuery) ToSQL() (string, []interface{}) {
+//	sql, params := db.Update("users").Set(map[string]any{"status": 1}).Where(relica.Eq("id", 1)).ToSQL()
+func (uq *UpdateQuery) ToSQL() (string, []any) {
 	if uq.err != nil {
 		return "", nil
 	}
@@ -2324,7 +2324,7 @@ func (dq *DeleteQuery) WithContext(ctx context.Context) *DeleteQuery {
 // Example:
 //
 //	Delete("users").Where("id = ?", 123)
-func (dq *DeleteQuery) Where(condition interface{}, params ...interface{}) *DeleteQuery {
+func (dq *DeleteQuery) Where(condition any, params ...any) *DeleteQuery {
 	dq.dq.Where(condition, params...)
 	return dq
 }
@@ -2337,7 +2337,7 @@ func (dq *DeleteQuery) Where(condition interface{}, params ...interface{}) *Dele
 //	db.Builder().Delete("users").
 //	    Where("status = ?", 0).
 //	    AndWhere("created_at < ?", "2020-01-01")
-func (dq *DeleteQuery) AndWhere(condition interface{}, params ...interface{}) *DeleteQuery {
+func (dq *DeleteQuery) AndWhere(condition any, params ...any) *DeleteQuery {
 	dq.dq.AndWhere(condition, params...)
 	return dq
 }
@@ -2350,7 +2350,7 @@ func (dq *DeleteQuery) AndWhere(condition interface{}, params ...interface{}) *D
 //	db.Builder().Delete("users").
 //	    Where("banned = ?", true).
 //	    OrWhere("deleted = ?", true)
-func (dq *DeleteQuery) OrWhere(condition interface{}, params ...interface{}) *DeleteQuery {
+func (dq *DeleteQuery) OrWhere(condition any, params ...any) *DeleteQuery {
 	dq.dq.OrWhere(condition, params...)
 	return dq
 }
@@ -2371,7 +2371,7 @@ func (dq *DeleteQuery) Execute() (sql.Result, error) {
 // Example:
 //
 //	sql, params := db.Delete("users").Where(relica.Eq("id", 1)).ToSQL()
-func (dq *DeleteQuery) ToSQL() (string, []interface{}) {
+func (dq *DeleteQuery) ToSQL() (string, []any) {
 	return dq.dq.ToSQL()
 }
 
@@ -2434,9 +2434,9 @@ func (uq *UpsertQuery) Execute() (sql.Result, error) {
 //
 // Example:
 //
-//	sql, params := db.Upsert("users", map[string]interface{}{"id": 1, "name": "Alice"}).
+//	sql, params := db.Upsert("users", map[string]any{"id": 1, "name": "Alice"}).
 //	    OnConflict("id").DoUpdate("name").ToSQL()
-func (uq *UpsertQuery) ToSQL() (string, []interface{}) {
+func (uq *UpsertQuery) ToSQL() (string, []any) {
 	q := uq.Build()
 	return q.SQL(), q.Params()
 }
@@ -2462,7 +2462,7 @@ func (biq *BatchInsertQuery) WithContext(ctx context.Context) *BatchInsertQuery 
 //	BatchInsert("users", []string{"name", "email"}).
 //	    Values("Alice", "alice@example.com").
 //	    Values("Bob", "bob@example.com")
-func (biq *BatchInsertQuery) Values(values ...interface{}) *BatchInsertQuery {
+func (biq *BatchInsertQuery) Values(values ...any) *BatchInsertQuery {
 	biq.biq.Values(values...)
 	return biq
 }
@@ -2472,8 +2472,8 @@ func (biq *BatchInsertQuery) Values(values ...interface{}) *BatchInsertQuery {
 // Example:
 //
 //	BatchInsert("users", []string{"name", "email"}).
-//	    ValuesMap(map[string]interface{}{"name": "Alice", "email": "alice@example.com"})
-func (biq *BatchInsertQuery) ValuesMap(values map[string]interface{}) *BatchInsertQuery {
+//	    ValuesMap(map[string]any{"name": "Alice", "email": "alice@example.com"})
+func (biq *BatchInsertQuery) ValuesMap(values map[string]any) *BatchInsertQuery {
 	biq.biq.ValuesMap(values)
 	return biq
 }
@@ -2495,7 +2495,7 @@ func (biq *BatchInsertQuery) Execute() (sql.Result, error) {
 //
 //	sql, params := db.BatchInsert("users", []string{"name", "email"}).
 //	    Values("Alice", "alice@example.com").ToSQL()
-func (biq *BatchInsertQuery) ToSQL() (string, []interface{}) {
+func (biq *BatchInsertQuery) ToSQL() (string, []any) {
 	q := biq.Build()
 	return q.SQL(), q.Params()
 }
@@ -2519,9 +2519,9 @@ func (buq *BatchUpdateQuery) WithContext(ctx context.Context) *BatchUpdateQuery 
 // Example:
 //
 //	BatchUpdate("users", "id").
-//	    Set(1, map[string]interface{}{"status": 2}).
-//	    Set(2, map[string]interface{}{"status": 3})
-func (buq *BatchUpdateQuery) Set(keyValue interface{}, values map[string]interface{}) *BatchUpdateQuery {
+//	    Set(1, map[string]any{"status": 2}).
+//	    Set(2, map[string]any{"status": 3})
+func (buq *BatchUpdateQuery) Set(keyValue any, values map[string]any) *BatchUpdateQuery {
 	buq.buq.Set(keyValue, values)
 	return buq
 }
@@ -2542,8 +2542,8 @@ func (buq *BatchUpdateQuery) Execute() (sql.Result, error) {
 // Example:
 //
 //	sql, params := db.BatchUpdate("users", "id").
-//	    Set(1, map[string]interface{}{"status": 2}).ToSQL()
-func (buq *BatchUpdateQuery) ToSQL() (string, []interface{}) {
+//	    Set(1, map[string]any{"status": 2}).ToSQL()
+func (buq *BatchUpdateQuery) ToSQL() (string, []any) {
 	q := buq.Build()
 	return q.SQL(), q.Params()
 }
@@ -2565,7 +2565,7 @@ func (q *Query) Execute() (sql.Result, error) {
 }
 
 // One fetches a single row into dest.
-func (q *Query) One(dest interface{}) error {
+func (q *Query) One(dest any) error {
 	if q.err != nil {
 		return q.err
 	}
@@ -2573,7 +2573,7 @@ func (q *Query) One(dest interface{}) error {
 }
 
 // All fetches all rows into dest slice.
-func (q *Query) All(dest interface{}) error {
+func (q *Query) All(dest any) error {
 	if q.err != nil {
 		return q.err
 	}
@@ -2588,7 +2588,7 @@ func (q *Query) All(dest interface{}) error {
 //	var name string
 //	var age int
 //	err := db.Select("name", "age").From("users").Where("id = ?", 1).Row(&name, &age)
-func (q *Query) Row(dest ...interface{}) error {
+func (q *Query) Row(dest ...any) error {
 	if q.err != nil {
 		return q.err
 	}
@@ -2602,7 +2602,7 @@ func (q *Query) Row(dest ...interface{}) error {
 //
 //	var ids []int
 //	err := db.Select("id").From("users").Where("status = ?", "active").Column(&ids)
-func (q *Query) Column(slice interface{}) error {
+func (q *Query) Column(slice any) error {
 	if q.err != nil {
 		return q.err
 	}
@@ -2658,7 +2658,7 @@ func (q *Query) IsPrepared() bool {
 //	db.NewQuery("SELECT * FROM users WHERE id = ? AND status = ?").
 //	    Bind(1, "active").
 //	    One(&user)
-func (q *Query) Bind(params ...interface{}) *Query {
+func (q *Query) Bind(params ...any) *Query {
 	if q.err != nil {
 		return q
 	}
@@ -2687,12 +2687,12 @@ func (q *Query) BindParams(params Params) *Query {
 //
 // Example:
 //
-//	sql, params := db.Insert("users", map[string]interface{}{
+//	sql, params := db.Insert("users", map[string]any{
 //	    "name": "Alice", "email": "alice@example.com",
 //	}).ToSQL()
 //	// sql: INSERT INTO "users" ("email", "name") VALUES ($1, $2)
 //	// params: [alice@example.com Alice]
-func (q *Query) ToSQL() (string, []interface{}) {
+func (q *Query) ToSQL() (string, []any) {
 	if q.q == nil {
 		return "", nil
 	}
@@ -2708,7 +2708,7 @@ func (q *Query) SQL() string {
 }
 
 // Params returns the query parameters.
-func (q *Query) Params() []interface{} {
+func (q *Query) Params() []any {
 	if q.q == nil {
 		return nil
 	}
@@ -2718,7 +2718,7 @@ func (q *Query) Params() []interface{} {
 // QueryParams returns the query parameters.
 //
 // Deprecated: Use Params instead.
-func (q *Query) QueryParams() []interface{} {
+func (q *Query) QueryParams() []any {
 	return q.Params()
 }
 
@@ -2954,19 +2954,19 @@ type NullStringMap = core.NullStringMap
 // ============================================================================
 
 // NewExp creates a new raw SQL expression.
-func NewExp(rawSQL string, args ...interface{}) Expression { return core.NewExp(rawSQL, args...) }
+func NewExp(rawSQL string, args ...any) Expression { return core.NewExp(rawSQL, args...) }
 
 // Eq creates an equality expression (column = value).
-func Eq(col string, value interface{}) Expression { return core.Eq(col, value) }
+func Eq(col string, value any) Expression { return core.Eq(col, value) }
 
 // NotEq creates a not-equal expression (column != value).
-func NotEq(col string, value interface{}) Expression { return core.NotEq(col, value) }
+func NotEq(col string, value any) Expression { return core.NotEq(col, value) }
 
 // GreaterThan creates a greater-than expression (column > value).
-func GreaterThan(col string, value interface{}) Expression { return core.GreaterThan(col, value) }
+func GreaterThan(col string, value any) Expression { return core.GreaterThan(col, value) }
 
 // LessThan creates a less-than expression (column < value).
-func LessThan(col string, value interface{}) Expression { return core.LessThan(col, value) }
+func LessThan(col string, value any) Expression { return core.LessThan(col, value) }
 
 // EqCol creates a column-to-column equality expression (col1 = col2).
 // Both identifiers are quoted using the current dialect.
@@ -2987,24 +2987,24 @@ func GreaterThanCol(col1, col2 string) Expression { return core.GreaterThanCol(c
 func LessThanCol(col1, col2 string) Expression { return core.LessThanCol(col1, col2) }
 
 // GreaterOrEqual creates a greater-or-equal expression (column >= value).
-func GreaterOrEqual(col string, value interface{}) Expression {
+func GreaterOrEqual(col string, value any) Expression {
 	return core.GreaterOrEqual(col, value)
 }
 
 // LessOrEqual creates a less-or-equal expression (column <= value).
-func LessOrEqual(col string, value interface{}) Expression { return core.LessOrEqual(col, value) }
+func LessOrEqual(col string, value any) Expression { return core.LessOrEqual(col, value) }
 
 // In creates an IN expression (column IN (values...)).
-func In(col string, values ...interface{}) Expression { return core.In(col, values...) }
+func In(col string, values ...any) Expression { return core.In(col, values...) }
 
 // NotIn creates a NOT IN expression (column NOT IN (values...)).
-func NotIn(col string, values ...interface{}) Expression { return core.NotIn(col, values...) }
+func NotIn(col string, values ...any) Expression { return core.NotIn(col, values...) }
 
 // Between creates a BETWEEN expression (column BETWEEN low AND high).
-func Between(col string, from, to interface{}) Expression { return core.Between(col, from, to) }
+func Between(col string, from, to any) Expression { return core.Between(col, from, to) }
 
 // NotBetween creates a NOT BETWEEN expression.
-func NotBetween(col string, from, to interface{}) Expression {
+func NotBetween(col string, from, to any) Expression {
 	return core.NotBetween(col, from, to)
 }
 
@@ -3046,19 +3046,19 @@ func Case(column string) *CaseExp { return core.Case(column) }
 func CaseWhen() *CaseExp { return core.CaseWhen() }
 
 // Coalesce creates a COALESCE expression.
-func Coalesce(values ...interface{}) *CoalesceExp { return core.Coalesce(values...) }
+func Coalesce(values ...any) *CoalesceExp { return core.Coalesce(values...) }
 
 // NullIf creates a NULLIF expression.
-func NullIf(expr1, expr2 interface{}) *NullIfExp { return core.NullIf(expr1, expr2) }
+func NullIf(expr1, expr2 any) *NullIfExp { return core.NullIf(expr1, expr2) }
 
 // Greatest creates a GREATEST expression.
-func Greatest(values ...interface{}) *GreatestLeastExp { return core.Greatest(values...) }
+func Greatest(values ...any) *GreatestLeastExp { return core.Greatest(values...) }
 
 // Least creates a LEAST expression.
-func Least(values ...interface{}) *GreatestLeastExp { return core.Least(values...) }
+func Least(values ...any) *GreatestLeastExp { return core.Least(values...) }
 
 // Concat creates a string concatenation expression.
-func Concat(values ...interface{}) *ConcatExp { return core.Concat(values...) }
+func Concat(values ...any) *ConcatExp { return core.Concat(values...) }
 
 // CaseExp represents a SQL CASE expression.
 type CaseExp = core.CaseExp

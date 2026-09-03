@@ -25,7 +25,7 @@ var selectAliasRegex = regexp.MustCompile(`(?i)\s+AS\s+([\w\-.]+)$`)
 //
 //	Where("id = {:id} AND status = {:status}", relica.Params{"id": 1, "status": "active"})
 //	Where("status = ?", 1)  // also works (positional)
-func resolveNamedParams(condition string, params []interface{}) (string, []interface{}, error) {
+func resolveNamedParams(condition string, params []any) (string, []any, error) {
 	if !namedPlaceholderRegex.MatchString(condition) {
 		return condition, params, nil
 	}
@@ -36,7 +36,7 @@ func resolveNamedParams(condition string, params []interface{}) (string, []inter
 	if !ok {
 		return condition, params, nil
 	}
-	var orderedArgs []interface{}
+	var orderedArgs []any
 	var missing []string
 	resolved := namedPlaceholderRegex.ReplaceAllStringFunc(condition, func(match string) string {
 		name := match[2 : len(match)-1]
@@ -89,9 +89,9 @@ func (qb *QueryBuilder) WithContext(ctx context.Context) *QueryBuilder {
 
 // JoinInfo represents a JOIN clause in SELECT query.
 type JoinInfo struct {
-	JoinType string      // "INNER JOIN", "LEFT JOIN", "RIGHT JOIN", "FULL OUTER JOIN", "CROSS JOIN"
-	Table    string      // Table name with optional alias: "users u", "messages m"
-	On       interface{} // string | Expression | nil
+	JoinType string // "INNER JOIN", "LEFT JOIN", "RIGHT JOIN", "FULL OUTER JOIN", "CROSS JOIN"
+	Table    string // Table name with optional alias: "users u", "messages m"
+	On       any    // string | Expression | nil
 }
 
 // unionInfo represents a set operation (UNION, INTERSECT, EXCEPT) between queries.
@@ -139,12 +139,12 @@ type SelectQuery struct {
 	subExprs      []subExprEntry // Type-safe SELECT expressions (subqueries, computed columns)
 	joins         []JoinInfo
 	where         []string
-	params        []interface{}
+	params        []any
 	groupBy       []string // GROUP BY columns: ["user_id", "status"]
 	groupByExprs  []RawExp // Raw GROUP BY expressions (EXTRACT, DATE, CASE)
 	havingClauses []struct {
 		condition string
-		args      []interface{}
+		args      []any
 	} // HAVING clauses (WHERE for aggregates)
 	orderBy         []string        // ORDER BY clauses: ["age DESC", "name ASC", "created_at"]
 	orderByExprs    []RawExp        // Raw ORDER BY expressions (CASE WHEN, functions with params)
@@ -231,7 +231,7 @@ func (sq *SelectQuery) AndSelect(cols ...string) *SelectQuery {
 //	FROM users
 //
 // Note: The SQL expression is used as-is. You're responsible for proper quoting and SQL injection prevention.
-func (sq *SelectQuery) SelectExpr(expr string, args ...interface{}) *SelectQuery {
+func (sq *SelectQuery) SelectExpr(expr string, args ...any) *SelectQuery {
 	sq.selectExprs = append(sq.selectExprs, RawExp{
 		SQL:  expr,
 		Args: args,
@@ -273,7 +273,7 @@ func (sq *SelectQuery) SelectSub(exp Expression, alias string) *SelectQuery {
 //	    relica.Eq("status", 1),
 //	    relica.GreaterThan("age", 18),
 //	))
-func (sq *SelectQuery) Where(condition interface{}, params ...interface{}) *SelectQuery {
+func (sq *SelectQuery) Where(condition any, params ...any) *SelectQuery {
 	switch cond := condition.(type) {
 	case string:
 		resolved, resolvedArgs, err := resolveNamedParams(cond, params)
@@ -310,7 +310,7 @@ func (sq *SelectQuery) Where(condition interface{}, params ...interface{}) *Sele
 // Expression example:
 //
 //	AndWhere(relica.GreaterThan("age", 18))
-func (sq *SelectQuery) AndWhere(condition interface{}, params ...interface{}) *SelectQuery {
+func (sq *SelectQuery) AndWhere(condition any, params ...any) *SelectQuery {
 	// Simply delegate to Where() which already uses AND logic for multiple calls.
 	return sq.Where(condition, params...)
 }
@@ -327,8 +327,8 @@ func (sq *SelectQuery) AndWhere(condition interface{}, params ...interface{}) *S
 //
 //	OrWhere(relica.Eq("status", "admin"))
 //
-//nolint:dupl // OrWhere on SelectQuery/UpdateQuery/DeleteQuery share structure but operate on different receiver types; a generic helper would require interface{} gymnastics.
-func (sq *SelectQuery) OrWhere(condition interface{}, params ...interface{}) *SelectQuery {
+//nolint:dupl // OrWhere on SelectQuery/UpdateQuery/DeleteQuery share structure but operate on different receiver types; a generic helper would require any gymnastics.
+func (sq *SelectQuery) OrWhere(condition any, params ...any) *SelectQuery {
 	if len(sq.where) == 0 {
 		// No existing WHERE clause - just add it.
 		return sq.Where(condition, params...)
@@ -336,7 +336,7 @@ func (sq *SelectQuery) OrWhere(condition interface{}, params ...interface{}) *Se
 
 	// Build the new condition.
 	var newSQL string
-	var newArgs []interface{}
+	var newArgs []any
 
 	switch cond := condition.(type) {
 	case string:
@@ -381,7 +381,7 @@ func (sq *SelectQuery) OrWhere(condition interface{}, params ...interface{}) *Se
 //
 //	Join("INNER JOIN", "users u", "m.user_id = u.id")
 //	Join("LEFT JOIN", "attachments a", relica.Eq("m.id", relica.Raw("a.message_id")))
-func (sq *SelectQuery) Join(joinType, table string, on interface{}) *SelectQuery {
+func (sq *SelectQuery) Join(joinType, table string, on any) *SelectQuery {
 	sq.joins = append(sq.joins, JoinInfo{
 		JoinType: joinType,
 		Table:    table,
@@ -398,7 +398,7 @@ func (sq *SelectQuery) Join(joinType, table string, on interface{}) *SelectQuery
 //
 //	InnerJoin("users u", "m.user_id = u.id")
 //	InnerJoin("users u", relica.Eq("m.user_id", relica.Raw("u.id")))
-func (sq *SelectQuery) InnerJoin(table string, on interface{}) *SelectQuery {
+func (sq *SelectQuery) InnerJoin(table string, on any) *SelectQuery {
 	return sq.Join("INNER JOIN", table, on)
 }
 
@@ -409,7 +409,7 @@ func (sq *SelectQuery) InnerJoin(table string, on interface{}) *SelectQuery {
 // Example:
 //
 //	LeftJoin("attachments a", "m.id = a.message_id")
-func (sq *SelectQuery) LeftJoin(table string, on interface{}) *SelectQuery {
+func (sq *SelectQuery) LeftJoin(table string, on any) *SelectQuery {
 	return sq.Join("LEFT JOIN", table, on)
 }
 
@@ -420,7 +420,7 @@ func (sq *SelectQuery) LeftJoin(table string, on interface{}) *SelectQuery {
 // Example:
 //
 //	RightJoin("users u", "m.user_id = u.id")
-func (sq *SelectQuery) RightJoin(table string, on interface{}) *SelectQuery {
+func (sq *SelectQuery) RightJoin(table string, on any) *SelectQuery {
 	return sq.Join("RIGHT JOIN", table, on)
 }
 
@@ -432,7 +432,7 @@ func (sq *SelectQuery) RightJoin(table string, on interface{}) *SelectQuery {
 // Example:
 //
 //	FullJoin("users u", "m.user_id = u.id")
-func (sq *SelectQuery) FullJoin(table string, on interface{}) *SelectQuery {
+func (sq *SelectQuery) FullJoin(table string, on any) *SelectQuery {
 	return sq.Join("FULL OUTER JOIN", table, on)
 }
 
@@ -469,7 +469,7 @@ func (sq *SelectQuery) OrderBy(columns ...string) *SelectQuery {
 //
 //	OrderByExpr("CASE WHEN status = ? THEN 0 ELSE 1 END", "active")
 //	OrderByExpr("FIELD(id, ?, ?, ?)", 3, 1, 2)
-func (sq *SelectQuery) OrderByExpr(expr string, args ...interface{}) *SelectQuery {
+func (sq *SelectQuery) OrderByExpr(expr string, args ...any) *SelectQuery {
 	sq.orderByExprs = append(sq.orderByExprs, RawExp{SQL: expr, Args: args})
 	return sq
 }
@@ -723,7 +723,7 @@ func (sq *SelectQuery) buildTableWithAlias(table string, dialect dialects.Dialec
 
 // buildFrom constructs the FROM clause, handling both tables and subqueries.
 // Returns the FROM SQL fragment and appends any subquery parameters to params.
-func (sq *SelectQuery) buildFrom(dialect dialects.Dialect, params *[]interface{}) string {
+func (sq *SelectQuery) buildFrom(dialect dialects.Dialect, params *[]any) string {
 	// Prefer fromSrc if set (supports subqueries)
 	if sq.fromSrc != nil {
 		if sq.fromSrc.isSubquery {
@@ -749,7 +749,7 @@ func (sq *SelectQuery) buildFrom(dialect dialects.Dialect, params *[]interface{}
 // buildJoins constructs the JOIN clause from the joins slice.
 // Returns empty string if no joins are specified.
 // On unsupported ON type, stores the error in sq.buildErr and returns empty string.
-func (sq *SelectQuery) buildJoins(dialect dialects.Dialect, params *[]interface{}) string {
+func (sq *SelectQuery) buildJoins(dialect dialects.Dialect, params *[]any) string {
 	if len(sq.joins) == 0 {
 		return ""
 	}
@@ -934,7 +934,7 @@ func (sq *SelectQuery) GroupBy(columns ...string) *SelectQuery {
 //
 //	GroupByExpr("DATE(created_at)")
 //	GroupByExpr("EXTRACT(YEAR FROM order_date)")
-func (sq *SelectQuery) GroupByExpr(expr string, args ...interface{}) *SelectQuery {
+func (sq *SelectQuery) GroupByExpr(expr string, args ...any) *SelectQuery {
 	sq.groupByExprs = append(sq.groupByExprs, RawExp{SQL: expr, Args: args})
 	return sq
 }
@@ -983,13 +983,13 @@ func (sq *SelectQuery) buildGroupBy(dialect dialects.Dialect) string {
 // Expression example:
 //
 //	Having(relica.GreaterThan("COUNT(*)", 100))
-func (sq *SelectQuery) Having(condition interface{}, args ...interface{}) *SelectQuery {
+func (sq *SelectQuery) Having(condition any, args ...any) *SelectQuery {
 	switch cond := condition.(type) {
 	case string:
 		// String-based HAVING
 		sq.havingClauses = append(sq.havingClauses, struct {
 			condition string
-			args      []interface{}
+			args      []any
 		}{
 			condition: cond,
 			args:      args,
@@ -1001,7 +1001,7 @@ func (sq *SelectQuery) Having(condition interface{}, args ...interface{}) *Selec
 		if sqlStr != "" {
 			sq.havingClauses = append(sq.havingClauses, struct {
 				condition string
-				args      []interface{}
+				args      []any
 			}{
 				condition: sqlStr,
 				args:      exprArgs,
@@ -1019,7 +1019,7 @@ func (sq *SelectQuery) Having(condition interface{}, args ...interface{}) *Selec
 // Returns empty string if no HAVING is specified.
 // Multiple clauses are combined with AND.
 // Appends parameters to params slice.
-func (sq *SelectQuery) buildHaving(params *[]interface{}) string {
+func (sq *SelectQuery) buildHaving(params *[]any) string {
 	if len(sq.havingClauses) == 0 {
 		return ""
 	}
@@ -1063,7 +1063,7 @@ func (sq *SelectQuery) renumberHavingPlaceholders(havingClause string, totalPara
 // Returns empty string if no WHERE is specified.
 // Multiple clauses are combined with AND.
 // Appends parameters to params slice and handles placeholder renumbering for PostgreSQL.
-func (sq *SelectQuery) buildWhere(dialect dialects.Dialect, params *[]interface{}) string {
+func (sq *SelectQuery) buildWhere(dialect dialects.Dialect, params *[]any) string {
 	if len(sq.where) == 0 {
 		return ""
 	}
@@ -1088,13 +1088,13 @@ func (sq *SelectQuery) buildWhere(dialect dialects.Dialect, params *[]interface{
 }
 
 // buildWithClause generates the WITH clause for CTEs.
-func (sq *SelectQuery) buildWithClause(dialect dialects.Dialect) (string, []interface{}) {
+func (sq *SelectQuery) buildWithClause(dialect dialects.Dialect) (string, []any) {
 	if len(sq.ctes) == 0 {
 		return "", nil
 	}
 
 	var parts []string
-	var allArgs []interface{}
+	var allArgs []any
 
 	// Check if any CTE is recursive
 	hasRecursive := false
@@ -1137,9 +1137,9 @@ func (sq *SelectQuery) buildWithClause(dialect dialects.Dialect) (string, []inte
 // Parameter ordering: CTEs → SelectExprs → SubExprs → FROM subquery → JOINs → WHERE → HAVING → GroupByExprs → OrderByExprs
 //
 //nolint:cyclop // Central query assembly requires sequential clause building; splitting would reduce clarity.
-func (sq *SelectQuery) buildSQL(dialect dialects.Dialect) (string, []interface{}) {
+func (sq *SelectQuery) buildSQL(dialect dialects.Dialect) (string, []any) {
 	// Collect all parameters in correct order
-	var allParams []interface{}
+	var allParams []any
 	var parts []string
 
 	// 1. Build WITH clause if CTEs exist
@@ -1241,7 +1241,7 @@ func (sq *SelectQuery) buildSQL(dialect dialects.Dialect) (string, []interface{}
 
 // buildSetOperations handles UNION, INTERSECT, EXCEPT operations.
 // This method is extracted from buildSQL to reduce cognitive complexity.
-func (sq *SelectQuery) buildSetOperations(mainQuery string, allParams []interface{}, dialect dialects.Dialect) (string, []interface{}) {
+func (sq *SelectQuery) buildSetOperations(mainQuery string, allParams []any, dialect dialects.Dialect) (string, []any) {
 	// Wrap main query in parentheses
 	mainSQL := "(" + mainQuery + ")"
 
@@ -1322,12 +1322,12 @@ func (sq *SelectQuery) Build() *Query {
 }
 
 // One scans a single row into dest.
-func (sq *SelectQuery) One(dest interface{}) error {
+func (sq *SelectQuery) One(dest any) error {
 	return sq.Build().One(dest)
 }
 
 // All scans all rows into dest slice.
-func (sq *SelectQuery) All(dest interface{}) error {
+func (sq *SelectQuery) All(dest any) error {
 	return sq.Build().All(dest)
 }
 
@@ -1339,7 +1339,7 @@ func (sq *SelectQuery) All(dest interface{}) error {
 //	var name string
 //	var age int
 //	err := db.Select("name", "age").From("users").Where("id = ?", 1).Row(&name, &age)
-func (sq *SelectQuery) Row(dest ...interface{}) error {
+func (sq *SelectQuery) Row(dest ...any) error {
 	return sq.Build().Row(dest...)
 }
 
@@ -1350,7 +1350,7 @@ func (sq *SelectQuery) Row(dest ...interface{}) error {
 //
 //	var ids []int
 //	err := db.Select("id").From("users").Where("status = ?", "active").Column(&ids)
-func (sq *SelectQuery) Column(slice interface{}) error {
+func (sq *SelectQuery) Column(slice any) error {
 	return sq.Build().Column(slice)
 }
 
@@ -1435,7 +1435,7 @@ func (sq *SelectQuery) Exists() (bool, error) {
 // Example:
 //
 //	sql, params := db.Select().From("users").Where(relica.Eq("id", 1)).ToSQL()
-func (sq *SelectQuery) ToSQL() (string, []interface{}) {
+func (sq *SelectQuery) ToSQL() (string, []any) {
 	return sq.buildSQL(sq.builder.db.dialect)
 }
 
@@ -1510,14 +1510,14 @@ func (sq *SelectQuery) explainQuery(withAnalyze bool) (*QueryPlan, error) {
 }
 
 // selectQueryExpression is an adapter that allows SelectQuery to implement the Expression interface.
-// This is necessary because SelectQuery.Build() returns *Query, not (string, []interface{}).
+// This is necessary because SelectQuery.Build() returns *Query, not (string, []any).
 type selectQueryExpression struct {
 	query *SelectQuery
 }
 
 // Build implements the Expression interface for SelectQuery.
 // This allows SelectQuery to be used in subquery contexts (IN, EXISTS, FROM).
-func (sqe *selectQueryExpression) Build(dialect dialects.Dialect) (string, []interface{}) {
+func (sqe *selectQueryExpression) Build(dialect dialects.Dialect) (string, []any) {
 	return sqe.query.buildSQL(dialect)
 }
 
@@ -1546,7 +1546,7 @@ func (qb *QueryBuilder) Select(cols ...string) *SelectQuery {
 // Insert builds an INSERT query.
 // Returns a Query with a prepErr if values is nil or empty — INSERT with no columns
 // produces invalid SQL, so the error is surfaced at execution time without panicking.
-func (qb *QueryBuilder) Insert(table string, values map[string]interface{}) *Query {
+func (qb *QueryBuilder) Insert(table string, values map[string]any) *Query {
 	if len(values) == 0 {
 		return &Query{
 			prepErr: fmt.Errorf("relica: Insert requires a non-empty values map"),
@@ -1560,7 +1560,7 @@ func (qb *QueryBuilder) Insert(table string, values map[string]interface{}) *Que
 	keys := getKeys(values)
 
 	placeholders := make([]string, 0, len(keys))
-	params := make([]interface{}, 0, len(keys))
+	params := make([]any, 0, len(keys))
 
 	for i, col := range keys {
 		placeholders = append(placeholders, qb.db.dialect.Placeholder(i+1))
@@ -1586,7 +1586,7 @@ func (qb *QueryBuilder) Insert(table string, values map[string]interface{}) *Que
 }
 
 // getKeys returns sorted map keys for deterministic SQL generation.
-func getKeys(m map[string]interface{}) []string {
+func getKeys(m map[string]any) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
@@ -1599,7 +1599,7 @@ func getKeys(m map[string]interface{}) []string {
 type UpsertQuery struct {
 	builder         *QueryBuilder
 	table           string
-	values          map[string]interface{}
+	values          map[string]any
 	conflictColumns []string
 	updateColumns   []string
 	doNothing       bool
@@ -1615,7 +1615,7 @@ func (uq *UpsertQuery) WithContext(ctx context.Context) *UpsertQuery {
 
 // Upsert creates an UPSERT query for the given table and values.
 // UPSERT is INSERT with conflict resolution (UPDATE or IGNORE).
-func (qb *QueryBuilder) Upsert(table string, values map[string]interface{}) *UpsertQuery {
+func (qb *QueryBuilder) Upsert(table string, values map[string]any) *UpsertQuery {
 	return &UpsertQuery{
 		builder: qb,
 		table:   table,
@@ -1651,7 +1651,7 @@ func (uq *UpsertQuery) DoNothing() *UpsertQuery {
 func (uq *UpsertQuery) Build() *Query {
 	keys := getKeys(uq.values)
 	placeholders := make([]string, 0, len(keys))
-	params := make([]interface{}, 0, len(keys))
+	params := make([]any, 0, len(keys))
 
 	for i, col := range keys {
 		placeholders = append(placeholders, uq.builder.db.dialect.Placeholder(i+1))
@@ -1704,7 +1704,7 @@ func (uq *UpsertQuery) Build() *Query {
 }
 
 // Execute executes the UPSERT query and returns the result.
-func (uq *UpsertQuery) Execute() (interface{}, error) {
+func (uq *UpsertQuery) Execute() (any, error) {
 	return uq.Build().Execute()
 }
 
@@ -1728,9 +1728,9 @@ func filterKeys(keys, exclude []string) []string {
 type UpdateQuery struct {
 	builder  *QueryBuilder
 	table    string
-	values   map[string]interface{}
+	values   map[string]any
 	where    []string
-	params   []interface{}
+	params   []any
 	ctx      context.Context // context for this specific query
 	buildErr error           // stored programming error (replaces panic in fluent chain)
 }
@@ -1752,7 +1752,7 @@ func (qb *QueryBuilder) Update(table string) *UpdateQuery {
 
 // Set specifies the columns and values to update.
 // Values should be a map of column names to new values.
-func (uq *UpdateQuery) Set(values map[string]interface{}) *UpdateQuery {
+func (uq *UpdateQuery) Set(values map[string]any) *UpdateQuery {
 	uq.values = values
 	return uq
 }
@@ -1768,7 +1768,7 @@ func (uq *UpdateQuery) Set(values map[string]interface{}) *UpdateQuery {
 // Expression example:
 //
 //	Where(relica.Eq("status", 1))
-func (uq *UpdateQuery) Where(condition interface{}, params ...interface{}) *UpdateQuery {
+func (uq *UpdateQuery) Where(condition any, params ...any) *UpdateQuery {
 	switch cond := condition.(type) {
 	case string:
 		resolved, resolvedArgs, err := resolveNamedParams(cond, params)
@@ -1804,7 +1804,7 @@ func (uq *UpdateQuery) Where(condition interface{}, params ...interface{}) *Upda
 // Expression example:
 //
 //	AndWhere(relica.GreaterThan("age", 18))
-func (uq *UpdateQuery) AndWhere(condition interface{}, params ...interface{}) *UpdateQuery {
+func (uq *UpdateQuery) AndWhere(condition any, params ...any) *UpdateQuery {
 	// Simply delegate to Where() which already uses AND logic for multiple calls.
 	return uq.Where(condition, params...)
 }
@@ -1821,8 +1821,8 @@ func (uq *UpdateQuery) AndWhere(condition interface{}, params ...interface{}) *U
 //
 //	OrWhere(relica.Eq("status", "admin"))
 //
-//nolint:dupl // OrWhere on SelectQuery/UpdateQuery/DeleteQuery share structure but operate on different receiver types; a generic helper would require interface{} gymnastics.
-func (uq *UpdateQuery) OrWhere(condition interface{}, params ...interface{}) *UpdateQuery {
+//nolint:dupl // OrWhere on SelectQuery/UpdateQuery/DeleteQuery share structure but operate on different receiver types; a generic helper would require any gymnastics.
+func (uq *UpdateQuery) OrWhere(condition any, params ...any) *UpdateQuery {
 	if len(uq.where) == 0 {
 		// No existing WHERE clause - just add it.
 		return uq.Where(condition, params...)
@@ -1830,7 +1830,7 @@ func (uq *UpdateQuery) OrWhere(condition interface{}, params ...interface{}) *Up
 
 	// Build the new condition.
 	var newSQL string
-	var newArgs []interface{}
+	var newArgs []any
 
 	switch cond := condition.(type) {
 	case string:
@@ -1899,7 +1899,7 @@ func (uq *UpdateQuery) Build() *Query {
 
 	// Build SET clause with placeholders
 	setClauses := make([]string, 0, len(keys))
-	setParams := make([]interface{}, 0, len(keys))
+	setParams := make([]any, 0, len(keys))
 
 	for i, col := range keys {
 		setClauses = append(setClauses, uq.builder.db.dialect.QuoteIdentifier(col)+" = "+uq.builder.db.dialect.Placeholder(i+1))
@@ -1939,7 +1939,7 @@ func (uq *UpdateQuery) Build() *Query {
 }
 
 // Execute executes the UPDATE query and returns the result.
-func (uq *UpdateQuery) Execute() (interface{}, error) {
+func (uq *UpdateQuery) Execute() (any, error) {
 	return uq.Build().Execute()
 }
 
@@ -1948,8 +1948,8 @@ func (uq *UpdateQuery) Execute() (interface{}, error) {
 //
 // Example:
 //
-//	sql, params := db.Update("users").Set(map[string]interface{}{"status": 1}).Where(relica.Eq("id", 1)).ToSQL()
-func (uq *UpdateQuery) ToSQL() (string, []interface{}) {
+//	sql, params := db.Update("users").Set(map[string]any{"status": 1}).Where(relica.Eq("id", 1)).ToSQL()
+func (uq *UpdateQuery) ToSQL() (string, []any) {
 	q := uq.Build()
 	return q.sql, q.params
 }
@@ -1959,7 +1959,7 @@ type DeleteQuery struct {
 	builder  *QueryBuilder
 	table    string
 	where    []string
-	params   []interface{}
+	params   []any
 	ctx      context.Context // context for this specific query
 	buildErr error           // stored programming error (replaces panic in fluent chain)
 }
@@ -1990,7 +1990,7 @@ func (qb *QueryBuilder) Delete(table string) *DeleteQuery {
 // Expression example:
 //
 //	Where(relica.Eq("id", 123))
-func (dq *DeleteQuery) Where(condition interface{}, params ...interface{}) *DeleteQuery {
+func (dq *DeleteQuery) Where(condition any, params ...any) *DeleteQuery {
 	switch cond := condition.(type) {
 	case string:
 		resolved, resolvedArgs, err := resolveNamedParams(cond, params)
@@ -2026,7 +2026,7 @@ func (dq *DeleteQuery) Where(condition interface{}, params ...interface{}) *Dele
 // Expression example:
 //
 //	AndWhere(relica.GreaterThan("age", 18))
-func (dq *DeleteQuery) AndWhere(condition interface{}, params ...interface{}) *DeleteQuery {
+func (dq *DeleteQuery) AndWhere(condition any, params ...any) *DeleteQuery {
 	// Simply delegate to Where() which already uses AND logic for multiple calls.
 	return dq.Where(condition, params...)
 }
@@ -2043,8 +2043,8 @@ func (dq *DeleteQuery) AndWhere(condition interface{}, params ...interface{}) *D
 //
 //	OrWhere(relica.Eq("status", "admin"))
 //
-//nolint:dupl // OrWhere on SelectQuery/UpdateQuery/DeleteQuery share structure but operate on different receiver types; a generic helper would require interface{} gymnastics.
-func (dq *DeleteQuery) OrWhere(condition interface{}, params ...interface{}) *DeleteQuery {
+//nolint:dupl // OrWhere on SelectQuery/UpdateQuery/DeleteQuery share structure but operate on different receiver types; a generic helper would require any gymnastics.
+func (dq *DeleteQuery) OrWhere(condition any, params ...any) *DeleteQuery {
 	if len(dq.where) == 0 {
 		// No existing WHERE clause - just add it.
 		return dq.Where(condition, params...)
@@ -2052,7 +2052,7 @@ func (dq *DeleteQuery) OrWhere(condition interface{}, params ...interface{}) *De
 
 	// Build the new condition.
 	var newSQL string
-	var newArgs []interface{}
+	var newArgs []any
 
 	switch cond := condition.(type) {
 	case string:
@@ -2133,7 +2133,7 @@ func (dq *DeleteQuery) Build() *Query {
 }
 
 // Execute executes the DELETE query and returns the result.
-func (dq *DeleteQuery) Execute() (interface{}, error) {
+func (dq *DeleteQuery) Execute() (any, error) {
 	return dq.Build().Execute()
 }
 
@@ -2143,7 +2143,7 @@ func (dq *DeleteQuery) Execute() (interface{}, error) {
 // Example:
 //
 //	sql, params := db.Delete("users").Where(relica.Eq("id", 1)).ToSQL()
-func (dq *DeleteQuery) ToSQL() (string, []interface{}) {
+func (dq *DeleteQuery) ToSQL() (string, []any) {
 	q := dq.Build()
 	return q.sql, q.params
 }
@@ -2154,7 +2154,7 @@ type BatchInsertQuery struct {
 	builder         *QueryBuilder
 	table           string
 	columns         []string
-	rows            [][]interface{}
+	rows            [][]any
 	conflictColumns []string
 	updateColumns   []string
 	doNothing       bool
@@ -2182,14 +2182,14 @@ func (qb *QueryBuilder) BatchInsert(table string, columns []string) *BatchInsert
 		builder: qb,
 		table:   table,
 		columns: columns,
-		rows:    make([][]interface{}, 0),
+		rows:    make([][]any, 0),
 	}
 }
 
 // Values adds a row of values to the batch insert.
 // The number of values must match the number of columns specified in BatchInsert.
 // Stores an error (instead of panicking) if the value count doesn't match the column count.
-func (biq *BatchInsertQuery) Values(values ...interface{}) *BatchInsertQuery {
+func (biq *BatchInsertQuery) Values(values ...any) *BatchInsertQuery {
 	if len(values) != len(biq.columns) {
 		biq.buildErr = fmt.Errorf("relica: BatchInsert.Values expected %d values for %d columns, got %d", len(biq.columns), len(biq.columns), len(values))
 		return biq
@@ -2201,8 +2201,8 @@ func (biq *BatchInsertQuery) Values(values ...interface{}) *BatchInsertQuery {
 // ValuesMap adds a row from a map of column names to values.
 // Values are extracted in the order of columns specified in BatchInsert.
 // Missing columns will have nil values.
-func (biq *BatchInsertQuery) ValuesMap(values map[string]interface{}) *BatchInsertQuery {
-	row := make([]interface{}, len(biq.columns))
+func (biq *BatchInsertQuery) ValuesMap(values map[string]any) *BatchInsertQuery {
+	row := make([]any, len(biq.columns))
 	for i, col := range biq.columns {
 		row[i] = values[col]
 	}
@@ -2270,7 +2270,7 @@ func (biq *BatchInsertQuery) Build() *Query {
 
 	// Build VALUES clause with placeholders for all rows
 	valueClauses := make([]string, len(biq.rows))
-	params := make([]interface{}, 0, len(biq.rows)*len(biq.columns))
+	params := make([]any, 0, len(biq.rows)*len(biq.columns))
 
 	paramIndex := 1
 	for i, row := range biq.rows {
@@ -2324,7 +2324,7 @@ func (biq *BatchInsertQuery) buildConflictClause() string {
 }
 
 // Execute executes the batch INSERT query and returns the result.
-func (biq *BatchInsertQuery) Execute() (interface{}, error) {
+func (biq *BatchInsertQuery) Execute() (any, error) {
 	return biq.Build().Execute()
 }
 
@@ -2348,8 +2348,8 @@ func (buq *BatchUpdateQuery) WithContext(ctx context.Context) *BatchUpdateQuery 
 
 // batchUpdateRow represents a single row update in a batch.
 type batchUpdateRow struct {
-	keyValue interface{}
-	values   map[string]interface{}
+	keyValue any
+	values   map[string]any
 }
 
 // BatchUpdate creates a batch UPDATE query for the specified table.
@@ -2357,8 +2357,8 @@ type batchUpdateRow struct {
 // Example:
 //
 //	db.Builder().BatchUpdate("users", "id").
-//	    Set(1, map[string]interface{}{"name": "Alice", "status": "active"}).
-//	    Set(2, map[string]interface{}{"name": "Bob", "status": "inactive"}).
+//	    Set(1, map[string]any{"name": "Alice", "status": "active"}).
+//	    Set(2, map[string]any{"name": "Bob", "status": "inactive"}).
 //	    Execute()
 func (qb *QueryBuilder) BatchUpdate(table, keyColumn string) *BatchUpdateQuery {
 	return &BatchUpdateQuery{
@@ -2372,7 +2372,7 @@ func (qb *QueryBuilder) BatchUpdate(table, keyColumn string) *BatchUpdateQuery {
 // Set adds a row update to the batch.
 // keyValue is the value of the key column for this row.
 // values contains the columns and their new values for this row.
-func (buq *BatchUpdateQuery) Set(keyValue interface{}, values map[string]interface{}) *BatchUpdateQuery {
+func (buq *BatchUpdateQuery) Set(keyValue any, values map[string]any) *BatchUpdateQuery {
 	buq.updates = append(buq.updates, batchUpdateRow{
 		keyValue: keyValue,
 		values:   values,
@@ -2427,14 +2427,14 @@ func (buq *BatchUpdateQuery) Build() *Query {
 	}
 
 	// Collect all key values for WHERE IN clause
-	keyValues := make([]interface{}, len(buq.updates))
+	keyValues := make([]any, len(buq.updates))
 	for i, update := range buq.updates {
 		keyValues[i] = update.keyValue
 	}
 
 	// Build CASE-WHEN for each column
 	setClauses := make([]string, 0, len(buq.updateColumns))
-	params := make([]interface{}, 0)
+	params := make([]any, 0)
 	paramIndex := 1
 
 	for _, col := range buq.updateColumns {
@@ -2481,6 +2481,6 @@ func (buq *BatchUpdateQuery) Build() *Query {
 }
 
 // Execute executes the batch UPDATE query and returns the result.
-func (buq *BatchUpdateQuery) Execute() (interface{}, error) {
+func (buq *BatchUpdateQuery) Execute() (any, error) {
 	return buq.Build().Execute()
 }

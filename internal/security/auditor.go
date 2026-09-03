@@ -59,7 +59,7 @@ func NewAuditor(logger *slog.Logger, level AuditLevel) *Auditor {
 }
 
 // LogOperation logs a database operation to the audit log.
-func (a *Auditor) LogOperation(ctx context.Context, operation, query string, args []interface{}, result sql.Result, err error, duration time.Duration) {
+func (a *Auditor) LogOperation(ctx context.Context, operation, query string, args []any, result sql.Result, err error, duration time.Duration) {
 	// Check if this operation should be logged based on audit level
 	if !a.shouldLog(operation) {
 		return
@@ -196,7 +196,7 @@ func (a *Auditor) logEvent(event AuditEvent) {
 
 // hashParams creates a SHA256 hash of parameters for audit trail.
 // This allows tracking which parameters were used without logging sensitive data.
-func hashParams(params []interface{}) string {
+func hashParams(params []any) string {
 	if len(params) == 0 {
 		return ""
 	}

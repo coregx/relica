@@ -16,7 +16,7 @@ import (
 //	db.NewQuery("SELECT * FROM users WHERE id={:id} AND status={:status}").
 //	    Bind(relica.Params{"id": 1, "status": "active"}).
 //	    All(&users)
-type Params map[string]interface{}
+type Params map[string]any
 
 var (
 	// namedPlaceholderRegex matches named parameter placeholders {:name}.
@@ -97,9 +97,9 @@ func (db *DB) quoteIdentifier(identifier string) string {
 //	paramNames := []string{"id", "status", "id"}
 //	params := Params{"id": 1, "status": "active"}
 //	values, err := bindParams(params, paramNames)
-//	// Returns: []interface{}{1, "active", 1}, nil
-func bindParams(params Params, paramNames []string) ([]interface{}, error) {
-	values := make([]interface{}, len(paramNames))
+//	// Returns: []any{1, "active", 1}, nil
+func bindParams(params Params, paramNames []string) ([]any, error) {
+	values := make([]any, len(paramNames))
 
 	for i, name := range paramNames {
 		value, ok := params[name]

@@ -19,19 +19,19 @@ func NewSQLiteAnalyzer(db *sql.DB) *SQLiteAnalyzer {
 
 // Explain analyzes the query execution plan without executing the query.
 // SQLite uses EXPLAIN QUERY PLAN which returns TEXT output (not JSON).
-func (sa *SQLiteAnalyzer) Explain(ctx context.Context, query string, args []interface{}) (*QueryPlan, error) {
+func (sa *SQLiteAnalyzer) Explain(ctx context.Context, query string, args []any) (*QueryPlan, error) {
 	explainQuery := fmt.Sprintf("EXPLAIN QUERY PLAN %s", query)
 	return sa.executeExplain(ctx, explainQuery, args)
 }
 
 // ExplainAnalyze is not supported by SQLite.
 // SQLite does not have EXPLAIN ANALYZE functionality.
-func (sa *SQLiteAnalyzer) ExplainAnalyze(_ context.Context, _ string, _ []interface{}) (*QueryPlan, error) {
+func (sa *SQLiteAnalyzer) ExplainAnalyze(_ context.Context, _ string, _ []any) (*QueryPlan, error) {
 	return nil, fmt.Errorf("EXPLAIN ANALYZE not supported by SQLite (use Explain instead)")
 }
 
 // executeExplain runs the EXPLAIN QUERY PLAN and parses the result.
-func (sa *SQLiteAnalyzer) executeExplain(ctx context.Context, explainQuery string, args []interface{}) (*QueryPlan, error) {
+func (sa *SQLiteAnalyzer) executeExplain(ctx context.Context, explainQuery string, args []any) (*QueryPlan, error) {
 	rows, err := sa.db.QueryContext(ctx, explainQuery, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute EXPLAIN QUERY PLAN: %w", err)

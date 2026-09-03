@@ -18,14 +18,14 @@ func NewMySQLAnalyzer(db *sql.DB) *MySQLAnalyzer {
 }
 
 // Explain analyzes the query execution plan without executing the query.
-func (ma *MySQLAnalyzer) Explain(ctx context.Context, query string, args []interface{}) (*QueryPlan, error) {
+func (ma *MySQLAnalyzer) Explain(ctx context.Context, query string, args []any) (*QueryPlan, error) {
 	explainQuery := fmt.Sprintf("EXPLAIN FORMAT=JSON %s", query)
 	return ma.executeExplain(ctx, explainQuery, args, false)
 }
 
 // ExplainAnalyze analyzes the query execution plan AND executes the query.
 // MySQL 8.0.18+ supports EXPLAIN ANALYZE for actual execution metrics.
-func (ma *MySQLAnalyzer) ExplainAnalyze(ctx context.Context, query string, args []interface{}) (*QueryPlan, error) {
+func (ma *MySQLAnalyzer) ExplainAnalyze(ctx context.Context, query string, args []any) (*QueryPlan, error) {
 	// Note: EXPLAIN ANALYZE requires MySQL 8.0.18+
 	// For older versions, this will return an error from the database
 	explainQuery := fmt.Sprintf("EXPLAIN ANALYZE %s", query)
@@ -33,7 +33,7 @@ func (ma *MySQLAnalyzer) ExplainAnalyze(ctx context.Context, query string, args 
 }
 
 // executeExplain runs the EXPLAIN query and parses the result.
-func (ma *MySQLAnalyzer) executeExplain(ctx context.Context, explainQuery string, args []interface{}, withAnalyze bool) (*QueryPlan, error) {
+func (ma *MySQLAnalyzer) executeExplain(ctx context.Context, explainQuery string, args []any, withAnalyze bool) (*QueryPlan, error) {
 	var rawJSON string
 	err := ma.db.QueryRowContext(ctx, explainQuery, args...).Scan(&rawJSON)
 	if err != nil {

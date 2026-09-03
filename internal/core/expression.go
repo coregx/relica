@@ -55,7 +55,7 @@ type Expression interface {
 	// The dialect parameter is used for proper identifier quoting.
 	// Returns SQL string with "?" placeholders and a slice of parameter values.
 	// Placeholder renumbering to dialect-specific format happens at query build time.
-	Build(dialect dialects.Dialect) (sql string, args []interface{})
+	Build(dialect dialects.Dialect) (sql string, args []any)
 }
 
 // RawExp represents a raw SQL expression with optional parameter bindings.
@@ -66,13 +66,13 @@ type Expression interface {
 //	relica.NewExp("age > ? AND status = ?", 18, "active")
 type RawExp struct {
 	SQL  string
-	Args []interface{}
+	Args []any
 }
 
 // NewExp creates a new raw SQL expression with optional parameter bindings.
 // The SQL string can contain ? placeholders which will be replaced with dialect-specific
 // placeholders during query building.
-func NewExp(sql string, args ...interface{}) Expression {
+func NewExp(sql string, args ...any) Expression {
 	return &RawExp{
 		SQL:  sql,
 		Args: args,
@@ -82,7 +82,7 @@ func NewExp(sql string, args ...interface{}) Expression {
 // Build converts the raw expression into a SQL fragment.
 // The SQL string is returned as-is, with args passed through unchanged.
 // Placeholder conversion (? → $1, $2, etc.) happens at the query builder level.
-func (e *RawExp) Build(_ dialects.Dialect) (string, []interface{}) {
+func (e *RawExp) Build(_ dialects.Dialect) (string, []any) {
 	return e.SQL, e.Args
 }
 
@@ -92,7 +92,7 @@ func (e *RawExp) Build(_ dialects.Dialect) (string, []interface{}) {
 //
 // Special value handling:
 //   - nil value → "column IS NULL"
-//   - []interface{} → "column IN (...)"
+//   - []any → "column IN (...)"
 //   - Expression → recursively builds nested expression
 //
 // Example:
@@ -104,10 +104,10 @@ func (e *RawExp) Build(_ dialects.Dialect) (string, []interface{}) {
 //	}
 //
 // Generates: status = 1 AND age IN (18, 19, 20) AND deleted_at IS NULL
-type HashExp map[string]interface{}
+type HashExp map[string]any
 
 // buildHashExpValue processes a single key-value pair from HashExp.
-func buildHashExpValue(key string, value interface{}, dialect dialects.Dialect) (sql string, args []interface{}) {
+func buildHashExpValue(key string, value any, dialect dialects.Dialect) (sql string, args []any) {
 	col := quoteColumn(key, dialect)
 
 	switch v := value.(type) {
@@ -121,7 +121,7 @@ func buildHashExpValue(key string, value interface{}, dialect dialects.Dialect) 
 		}
 		return "", nil
 
-	case []interface{}:
+	case []any:
 		if len(v) == 0 {
 			return alwaysFalse, nil
 		}
@@ -129,14 +129,14 @@ func buildHashExpValue(key string, value interface{}, dialect dialects.Dialect) 
 		return in.Build(dialect)
 
 	default:
-		return col + " = ?", []interface{}{value}
+		return col + " = ?", []any{value}
 	}
 }
 
 // Build converts a HashExp into a SQL fragment.
 // Map keys are sorted to ensure deterministic SQL generation.
 // Multiple conditions are combined with AND.
-func (e HashExp) Build(dialect dialects.Dialect) (string, []interface{}) {
+func (e HashExp) Build(dialect dialects.Dialect) (string, []any) {
 	if len(e) == 0 {
 		return "", nil
 	}
@@ -149,7 +149,7 @@ func (e HashExp) Build(dialect dialects.Dialect) (string, []interface{}) {
 	sort.Strings(keys)
 
 	var parts []string
-	var args []interface{}
+	var args []any
 
 	for _, key := range keys {
 		sql, subArgs := buildHashExpValue(key, e[key], dialect)
@@ -174,43 +174,43 @@ func (e HashExp) Build(dialect dialects.Dialect) (string, []interface{}) {
 type CompareExp struct {
 	Col      string
 	Operator string
-	Value    interface{}
+	Value    any
 }
 
 // Eq generates an equality expression (column = value).
 // If value is nil, generates "column IS NULL" instead.
-func Eq(col string, value interface{}) Expression {
+func Eq(col string, value any) Expression {
 	return &CompareExp{Col: col, Operator: "=", Value: value}
 }
 
 // NotEq generates an inequality expression (column <> value).
 // If value is nil, generates "column IS NOT NULL" instead.
-func NotEq(col string, value interface{}) Expression {
+func NotEq(col string, value any) Expression {
 	return &CompareExp{Col: col, Operator: "<>", Value: value}
 }
 
 // GreaterThan generates a greater-than expression (column > value).
-func GreaterThan(col string, value interface{}) Expression {
+func GreaterThan(col string, value any) Expression {
 	return &CompareExp{Col: col, Operator: ">", Value: value}
 }
 
 // LessThan generates a less-than expression (column < value).
-func LessThan(col string, value interface{}) Expression {
+func LessThan(col string, value any) Expression {
 	return &CompareExp{Col: col, Operator: "<", Value: value}
 }
 
 // GreaterOrEqual generates a greater-than-or-equal expression (column >= value).
-func GreaterOrEqual(col string, value interface{}) Expression {
+func GreaterOrEqual(col string, value any) Expression {
 	return &CompareExp{Col: col, Operator: ">=", Value: value}
 }
 
 // LessOrEqual generates a less-than-or-equal expression (column <= value).
-func LessOrEqual(col string, value interface{}) Expression {
+func LessOrEqual(col string, value any) Expression {
 	return &CompareExp{Col: col, Operator: "<=", Value: value}
 }
 
 // Build converts a comparison expression into a SQL fragment.
-func (e *CompareExp) Build(dialect dialects.Dialect) (string, []interface{}) {
+func (e *CompareExp) Build(dialect dialects.Dialect) (string, []any) {
 	col := quoteColumn(e.Col, dialect)
 
 	// Handle NULL comparison
@@ -230,7 +230,7 @@ func (e *CompareExp) Build(dialect dialects.Dialect) (string, []interface{}) {
 	}
 
 	// Simple comparison
-	return col + " " + e.Operator + " ?", []interface{}{e.Value}
+	return col + " " + e.Operator + " ?", []any{e.Value}
 }
 
 // ColumnCompareExp compares two column identifiers with an operator.
@@ -269,39 +269,39 @@ func LessThanCol(col1, col2 string) Expression {
 
 // Build converts a ColumnCompareExp into a SQL fragment.
 // Returns no bind parameters since both sides are column references, not values.
-func (e *ColumnCompareExp) Build(dialect dialects.Dialect) (string, []interface{}) {
+func (e *ColumnCompareExp) Build(dialect dialects.Dialect) (string, []any) {
 	return quoteColumn(e.Col1, dialect) + " " + e.Operator + " " + quoteColumn(e.Col2, dialect), nil
 }
 
 // InExp represents an IN or NOT IN expression.
 type InExp struct {
 	Col    string
-	Values []interface{}
+	Values []any
 	Not    bool
 }
 
 // In generates an IN expression (column IN (value1, value2, ...)).
 // If values is empty, generates "0=1" (always false).
 // If values contains a single element, generates "column = value" for optimization.
-func In(col string, values ...interface{}) Expression {
+func In(col string, values ...any) Expression {
 	return &InExp{Col: col, Values: values, Not: false}
 }
 
 // NotIn generates a NOT IN expression (column NOT IN (value1, value2, ...)).
 // If values is empty, generates empty string (always true).
 // If values contains a single element, generates "column <> value" for optimization.
-func NotIn(col string, values ...interface{}) Expression {
+func NotIn(col string, values ...any) Expression {
 	return &InExp{Col: col, Values: values, Not: true}
 }
 
 // selectQueryBuilder is an interface to avoid circular imports.
 // It represents types that can build SQL queries (like SelectQuery).
 type selectQueryBuilder interface {
-	buildSQL(dialect dialects.Dialect) (string, []interface{})
+	buildSQL(dialect dialects.Dialect) (string, []any)
 }
 
 // buildSubqueryIN builds an IN/NOT IN clause with a subquery.
-func buildSubqueryIN(col, subSQL string, subArgs []interface{}, not bool) (string, []interface{}, bool) {
+func buildSubqueryIN(col, subSQL string, subArgs []any, not bool) (string, []any, bool) {
 	if subSQL == "" {
 		// Empty subquery
 		if not {
@@ -320,7 +320,7 @@ func buildSubqueryIN(col, subSQL string, subArgs []interface{}, not bool) (strin
 
 // buildInExpSingleValue handles IN expression with a single value.
 // Returns early if the value is a subquery (Expression or SelectQuery).
-func buildInExpSingleValue(col string, val interface{}, not bool, dialect dialects.Dialect) (string, []interface{}, bool) {
+func buildInExpSingleValue(col string, val any, not bool, dialect dialects.Dialect) (string, []any, bool) {
 	// Check if value is a SelectQuery (most common subquery case)
 	if sq, ok := val.(selectQueryBuilder); ok {
 		subSQL, subArgs := sq.buildSQL(dialect)
@@ -342,9 +342,9 @@ func buildInExpSingleValue(col string, val interface{}, not bool, dialect dialec
 	}
 	// Non-NULL single value
 	if not {
-		return col + " <> ?", []interface{}{val}, true
+		return col + " <> ?", []any{val}, true
 	}
-	return col + " = ?", []interface{}{val}, true
+	return col + " = ?", []any{val}, true
 }
 
 // Build converts an IN expression into a SQL fragment.
@@ -353,7 +353,7 @@ func buildInExpSingleValue(col string, val interface{}, not bool, dialect dialec
 //	In("id", 1, 2, 3)           → id IN (1, 2, 3)
 //	In("id", subquery)          → id IN (SELECT ...)
 //	NotIn("status", "deleted")  → status NOT IN ('deleted')
-func (e *InExp) Build(dialect dialects.Dialect) (string, []interface{}) {
+func (e *InExp) Build(dialect dialects.Dialect) (string, []any) {
 	if len(e.Values) == 0 {
 		// Empty IN clause
 		if e.Not {
@@ -372,7 +372,7 @@ func (e *InExp) Build(dialect dialects.Dialect) (string, []interface{}) {
 
 	// Multiple values (regular list only - subqueries must be single value)
 	var placeholders []string
-	var args []interface{}
+	var args []any
 
 	for _, val := range e.Values {
 		if val == nil {
@@ -395,22 +395,22 @@ func (e *InExp) Build(dialect dialects.Dialect) (string, []interface{}) {
 // BetweenExp represents a BETWEEN or NOT BETWEEN expression.
 type BetweenExp struct {
 	Col      string
-	From, To interface{}
+	From, To any
 	Not      bool
 }
 
 // Between generates a BETWEEN expression (column BETWEEN from AND to).
-func Between(col string, from, to interface{}) Expression {
+func Between(col string, from, to any) Expression {
 	return &BetweenExp{Col: col, From: from, To: to, Not: false}
 }
 
 // NotBetween generates a NOT BETWEEN expression (column NOT BETWEEN from AND to).
-func NotBetween(col string, from, to interface{}) Expression {
+func NotBetween(col string, from, to any) Expression {
 	return &BetweenExp{Col: col, From: from, To: to, Not: true}
 }
 
 // Build converts a BETWEEN expression into a SQL fragment.
-func (e *BetweenExp) Build(dialect dialects.Dialect) (string, []interface{}) {
+func (e *BetweenExp) Build(dialect dialects.Dialect) (string, []any) {
 	col := quoteColumn(e.Col, dialect)
 
 	op := "BETWEEN"
@@ -419,7 +419,7 @@ func (e *BetweenExp) Build(dialect dialects.Dialect) (string, []interface{}) {
 	}
 
 	sql := fmt.Sprintf("%s %s ? AND ?", col, op)
-	return sql, []interface{}{e.From, e.To}
+	return sql, []any{e.From, e.To}
 }
 
 // LikeExp represents a LIKE, NOT LIKE, or ILIKE expression with automatic escaping.
@@ -508,7 +508,7 @@ func (e *LikeExp) Err() error {
 
 // Build converts a LIKE expression into a SQL fragment.
 // Returns empty SQL and nil args if a programming error was stored by EscapeChars.
-func (e *LikeExp) Build(dialect dialects.Dialect) (string, []interface{}) {
+func (e *LikeExp) Build(dialect dialects.Dialect) (string, []any) {
 	if e.err != nil {
 		// Surface the stored error as an empty expression; callers check returned SQL.
 		// The error is accessible via the stored err field for diagnostics.
@@ -521,7 +521,7 @@ func (e *LikeExp) Build(dialect dialects.Dialect) (string, []interface{}) {
 
 	col := quoteColumn(e.Col, dialect)
 	parts := make([]string, 0, len(e.Values))
-	args := make([]interface{}, 0, len(e.Values))
+	args := make([]any, 0, len(e.Values))
 
 	for _, val := range e.Values {
 		// Escape special characters
@@ -577,13 +577,13 @@ func Or(exps ...Expression) Expression {
 }
 
 // Build converts an AND/OR expression into a SQL fragment.
-func (e *AndOrExp) Build(dialect dialects.Dialect) (string, []interface{}) {
+func (e *AndOrExp) Build(dialect dialects.Dialect) (string, []any) {
 	if len(e.Exps) == 0 {
 		return "", nil
 	}
 
 	var parts []string
-	var args []interface{}
+	var args []any
 
 	for _, exp := range e.Exps {
 		if exp == nil {
@@ -625,7 +625,7 @@ func Not(exp Expression) Expression {
 }
 
 // Build converts a NOT expression into a SQL fragment.
-func (e *NotExp) Build(dialect dialects.Dialect) (string, []interface{}) {
+func (e *NotExp) Build(dialect dialects.Dialect) (string, []any) {
 	if e.Exp == nil {
 		return "", nil
 	}
@@ -674,7 +674,7 @@ func NotExists(exp Expression) Expression {
 }
 
 // Build converts an EXISTS expression into a SQL fragment.
-func (e *ExistsExp) Build(dialect dialects.Dialect) (string, []interface{}) {
+func (e *ExistsExp) Build(dialect dialects.Dialect) (string, []any) {
 	if e.Exp == nil {
 		// Empty EXISTS → always false, empty NOT EXISTS → always true
 		if e.Not {

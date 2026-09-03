@@ -49,7 +49,7 @@ func NewBasicOptimizer(queryAnalyzer analyzer.Analyzer, threshold time.Duration)
 }
 
 // Analyze examines query performance and generates an analysis report.
-func (o *BasicOptimizer) Analyze(ctx context.Context, query string, args []interface{}, executionTime time.Duration) (*Analysis, error) {
+func (o *BasicOptimizer) Analyze(ctx context.Context, query string, args []any, executionTime time.Duration) (*Analysis, error) {
 	// Get query plan from analyzer
 	plan, err := o.analyzer.Explain(ctx, query, args)
 	if err != nil {

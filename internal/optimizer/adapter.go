@@ -58,17 +58,17 @@ func NewOptimizerAdapter(optimizer Optimizer) *Adapter {
 }
 
 // Analyze implements the core.Optimizer interface.
-func (a *Adapter) Analyze(ctx context.Context, query string, args []interface{}, executionTime time.Duration) (interface{}, error) {
+func (a *Adapter) Analyze(ctx context.Context, query string, args []any, executionTime time.Duration) (any, error) {
 	return a.optimizer.Analyze(ctx, query, args, executionTime)
 }
 
 // Suggest implements the core.Optimizer interface.
-func (a *Adapter) Suggest(analysis interface{}) []interface{} {
+func (a *Adapter) Suggest(analysis any) []any {
 	// Type assertion to *Analysis
 	if analysisResult, ok := analysis.(*Analysis); ok {
 		suggestions := a.optimizer.Suggest(analysisResult)
-		// Convert to []interface{}
-		result := make([]interface{}, len(suggestions))
+		// Convert to []any
+		result := make([]any, len(suggestions))
 		for i, s := range suggestions {
 			result[i] = s
 		}

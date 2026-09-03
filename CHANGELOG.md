@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.16.4] - 2026-09-03
+
+### Fixed
+
+- **SQLite upsert zero PK insertion** — `Upsert()` and `UpsertOn()` included zero PK (`id=0`) in INSERT, preventing SQLite auto-increment. Now removes zero PK from dataMap before building upsert SQL (same logic as `Insert()`)
+- **Integration tests for SQLite upsert** — 3 new tests on real SQLite verifying INSERT path, UPDATE path (conflict), and multi-row sequential upsert all populate correct auto-increment IDs
+
+### Changed
+
+- **`interface{}` → `any`** — migrated 326 occurrences in production code to modern Go style (`any` is alias for `interface{}` since Go 1.18). Zero behavioral change
+
+---
+
 ## [0.16.3] - 2026-09-03
 
 ### Fixed

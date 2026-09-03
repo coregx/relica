@@ -12,7 +12,7 @@ import (
 // When tx is not nil, the query executes within that transaction.
 type Query struct {
 	sql      string
-	params   []interface{}
+	params   []any
 	db       *DB
 	tx       *sql.Tx // nil for non-transactional queries
 	ctx      context.Context
@@ -259,7 +259,7 @@ func (q *Query) Execute() (sql.Result, error) {
 // If query is part of a transaction, uses transaction connection.
 //
 //nolint:cyclop,funlen,gocognit,nestif // Query execution requires comprehensive error handling and logging
-func (q *Query) One(dest interface{}) error {
+func (q *Query) One(dest any) error {
 	ctx := q.getContext()
 	start := time.Now()
 
@@ -406,7 +406,7 @@ func (q *Query) One(dest interface{}) error {
 //	err := db.NewQuery("SELECT COUNT(*) FROM users").Row(&count)
 //
 //nolint:cyclop,funlen,nestif // Query execution requires comprehensive error handling and logging
-func (q *Query) Row(dest ...interface{}) error {
+func (q *Query) Row(dest ...any) error {
 	ctx := q.getContext()
 	start := time.Now()
 
@@ -543,7 +543,7 @@ func (q *Query) Row(dest ...interface{}) error {
 //	err := db.Select("email").From("users").Column(&emails)
 //
 //nolint:gocognit,gocyclo,cyclop,funlen,nestif // Query execution requires comprehensive error handling and logging
-func (q *Query) Column(slice interface{}) error {
+func (q *Query) Column(slice any) error {
 	ctx := q.getContext()
 	start := time.Now()
 
@@ -694,7 +694,7 @@ func (q *Query) Column(slice interface{}) error {
 // If query is part of a transaction, uses transaction connection.
 //
 //nolint:cyclop,funlen,nestif // Query execution requires comprehensive error handling and logging
-func (q *Query) All(dest interface{}) error {
+func (q *Query) All(dest any) error {
 	ctx := q.getContext()
 	start := time.Now()
 
@@ -813,7 +813,7 @@ func (q *Query) All(dest interface{}) error {
 //	db.NewQuery("SELECT * FROM users WHERE id = ? AND status = ?").
 //	    Bind(1, "active").
 //	    One(&user)
-func (q *Query) Bind(params ...interface{}) *Query {
+func (q *Query) Bind(params ...any) *Query {
 	q.params = params
 	return q
 }
@@ -844,7 +844,7 @@ func (q *Query) BindParams(params Params) *Query {
 }
 
 // ToSQL returns the SQL string and parameters without executing the query.
-func (q *Query) ToSQL() (string, []interface{}) {
+func (q *Query) ToSQL() (string, []any) {
 	return q.sql, q.params
 }
 
@@ -854,6 +854,6 @@ func (q *Query) SQL() string {
 }
 
 // Params returns the query parameters.
-func (q *Query) Params() []interface{} {
+func (q *Query) Params() []any {
 	return q.params
 }

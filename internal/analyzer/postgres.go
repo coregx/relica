@@ -20,19 +20,19 @@ func NewPostgresAnalyzer(db *sql.DB) *PostgresAnalyzer {
 }
 
 // Explain analyzes the query execution plan without executing the query.
-func (pa *PostgresAnalyzer) Explain(ctx context.Context, query string, args []interface{}) (*QueryPlan, error) {
+func (pa *PostgresAnalyzer) Explain(ctx context.Context, query string, args []any) (*QueryPlan, error) {
 	explainQuery := fmt.Sprintf("EXPLAIN (FORMAT JSON) %s", query)
 	return pa.executeExplain(ctx, explainQuery, args, false)
 }
 
 // ExplainAnalyze analyzes the query execution plan AND executes the query.
-func (pa *PostgresAnalyzer) ExplainAnalyze(ctx context.Context, query string, args []interface{}) (*QueryPlan, error) {
+func (pa *PostgresAnalyzer) ExplainAnalyze(ctx context.Context, query string, args []any) (*QueryPlan, error) {
 	explainQuery := fmt.Sprintf("EXPLAIN (ANALYZE, FORMAT JSON, BUFFERS) %s", query)
 	return pa.executeExplain(ctx, explainQuery, args, true)
 }
 
 // executeExplain runs the EXPLAIN query and parses the result.
-func (pa *PostgresAnalyzer) executeExplain(ctx context.Context, explainQuery string, args []interface{}, withAnalyze bool) (*QueryPlan, error) {
+func (pa *PostgresAnalyzer) executeExplain(ctx context.Context, explainQuery string, args []any, withAnalyze bool) (*QueryPlan, error) {
 	var rawJSON string
 	err := pa.db.QueryRowContext(ctx, explainQuery, args...).Scan(&rawJSON)
 	if err != nil {

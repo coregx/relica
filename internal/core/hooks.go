@@ -22,7 +22,7 @@ type QueryEvent struct {
 	// SQL is the executed SQL query string
 	SQL string
 	// Args are the query parameters
-	Args []interface{}
+	Args []any
 	// Duration is how long the query took to execute
 	Duration time.Duration
 	// RowsAffected is the number of rows affected (for INSERT/UPDATE/DELETE)
