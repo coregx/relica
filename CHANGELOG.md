@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.16.3] - 2026-09-03
+
+### Fixed
+
+- **SQLite upsert ID population** (#48) — `Model().Upsert()` and `UpsertOn()` now use RETURNING clause on SQLite (same as PostgreSQL), fixing `last_insert_rowid()` returning 0 when ON CONFLICT triggers UPDATE path. Industry standard approach (GORM, bun, ent all use RETURNING for SQLite)
+- **`needsPostgresReturning()` renamed to `needsReturning()`** — now covers both PostgreSQL and SQLite drivers. MySQL path unchanged (uses LastInsertId which works for upsert)
+
+---
+
 ## [0.16.2] - 2026-09-03
 
 ### Fixed
