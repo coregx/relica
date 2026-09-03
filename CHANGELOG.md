@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.16.7] - 2026-09-03
+
+### Fixed
+
+- **Scanner table prefix stripping** — `One()` and `All()` now strip table alias prefix from column names (e.g., `src.qualified_name` → `qualified_name`) before matching to struct `db:"..."` tags. SQLite returns column names with table prefix when using JOINs with table aliases; this caused silent data loss (fields not scanned). Inherited bug from ozzo-dbx
+- **DISTINCT documentation** — fixed incorrect `Select("DISTINCT col")` example in ADVANCED_PATTERNS.md to use correct `.Distinct()` method
+
+---
+
 ## [0.16.6] - 2026-09-03
 
 ### Added
