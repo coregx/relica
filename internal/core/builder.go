@@ -895,6 +895,10 @@ func (sq *SelectQuery) formatSelectColumn(col string, dialect dialects.Dialect) 
 	switch {
 	case col == "*":
 		return "*"
+	case strings.HasSuffix(col, ".*"):
+		// "n.*" → "n".*, "schema.table.*" → "schema"."table".*
+		tablePart := col[:len(col)-2]
+		return quoteColumn(tablePart, dialect) + ".*"
 	case strings.Contains(col, "("):
 		return col
 	default:

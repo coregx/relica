@@ -477,3 +477,61 @@ func TestSelectQuery_Model_AllPKZero_SQLite(t *testing.T) {
 	assert.True(t, strings.Contains(err.Error(), "primary key"),
 		"error message must mention 'primary key'; got: %v", err)
 }
+
+// --- Tests for table.* wildcard quoting fix ---
+
+func TestSelectTableDotStar_SQLite(t *testing.T) {
+	ds := SetupSQLiteTestDB(t)
+	defer ds.Close()
+	db := ds.DB
+
+	_, err := db.NewQuery("CREATE TABLE wc_nodes (id INTEGER PRIMARY KEY, name TEXT)").Execute()
+	require.NoError(t, err)
+	_, err = db.NewQuery("INSERT INTO wc_nodes VALUES (1, 'Foo')").Execute()
+	require.NoError(t, err)
+	_, err = db.NewQuery("INSERT INTO wc_nodes VALUES (2, 'Bar')").Execute()
+	require.NoError(t, err)
+
+	type Node struct {
+		ID   int    `db:"id"`
+		Name string `db:"name"`
+	}
+	var results []Node
+	err = db.Select("wc_nodes.*").From("wc_nodes").All(&results)
+	require.NoError(t, err)
+	assert.Equal(t, 2, len(results))
+	assert.Equal(t, "Foo", results[0].Name)
+}
+
+func TestSelectAliasDotStar_WithJoin_SQLite(t *testing.T) {
+	ds := SetupSQLiteTestDB(t)
+	defer ds.Close()
+	db := ds.DB
+
+	_, err := db.NewQuery("CREATE TABLE wc_nodes2 (id INTEGER PRIMARY KEY, name TEXT)").Execute()
+	require.NoError(t, err)
+	_, err = db.NewQuery("CREATE TABLE wc_edges2 (id INTEGER PRIMARY KEY, target_id INTEGER, type TEXT)").Execute()
+	require.NoError(t, err)
+	_, err = db.NewQuery("INSERT INTO wc_nodes2 VALUES (1, 'Foo')").Execute()
+	require.NoError(t, err)
+	_, err = db.NewQuery("INSERT INTO wc_nodes2 VALUES (2, 'Bar')").Execute()
+	require.NoError(t, err)
+	_, err = db.NewQuery("INSERT INTO wc_edges2 VALUES (1, 1, 'CALLS')").Execute()
+	require.NoError(t, err)
+
+	type Node struct {
+		ID   int    `db:"id"`
+		Name string `db:"name"`
+	}
+	var results []Node
+	err = db.Select("n.*").
+		From("wc_nodes2 n").
+		LeftJoin("wc_edges2 ec", "ec.target_id = n.id AND ec.type = 'CALLS'").
+		Where("ec.id IS NULL").
+		All(&results)
+	require.NoError(t, err, "Select(n.*) with LEFT JOIN must not fail")
+	assert.Equal(t, 1, len(results), "only Bar should be uncalled")
+	if len(results) > 0 {
+		assert.Equal(t, "Bar", results[0].Name)
+	}
+}

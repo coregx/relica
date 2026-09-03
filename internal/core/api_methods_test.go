@@ -619,3 +619,56 @@ func TestSelectQuery_Model_WhereAppend(t *testing.T) {
 		t.Errorf("Model() with WHERE: expected Name='active', got %q", dest.Name)
 	}
 }
+
+// Tests for table.* wildcard quoting fix (bug: "n"."*" instead of "n".*)
+
+func TestFormatSelectColumn_TableDotStar(t *testing.T) {
+	db := openCovDB(t)
+	defer db.Close()
+	qb := db.Builder()
+
+	tests := []struct {
+		col      string
+		expected string
+	}{
+		{"*", "*"},
+		{"n.*", `"n".*`},
+		{"name", `"name"`},
+		{"t.name", `"t"."name"`},
+	}
+
+	for _, tt := range tests {
+		sq := qb.Select(tt.col).From("users")
+		sql := sq.Build().SQL()
+		selectPart := strings.TrimPrefix(sql, "SELECT ")
+		selectPart = selectPart[:strings.Index(selectPart, " FROM")]
+		if selectPart != tt.expected {
+			t.Errorf("Select(%q): got %q, want %q", tt.col, selectPart, tt.expected)
+		}
+	}
+}
+
+func TestQuoteColumn_WildcardSQL(t *testing.T) {
+	db := openCovDB(t)
+	defer db.Close()
+
+	// Verify SQL generation — n.* must produce "n".* not "n"."*"
+	sq := db.Builder().Select("n.*").From("nodes n")
+	sql := sq.Build().SQL()
+	if strings.Contains(sql, `"*"`) {
+		t.Fatalf("wildcard quoted as identifier: %s", sql)
+	}
+	if !strings.Contains(sql, `"n".*`) {
+		t.Fatalf("expected \"n\".* in SQL, got: %s", sql)
+	}
+
+	// schema.table.* pattern
+	sq2 := db.Builder().Select("public.users.*").From("public.users")
+	sql2 := sq2.Build().SQL()
+	if strings.Contains(sql2, `"*"`) {
+		t.Fatalf("schema wildcard quoted: %s", sql2)
+	}
+	if !strings.Contains(sql2, `"public"."users".*`) {
+		t.Fatalf("expected \"public\".\"users\".* in SQL, got: %s", sql2)
+	}
+}
