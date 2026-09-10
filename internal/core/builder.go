@@ -33,7 +33,7 @@ var selectAliasRegex = regexp.MustCompile(`(?i)\s+AS\s+([\w\-.]+)$`)
 // For a JSONB key from a parameter, write: data ?? ? (first ?? escapes to ?,
 // second ? becomes $N).
 //
-// Known limitations: E'...\'..' (C-style escapes), $$...$$ (dollar-quoting),
+// Known limitations: E'...\'...' (C-style escapes), $$...$$ (dollar-quoting),
 // and “odd?col” (quoted identifiers with ?) are not handled.
 //
 // For MySQL/SQLite dialects where Placeholder(1) == “?”, clause is returned unchanged.

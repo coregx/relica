@@ -971,9 +971,9 @@ func (mq *ModelQuery) Find(pk ...any) error {
 	sq := qb.Select().From(mq.table)
 	for i, col := range pkInfo.Columns {
 		if i == 0 {
-			sq = sq.Where(Eq(col, pk[i])) //nolint:gosec // G602: bounds checked above
+			sq = sq.Where(Eq(col, pk[i])) //nolint:gosec // G602: pk[i] bounds checked by len guard above
 		} else {
-			sq = sq.AndWhere(Eq(col, pk[i])) //nolint:gosec // G602: bounds checked above
+			sq = sq.AndWhere(Eq(col, pk[i])) //nolint:gosec // G602: pk[i] bounds checked by len guard above
 		}
 	}
 
