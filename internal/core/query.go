@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"reflect"
 	"time"
+
+	"github.com/coregx/relica/internal/logger"
 )
 
 // Query represents a database query.
@@ -124,9 +126,15 @@ func (q *Query) prepareStatement(ctx context.Context) (*sql.Stmt, error) {
 	return stmt, nil
 }
 
+// isNoopLogger returns true if the logger is a NoopLogger (no-op, skip expensive sanitization).
+func isNoopLogger(l logger.Logger) bool {
+	_, ok := l.(*logger.NoopLogger)
+	return l == nil || ok
+}
+
 // logExecutionResult logs query execution results if logger is enabled.
 func (q *Query) logExecutionResult(result sql.Result, err error, elapsed time.Duration) {
-	if q.db.logger == nil {
+	if isNoopLogger(q.db.logger) {
 		return
 	}
 
@@ -191,7 +199,7 @@ func (q *Query) Execute() (sql.Result, error) {
 
 	// Validate
 	if err := q.validateBeforeExec(ctx); err != nil {
-		if q.db.logger != nil {
+		if !isNoopLogger(q.db.logger) {
 			q.db.logger.Error("query preparation failed",
 				"sql", q.sql,
 				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
@@ -224,7 +232,7 @@ func (q *Query) Execute() (sql.Result, error) {
 	// Standard path: prepare + execute (with cache for non-tx)
 	stmt, err := q.prepareStatement(ctx)
 	if err != nil {
-		if q.db.logger != nil {
+		if !isNoopLogger(q.db.logger) {
 			q.db.logger.Error("query preparation failed",
 				"sql", q.sql,
 				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
@@ -258,13 +266,13 @@ func (q *Query) Execute() (sql.Result, error) {
 // One fetches a single row into a struct.
 // If query is part of a transaction, uses transaction connection.
 //
-//nolint:cyclop,funlen,gocognit,nestif // Query execution requires comprehensive error handling and logging
+//nolint:cyclop,funlen,gocognit,nestif,gocyclo // Query execution requires comprehensive error handling and logging
 func (q *Query) One(dest any) error {
 	ctx := q.getContext()
 	start := time.Now()
 
 	if err := q.validateBeforeExec(ctx); err != nil {
-		if q.db.logger != nil {
+		if !isNoopLogger(q.db.logger) {
 			q.db.logger.Error("query preparation failed",
 				"sql", q.sql,
 				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
@@ -283,7 +291,7 @@ func (q *Query) One(dest any) error {
 		var stmt *sql.Stmt
 		stmt, err = q.prepareStatement(ctx)
 		if err != nil {
-			if q.db.logger != nil {
+			if !isNoopLogger(q.db.logger) {
 				q.db.logger.Error("query preparation failed",
 					"sql", q.sql,
 					"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
@@ -296,7 +304,7 @@ func (q *Query) One(dest any) error {
 	}
 	if err != nil {
 		elapsed := time.Since(start)
-		if q.db.logger != nil {
+		if !isNoopLogger(q.db.logger) {
 			q.db.logger.Error("query execution failed",
 				"sql", q.sql,
 				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
@@ -315,11 +323,15 @@ func (q *Query) One(dest any) error {
 	}
 	defer func() { _ = rows.Close() }()
 
-	// Check if row exists
+	// Check if row exists — must check rows.Err() first to distinguish
+	// "no rows" from real errors (context cancellation, network, driver).
 	if !rows.Next() {
+		if rowErr := rows.Err(); rowErr != nil {
+			return rowErr
+		}
 		err := wrapErrNotFound()
 		elapsed := time.Since(start)
-		if q.db.logger != nil {
+		if !isNoopLogger(q.db.logger) {
 			q.db.logger.Warn("query returned no rows",
 				"sql", q.sql,
 				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
@@ -345,7 +357,7 @@ func (q *Query) One(dest any) error {
 	}
 	if scanErr != nil {
 		elapsed := time.Since(start)
-		if q.db.logger != nil {
+		if !isNoopLogger(q.db.logger) {
 			q.db.logger.Error("row scanning failed",
 				"sql", q.sql,
 				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
@@ -366,7 +378,7 @@ func (q *Query) One(dest any) error {
 	elapsed := time.Since(start)
 
 	// Log success
-	if q.db.logger != nil {
+	if !isNoopLogger(q.db.logger) {
 		q.db.logger.Info("query executed",
 			"sql", q.sql,
 			"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
@@ -411,7 +423,7 @@ func (q *Query) Row(dest ...any) error {
 	start := time.Now()
 
 	if err := q.validateBeforeExec(ctx); err != nil {
-		if q.db.logger != nil {
+		if !isNoopLogger(q.db.logger) {
 			q.db.logger.Error("query preparation failed",
 				"sql", q.sql,
 				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
@@ -430,7 +442,7 @@ func (q *Query) Row(dest ...any) error {
 		var stmt *sql.Stmt
 		stmt, err = q.prepareStatement(ctx)
 		if err != nil {
-			if q.db.logger != nil {
+			if !isNoopLogger(q.db.logger) {
 				q.db.logger.Error("query preparation failed",
 					"sql", q.sql,
 					"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
@@ -443,7 +455,7 @@ func (q *Query) Row(dest ...any) error {
 	}
 	if err != nil {
 		elapsed := time.Since(start)
-		if q.db.logger != nil {
+		if !isNoopLogger(q.db.logger) {
 			q.db.logger.Error("query execution failed",
 				"sql", q.sql,
 				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
@@ -469,7 +481,7 @@ func (q *Query) Row(dest ...any) error {
 			err = wrapErrNotFound()
 		}
 		elapsed := time.Since(start)
-		if q.db.logger != nil {
+		if !isNoopLogger(q.db.logger) {
 			q.db.logger.Warn("query returned no rows",
 				"sql", q.sql,
 				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
@@ -489,7 +501,7 @@ func (q *Query) Row(dest ...any) error {
 	// Scan into dest variables
 	if err := rows.Scan(dest...); err != nil {
 		elapsed := time.Since(start)
-		if q.db.logger != nil {
+		if !isNoopLogger(q.db.logger) {
 			q.db.logger.Error("row scanning failed",
 				"sql", q.sql,
 				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
@@ -510,7 +522,7 @@ func (q *Query) Row(dest ...any) error {
 	elapsed := time.Since(start)
 
 	// Log success
-	if q.db.logger != nil {
+	if !isNoopLogger(q.db.logger) {
 		q.db.logger.Info("query executed",
 			"sql", q.sql,
 			"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
@@ -548,7 +560,7 @@ func (q *Query) Column(slice any) error {
 	start := time.Now()
 
 	if err := q.validateBeforeExec(ctx); err != nil {
-		if q.db.logger != nil {
+		if !isNoopLogger(q.db.logger) {
 			q.db.logger.Error("query preparation failed",
 				"sql", q.sql,
 				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
@@ -580,7 +592,7 @@ func (q *Query) Column(slice any) error {
 		var stmt *sql.Stmt
 		stmt, err = q.prepareStatement(ctx)
 		if err != nil {
-			if q.db.logger != nil {
+			if !isNoopLogger(q.db.logger) {
 				q.db.logger.Error("query preparation failed",
 					"sql", q.sql,
 					"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
@@ -593,7 +605,7 @@ func (q *Query) Column(slice any) error {
 	}
 	if err != nil {
 		elapsed := time.Since(start)
-		if q.db.logger != nil {
+		if !isNoopLogger(q.db.logger) {
 			q.db.logger.Error("query execution failed",
 				"sql", q.sql,
 				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
@@ -621,7 +633,7 @@ func (q *Query) Column(slice any) error {
 		// Scan first column into element
 		if err := rows.Scan(elem.Interface()); err != nil {
 			elapsed := time.Since(start)
-			if q.db.logger != nil {
+			if !isNoopLogger(q.db.logger) {
 				q.db.logger.Error("column scanning failed",
 					"sql", q.sql,
 					"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
@@ -648,7 +660,7 @@ func (q *Query) Column(slice any) error {
 	// Check for iteration errors
 	if err := rows.Err(); err != nil {
 		elapsed := time.Since(start)
-		if q.db.logger != nil {
+		if !isNoopLogger(q.db.logger) {
 			q.db.logger.Error("row iteration failed",
 				"sql", q.sql,
 				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
@@ -669,7 +681,7 @@ func (q *Query) Column(slice any) error {
 	elapsed := time.Since(start)
 
 	// Log success
-	if q.db.logger != nil {
+	if !isNoopLogger(q.db.logger) {
 		q.db.logger.Info("query executed",
 			"sql", q.sql,
 			"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
@@ -699,7 +711,7 @@ func (q *Query) All(dest any) error {
 	start := time.Now()
 
 	if err := q.validateBeforeExec(ctx); err != nil {
-		if q.db.logger != nil {
+		if !isNoopLogger(q.db.logger) {
 			q.db.logger.Error("query preparation failed",
 				"sql", q.sql,
 				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
@@ -718,7 +730,7 @@ func (q *Query) All(dest any) error {
 		var stmt *sql.Stmt
 		stmt, err = q.prepareStatement(ctx)
 		if err != nil {
-			if q.db.logger != nil {
+			if !isNoopLogger(q.db.logger) {
 				q.db.logger.Error("query preparation failed",
 					"sql", q.sql,
 					"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
@@ -731,7 +743,7 @@ func (q *Query) All(dest any) error {
 	}
 	if err != nil {
 		elapsed := time.Since(start)
-		if q.db.logger != nil {
+		if !isNoopLogger(q.db.logger) {
 			q.db.logger.Error("query execution failed",
 				"sql", q.sql,
 				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
@@ -759,7 +771,7 @@ func (q *Query) All(dest any) error {
 	}
 	if scanErr != nil {
 		elapsed := time.Since(start)
-		if q.db.logger != nil {
+		if !isNoopLogger(q.db.logger) {
 			q.db.logger.Error("row scanning failed",
 				"sql", q.sql,
 				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
@@ -780,7 +792,7 @@ func (q *Query) All(dest any) error {
 	elapsed := time.Since(start)
 
 	// Log success
-	if q.db.logger != nil {
+	if !isNoopLogger(q.db.logger) {
 		q.db.logger.Info("query executed",
 			"sql", q.sql,
 			"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
