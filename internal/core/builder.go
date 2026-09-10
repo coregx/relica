@@ -39,12 +39,7 @@ var selectAliasRegex = regexp.MustCompile(`(?i)\s+AS\s+([\w\-.]+)$`)
 // For MySQL/SQLite dialects where Placeholder(1) == “?”, clause is returned unchanged.
 //
 //nolint:funlen // SQL lexer requires sequential state tracking; splitting reduces clarity.
-func replacePlaceholders(clause string, startIndex int, dialect dialects.Dialect) string {
-	// Fast path: MySQL/SQLite use ? natively — nothing to replace.
-	if dialect.Placeholder(1) == "?" {
-		return clause
-	}
-
+func replacePlaceholders(clause string, startIndex int, dialect dialects.Dialect) (string, int) {
 	var b strings.Builder
 	b.Grow(len(clause) + 16)
 	inString := false
@@ -137,71 +132,7 @@ func replacePlaceholders(clause string, startIndex int, dialect dialects.Dialect
 		}
 	}
 
-	return b.String()
-}
-
-// replacePlaceholdersCount is like replacePlaceholders but also returns the number
-// of ? placeholders that were replaced. Used by buildSQL to validate count == len(args).
-//
-//nolint:nestif,gocritic // Mirrors replacePlaceholders lexer logic for counting.
-func replacePlaceholdersCount(clause string, startIndex int, dialect dialects.Dialect) (string, int) {
-	if dialect.Placeholder(1) == "?" {
-		count := 0
-		inStr := false
-		for i := 0; i < len(clause); i++ {
-			ch := clause[i]
-			if ch == '\'' {
-				if inStr && i+1 < len(clause) && clause[i+1] == '\'' {
-					i++
-					continue
-				}
-				inStr = !inStr
-			} else if ch == '-' && !inStr && i+1 < len(clause) && clause[i+1] == '-' {
-				for i+1 < len(clause) && clause[i+1] != '\n' {
-					i++
-				}
-			} else if ch == '/' && !inStr && i+1 < len(clause) && clause[i+1] == '*' {
-				i += 2
-				for i+1 < len(clause) {
-					if clause[i] == '*' && clause[i+1] == '/' {
-						i++
-						break
-					}
-					i++
-				}
-			} else if ch == '?' && !inStr {
-				if i+1 < len(clause) && (clause[i+1] == '?' || clause[i+1] == '|' || clause[i+1] == '&') {
-					i++
-					continue
-				}
-				isJSONB := false
-				for j := i + 1; j < len(clause); j++ {
-					if clause[j] == ' ' || clause[j] == '\t' {
-						continue
-					}
-					if clause[j] == '\'' {
-						isJSONB = true
-					}
-					break
-				}
-				if !isJSONB {
-					count++
-				}
-			}
-		}
-		return clause, count
-	}
-	result := replacePlaceholders(clause, startIndex, dialect)
-	count := 0
-	for i := 0; i < len(result); i++ {
-		if result[i] == '$' && i+1 < len(result) && result[i+1] >= '0' && result[i+1] <= '9' {
-			count++
-			for i+1 < len(result) && result[i+1] >= '0' && result[i+1] <= '9' {
-				i++
-			}
-		}
-	}
-	return result, count
+	return b.String(), paramIdx - startIndex
 }
 
 // resolveNamedParams checks if the SQL condition contains named placeholders {:name}
@@ -1428,7 +1359,7 @@ func (sq *SelectQuery) renderSQL(dialect dialects.Dialect) (string, []any) {
 // subqueries, CTEs, and UNION branches without any intermediate renumbering.
 func (sq *SelectQuery) buildSQL(dialect dialects.Dialect) (string, []any) {
 	rawSQL, args := sq.renderSQL(dialect)
-	finalSQL, count := replacePlaceholdersCount(rawSQL, 1, dialect)
+	finalSQL, count := replacePlaceholders(rawSQL, 1, dialect)
 	if count != len(args) {
 		sq.buildErr = fmt.Errorf("relica: %d placeholders but %d args", count, len(args))
 	}
@@ -2172,14 +2103,22 @@ func (uq *UpdateQuery) Build() *Query {
 		" SET " + strings.Join(setClauses, ", ") + whereClause
 
 	// Single-pass renumbering for PostgreSQL
-	query := replacePlaceholders(rawSQL, 1, uq.builder.db.dialect)
-
-	// Combine SET and WHERE parameters in textual order
-	setParams = append(setParams, whereParams...)
+	allParams := make([]any, 0, len(setParams)+len(whereParams))
+	allParams = append(allParams, setParams...)
+	allParams = append(allParams, whereParams...)
+	query, count := replacePlaceholders(rawSQL, 1, uq.builder.db.dialect)
+	if count != len(allParams) {
+		return &Query{
+			prepErr: fmt.Errorf("relica: %d placeholders but %d args", count, len(allParams)),
+			db:      uq.builder.db,
+			tx:      uq.builder.tx,
+			ctx:     ctx,
+		}
+	}
 
 	return &Query{
 		sql:    query,
-		params: setParams,
+		params: allParams,
 		db:     uq.builder.db,
 		tx:     uq.builder.tx,
 		ctx:    ctx,
@@ -2362,7 +2301,15 @@ func (dq *DeleteQuery) Build() *Query {
 
 	// Construct raw SQL and single-pass renumber
 	rawSQL := "DELETE FROM " + dq.builder.db.dialect.QuoteIdentifier(dq.table) + whereClause
-	query := replacePlaceholders(rawSQL, 1, dq.builder.db.dialect)
+	query, count := replacePlaceholders(rawSQL, 1, dq.builder.db.dialect)
+	if count != len(whereParams) {
+		return &Query{
+			prepErr: fmt.Errorf("relica: %d placeholders but %d args", count, len(whereParams)),
+			db:      dq.builder.db,
+			tx:      dq.builder.tx,
+			ctx:     ctx,
+		}
+	}
 
 	return &Query{
 		sql:    query,

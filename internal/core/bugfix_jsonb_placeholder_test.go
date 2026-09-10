@@ -18,7 +18,7 @@ func TestReplacePlaceholders_JSONB(t *testing.T) {
 	// "id = ?"       — positional param, should become "id = $1"
 	input := "data ? 'key' AND id = ?"
 	want := "data ? 'key' AND id = $1"
-	got := replacePlaceholders(input, 1, pg)
+	got, _ := replacePlaceholders(input, 1, pg)
 	if got != want {
 		t.Errorf("JSONB operator: got %q, want %q", got, want)
 	}
@@ -31,7 +31,7 @@ func TestReplacePlaceholders_StringLiteral(t *testing.T) {
 
 	input := "name = 'why?' AND id = ?"
 	want := "name = 'why?' AND id = $1"
-	got := replacePlaceholders(input, 1, pg)
+	got, _ := replacePlaceholders(input, 1, pg)
 	if got != want {
 		t.Errorf("string literal: got %q, want %q", got, want)
 	}
@@ -46,7 +46,7 @@ func TestReplacePlaceholders_EscapedQuote(t *testing.T) {
 	// The '' is an escaped ' inside the string; the ? after it is a real param.
 	input := "name = 'it''s' AND id = ?"
 	want := "name = 'it''s' AND id = $1"
-	got := replacePlaceholders(input, 1, pg)
+	got, _ := replacePlaceholders(input, 1, pg)
 	if got != want {
 		t.Errorf("escaped quote: got %q, want %q", got, want)
 	}
@@ -60,7 +60,7 @@ func TestReplacePlaceholders_EscapedQuoteWithQuestionMark(t *testing.T) {
 	// 'it''s ok?' — the ? is inside the string literal.
 	input := "name = 'it''s ok?' AND id = ?"
 	want := "name = 'it''s ok?' AND id = $1"
-	got := replacePlaceholders(input, 1, pg)
+	got, _ := replacePlaceholders(input, 1, pg)
 	if got != want {
 		t.Errorf("escaped quote with ?: got %q, want %q", got, want)
 	}
@@ -72,7 +72,7 @@ func TestReplacePlaceholders_NoParams(t *testing.T) {
 	pg := dialects.GetDialect("postgres")
 
 	input := "status = 'active' AND deleted_at IS NULL"
-	got := replacePlaceholders(input, 1, pg)
+	got, _ := replacePlaceholders(input, 1, pg)
 	if got != input {
 		t.Errorf("no params: got %q, want %q", got, input)
 	}
@@ -84,7 +84,7 @@ func TestReplacePlaceholders_Multiple(t *testing.T) {
 
 	input := "a = ? AND b = ? AND c = ?"
 	want := "a = $1 AND b = $2 AND c = $3"
-	got := replacePlaceholders(input, 1, pg)
+	got, _ := replacePlaceholders(input, 1, pg)
 	if got != want {
 		t.Errorf("multiple: got %q, want %q", got, want)
 	}
@@ -97,7 +97,7 @@ func TestReplacePlaceholders_StartIndexOffset(t *testing.T) {
 	// WHERE clause starts at $3 because there are 2 SET params before it.
 	input := "id = ? AND status = ?"
 	want := "id = $3 AND status = $4"
-	got := replacePlaceholders(input, 3, pg)
+	got, _ := replacePlaceholders(input, 3, pg)
 	if got != want {
 		t.Errorf("start index offset: got %q, want %q", got, want)
 	}
@@ -109,7 +109,7 @@ func TestReplacePlaceholders_DoubleQuestion(t *testing.T) {
 
 	input := "data ?? 'key' AND id = ?"
 	want := "data ? 'key' AND id = $1"
-	got := replacePlaceholders(input, 1, pg)
+	got, _ := replacePlaceholders(input, 1, pg)
 	if got != want {
 		t.Errorf("double question: got %q, want %q", got, want)
 	}
@@ -121,14 +121,14 @@ func TestReplacePlaceholders_JSONBArrayOps(t *testing.T) {
 
 	input := "data ?| array['a','b'] AND id = ?"
 	want := "data ?| array['a','b'] AND id = $1"
-	got := replacePlaceholders(input, 1, pg)
+	got, _ := replacePlaceholders(input, 1, pg)
 	if got != want {
 		t.Errorf("?| operator: got %q, want %q", got, want)
 	}
 
 	input2 := "data ?& array['a'] AND id = ?"
 	want2 := "data ?& array['a'] AND id = $1"
-	got2 := replacePlaceholders(input2, 1, pg)
+	got2, _ := replacePlaceholders(input2, 1, pg)
 	if got2 != want2 {
 		t.Errorf("?& operator: got %q, want %q", got2, want2)
 	}
@@ -140,7 +140,7 @@ func TestReplacePlaceholders_SQLComment(t *testing.T) {
 
 	input := "id = ? -- why? this is a comment"
 	want := "id = $1 -- why? this is a comment"
-	got := replacePlaceholders(input, 1, pg)
+	got, _ := replacePlaceholders(input, 1, pg)
 	if got != want {
 		t.Errorf("comment: got %q, want %q", got, want)
 	}
@@ -152,7 +152,7 @@ func TestReplacePlaceholders_MySQL_Unchanged(t *testing.T) {
 	mysql := dialects.GetDialect("mysql")
 
 	input := "id = ? AND status = ?"
-	got := replacePlaceholders(input, 1, mysql)
+	got, _ := replacePlaceholders(input, 1, mysql)
 	if got != input {
 		t.Errorf("MySQL unchanged: got %q, want %q", got, input)
 	}
@@ -164,9 +164,46 @@ func TestReplacePlaceholders_SQLite_Unchanged(t *testing.T) {
 	sqlite := dialects.GetDialect("sqlite")
 
 	input := "id = ? AND status = ?"
-	got := replacePlaceholders(input, 1, sqlite)
+	got, _ := replacePlaceholders(input, 1, sqlite)
 	if got != input {
 		t.Errorf("SQLite unchanged: got %q, want %q", got, input)
+	}
+}
+
+// Test: dollar sign in string literal must NOT be counted as placeholder.
+func TestReplacePlaceholders_DollarInStringLiteral(t *testing.T) {
+	pg := dialects.GetDialect("postgres")
+
+	input := "label = 'costs $5' AND id = ?"
+	got, count := replacePlaceholders(input, 1, pg)
+	if count != 1 {
+		t.Errorf("dollar in string: count=%d, want 1", count)
+	}
+	want := "label = 'costs $5' AND id = $1"
+	if got != want {
+		t.Errorf("dollar in string: got %q, want %q", got, want)
+	}
+}
+
+// Test: fewer args than placeholders — buildSQL must set buildErr.
+func TestArgCountMismatch_Select(t *testing.T) {
+	db := mockDBFull("postgres")
+	sq := db.Builder().Select().From("users").Where("a = ? AND b = ?", 1)
+	q := sq.Build()
+	if q.prepErr == nil {
+		t.Error("expected buildErr for mismatched arg count")
+	}
+}
+
+// Test: ?? on MySQL/SQLite — must emit single ? (consistent with PG).
+func TestDoubleQuestion_MySQL(t *testing.T) {
+	mysql := dialects.GetDialect("mysql")
+	got, count := replacePlaceholders("data ?? ? AND id = ?", 1, mysql)
+	if !strings.Contains(got, "data ? ?") {
+		t.Errorf("MySQL ?? should emit single ?: got %q", got)
+	}
+	if count != 2 {
+		t.Errorf("MySQL count: got %d, want 2", count)
 	}
 }
 
