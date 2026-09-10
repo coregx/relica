@@ -492,7 +492,7 @@ db.Select().
 ```go
 // ✅ SIMPLE: Inline subquery
 subquery := db.Select("user_id").From("orders")
-db.Select().From("users").Where(relica.In("id", subquery))
+db.Select().From("users").Where(relica.In("id", subquery.AsExpression()))
 ```
 
 ### Performance Comparison
