@@ -28,6 +28,8 @@ var selectAliasRegex = regexp.MustCompile(`(?i)\s+AS\s+([\w\-.]+)$`)
 //   - PostgreSQL JSONB key-existence operator ??: treated as a literal ?? (not replaced)
 //
 // For MySQL/SQLite dialects where Placeholder(1) == "?", sql is returned unchanged.
+//
+//nolint:funlen // SQL lexer requires sequential state tracking; splitting reduces clarity.
 func replacePlaceholders(clause string, startIndex int, dialect dialects.Dialect) string {
 	// Fast path: MySQL/SQLite use ? natively — nothing to replace.
 	if dialect.Placeholder(1) == "?" {
@@ -59,17 +61,51 @@ func replacePlaceholders(clause string, startIndex int, dialect dialects.Dialect
 			}
 			b.WriteByte(ch)
 
-		case ch == '?' && !inString:
-			// PostgreSQL JSONB key-existence operator ?? — preserve as-is.
-			if i+1 < len(clause) && clause[i+1] == '?' {
-				b.WriteString("??")
+		case ch == '-' && !inString && i+1 < len(clause) && clause[i+1] == '-':
+			// Single-line SQL comment: skip until end of line
+			b.WriteByte(ch)
+			i++
+			b.WriteByte(clause[i])
+			for i+1 < len(clause) && clause[i+1] != '\n' {
 				i++
-				continue
+				b.WriteByte(clause[i])
 			}
-			// PostgreSQL JSONB single-key operator: data ? 'key'
-			// Heuristic: if the next non-space character after ? is a single quote,
-			// treat ? as a JSONB operator (not a placeholder). This covers the common
-			// pattern `column ? 'literal'` used for JSONB key-existence tests.
+
+		case ch == '/' && !inString && i+1 < len(clause) && clause[i+1] == '*':
+			// Block comment: skip until */
+			b.WriteByte(ch)
+			i++
+			b.WriteByte(clause[i])
+			for i+1 < len(clause) {
+				i++
+				b.WriteByte(clause[i])
+				if clause[i] == '/' && clause[i-1] == '*' {
+					break
+				}
+			}
+
+		case ch == '?' && !inString:
+			// PostgreSQL JSONB operators: ?? → emit single ? (client-side escape),
+			// ?| and ?& → emit as-is (array operators, not placeholders).
+			if i+1 < len(clause) {
+				next := clause[i+1]
+				if next == '?' {
+					// ?? is client-side escape for literal ? in PostgreSQL
+					b.WriteByte('?')
+					i++
+					continue
+				}
+				if next == '|' || next == '&' {
+					// ?| and ?& are JSONB array operators
+					b.WriteByte(ch)
+					b.WriteByte(next)
+					i++
+					continue
+				}
+			}
+			// JSONB single-key operator: data ? 'key'
+			// Heuristic: if the next non-space char is a single quote,
+			// this is a JSONB key-existence test, not a placeholder.
 			isJSONBOp := false
 			for j := i + 1; j < len(clause); j++ {
 				if clause[j] == ' ' || clause[j] == '\t' {

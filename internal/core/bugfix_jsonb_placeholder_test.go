@@ -103,17 +103,46 @@ func TestReplacePlaceholders_StartIndexOffset(t *testing.T) {
 	}
 }
 
-// TestReplacePlaceholders_DoubleQuestion verifies that ?? (JSONB containment
-// / key-existence with two consecutive ?) is passed through verbatim.
+// TestReplacePlaceholders_DoubleQuestion verifies ?? emits single ? (client-side escape).
 func TestReplacePlaceholders_DoubleQuestion(t *testing.T) {
 	pg := dialects.GetDialect("postgres")
 
-	// data ?? 'key' — the ?? operator must survive intact.
 	input := "data ?? 'key' AND id = ?"
-	want := "data ?? 'key' AND id = $1"
+	want := "data ? 'key' AND id = $1"
 	got := replacePlaceholders(input, 1, pg)
 	if got != want {
 		t.Errorf("double question: got %q, want %q", got, want)
+	}
+}
+
+// TestReplacePlaceholders_JSONBArrayOps verifies ?| and ?& operators preserved.
+func TestReplacePlaceholders_JSONBArrayOps(t *testing.T) {
+	pg := dialects.GetDialect("postgres")
+
+	input := "data ?| array['a','b'] AND id = ?"
+	want := "data ?| array['a','b'] AND id = $1"
+	got := replacePlaceholders(input, 1, pg)
+	if got != want {
+		t.Errorf("?| operator: got %q, want %q", got, want)
+	}
+
+	input2 := "data ?& array['a'] AND id = ?"
+	want2 := "data ?& array['a'] AND id = $1"
+	got2 := replacePlaceholders(input2, 1, pg)
+	if got2 != want2 {
+		t.Errorf("?& operator: got %q, want %q", got2, want2)
+	}
+}
+
+// TestReplacePlaceholders_SQLComment verifies ? inside comments not replaced.
+func TestReplacePlaceholders_SQLComment(t *testing.T) {
+	pg := dialects.GetDialect("postgres")
+
+	input := "id = ? -- why? this is a comment"
+	want := "id = $1 -- why? this is a comment"
+	got := replacePlaceholders(input, 1, pg)
+	if got != want {
+		t.Errorf("comment: got %q, want %q", got, want)
 	}
 }
 

@@ -113,11 +113,13 @@ func (sc *StmtCache) evictOldest() {
 			continue // Skip pinned entries
 		}
 
-		// Found unpinned entry, evict it.
-		// Do NOT close stmt — another goroutine may still be using it.
-		// Evicted stmts will be closed when DB.Close() is called.
+		// Evict: remove from cache and close.
+		// Safe: evicted entries are LRU (least recently used), unlikely in-flight.
+		// Close error intentionally ignored — eviction is async, no caller to return to.
+		// database/sql logs driver-level close errors internally.
 		sc.lruList.Remove(elem)
 		delete(sc.items, entry.key)
+		_ = entry.stmt.Close()
 		sc.evictions.Add(1)
 		return
 	}

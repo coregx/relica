@@ -327,6 +327,22 @@ func (q *Query) One(dest any) error {
 	// "no rows" from real errors (context cancellation, network, driver).
 	if !rows.Next() {
 		if rowErr := rows.Err(); rowErr != nil {
+			elapsed := time.Since(start)
+			if !isNoopLogger(q.db.logger) {
+				q.db.logger.Error("query failed during row iteration",
+					"sql", q.sql,
+					"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
+					"duration_ms", elapsed.Milliseconds(),
+					"error", rowErr,
+				)
+			}
+			q.db.invokeHook(ctx, QueryEvent{
+				SQL:       q.sql,
+				Args:      q.params,
+				Duration:  elapsed,
+				Error:     rowErr,
+				Operation: DetectOperation(q.sql),
+			})
 			return rowErr
 		}
 		err := wrapErrNotFound()
