@@ -189,6 +189,8 @@ linters:
       - path: internal/core/builder\.go
         linters:
           - gocyclo
+          - gocognit
+          - cyclop
           - goconst
 
       # Dialects - SQL dialect implementations

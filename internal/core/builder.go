@@ -19,6 +19,82 @@ import (
 // Only matches explicit AS keyword to avoid false positives with expressions like "level + 1".
 var selectAliasRegex = regexp.MustCompile(`(?i)\s+AS\s+([\w\-.]+)$`)
 
+// replacePlaceholders replaces positional ? placeholders with dialect-specific placeholders
+// (e.g. $1, $2 for PostgreSQL), starting from startIndex.
+//
+// It is safe to use with SQL fragments that contain:
+//   - Single-quoted string literals: WHERE name = 'why?' — the ? inside the literal is not replaced
+//   - Escaped single quotes: WHERE name = 'it”s ok?' — handled correctly
+//   - PostgreSQL JSONB key-existence operator ??: treated as a literal ?? (not replaced)
+//
+// For MySQL/SQLite dialects where Placeholder(1) == "?", sql is returned unchanged.
+func replacePlaceholders(clause string, startIndex int, dialect dialects.Dialect) string {
+	// Fast path: MySQL/SQLite use ? natively — nothing to replace.
+	if dialect.Placeholder(1) == "?" {
+		return clause
+	}
+
+	var b strings.Builder
+	b.Grow(len(clause) + 16)
+	inString := false
+	paramIdx := startIndex
+
+	for i := 0; i < len(clause); i++ {
+		ch := clause[i]
+
+		switch {
+		case ch == '\'':
+			if inString {
+				// Check for escaped quote '' inside a string literal.
+				if i+1 < len(clause) && clause[i+1] == '\'' {
+					b.WriteByte(ch)
+					i++
+					b.WriteByte(clause[i])
+					continue
+				}
+				// Closing quote.
+				inString = false
+			} else {
+				inString = true
+			}
+			b.WriteByte(ch)
+
+		case ch == '?' && !inString:
+			// PostgreSQL JSONB key-existence operator ?? — preserve as-is.
+			if i+1 < len(clause) && clause[i+1] == '?' {
+				b.WriteString("??")
+				i++
+				continue
+			}
+			// PostgreSQL JSONB single-key operator: data ? 'key'
+			// Heuristic: if the next non-space character after ? is a single quote,
+			// treat ? as a JSONB operator (not a placeholder). This covers the common
+			// pattern `column ? 'literal'` used for JSONB key-existence tests.
+			isJSONBOp := false
+			for j := i + 1; j < len(clause); j++ {
+				if clause[j] == ' ' || clause[j] == '\t' {
+					continue
+				}
+				if clause[j] == '\'' {
+					isJSONBOp = true
+				}
+				break
+			}
+			if isJSONBOp {
+				b.WriteByte(ch)
+				continue
+			}
+			b.WriteString(dialect.Placeholder(paramIdx))
+			paramIdx++
+
+		default:
+			b.WriteByte(ch)
+		}
+	}
+
+	return b.String()
+}
+
 // resolveNamedParams checks if the SQL condition contains named placeholders {:name}
 // and resolves them to positional ? placeholders using the provided Params map.
 // If the condition has no named placeholders, returns it unchanged with original params.
@@ -817,8 +893,6 @@ func (sq *SelectQuery) buildJoins(dialect dialects.Dialect, params *[]any) strin
 // buildOrderBy constructs the ORDER BY clause from the orderBy slice.
 // Returns empty string if no ORDER BY is specified.
 // Parses column direction (ASC/DESC) and quotes column names.
-//
-//nolint:cyclop // Three sources (columns, raw exprs, sub exprs) each need separate handling.
 func (sq *SelectQuery) buildOrderBy(dialect dialects.Dialect) string {
 	if len(sq.orderBy) == 0 && len(sq.orderByExprs) == 0 && len(sq.subOrderByExprs) == 0 {
 		return ""
@@ -1076,16 +1150,8 @@ func (sq *SelectQuery) renumberHavingPlaceholders(havingClause string, totalPara
 	for _, c := range sq.havingClauses {
 		havingArgCount += len(c.args)
 	}
-	currentParamCount := totalParams - havingArgCount
-	for i := 0; i < len(sq.havingClauses); i++ {
-		for range sq.havingClauses[i].args {
-			currentParamCount++
-			placeholder := dialect.Placeholder(currentParamCount)
-			havingClause = strings.Replace(havingClause, "?", placeholder, 1)
-		}
-	}
-
-	return havingClause
+	startIndex := totalParams - havingArgCount + 1
+	return replacePlaceholders(havingClause, startIndex, dialect)
 }
 
 // buildWhere constructs the WHERE clause from the where slice.
@@ -1100,15 +1166,9 @@ func (sq *SelectQuery) buildWhere(dialect dialects.Dialect, params *[]any) strin
 	whereParams := sq.params
 	whereClause := " WHERE " + strings.Join(sq.where, " AND ")
 
-	// Renumber WHERE placeholders for PostgreSQL ($1, $2, etc.)
-	if dialect.Placeholder(1) != "?" {
-		// Start numbering after CTE + SelectExpr + FROM + JOIN params
-		startIndex := len(*params) + 1
-		for i := range whereParams {
-			placeholder := dialect.Placeholder(startIndex + i)
-			whereClause = strings.Replace(whereClause, "?", placeholder, 1)
-		}
-	}
+	// Renumber WHERE placeholders for PostgreSQL ($1, $2, etc.).
+	// Start numbering after CTE + SelectExpr + FROM + JOIN params.
+	whereClause = replacePlaceholders(whereClause, len(*params)+1, dialect)
 
 	// Append WHERE params after CTE + SelectExpr + FROM + JOIN params
 	*params = append(*params, whereParams...)
@@ -1165,7 +1225,7 @@ func (sq *SelectQuery) buildWithClause(dialect dialects.Dialect) (string, []any)
 // This is the core implementation shared by both Build() and the Expression interface.
 // Parameter ordering: CTEs → SelectExprs → SubExprs → FROM subquery → JOINs → WHERE → HAVING → GroupByExprs → OrderByExprs
 //
-//nolint:cyclop,gocognit,funlen // Central query assembly requires sequential clause building; splitting would reduce clarity.
+//nolint:funlen // Central query assembly requires sequential clause building; splitting would reduce clarity.
 func (sq *SelectQuery) buildSQL(dialect dialects.Dialect) (string, []any) {
 	// Collect all parameters in correct order
 	var allParams []any
@@ -2007,14 +2067,9 @@ func (uq *UpdateQuery) Build() *Query {
 	if len(uq.where) > 0 {
 		whereClause = " WHERE " + strings.Join(uq.where, " AND ")
 
-		// Renumber WHERE placeholders for PostgreSQL ($1, $2, etc.)
-		if uq.builder.db.dialect.Placeholder(1) != "?" {
-			startIndex := len(setParams) + 1
-			for i := range whereParams {
-				placeholder := uq.builder.db.dialect.Placeholder(startIndex + i)
-				whereClause = strings.Replace(whereClause, "?", placeholder, 1)
-			}
-		}
+		// Renumber WHERE placeholders for PostgreSQL ($1, $2, etc.).
+		// Start numbering after SET params.
+		whereClause = replacePlaceholders(whereClause, len(setParams)+1, uq.builder.db.dialect)
 	}
 
 	// Construct SQL
@@ -2206,13 +2261,9 @@ func (dq *DeleteQuery) Build() *Query {
 	if len(dq.where) > 0 {
 		whereClause = " WHERE " + strings.Join(dq.where, " AND ")
 
-		// Renumber WHERE placeholders for PostgreSQL ($1, $2, etc.)
-		if dq.builder.db.dialect.Placeholder(1) != "?" {
-			for i := range whereParams {
-				placeholder := dq.builder.db.dialect.Placeholder(i + 1)
-				whereClause = strings.Replace(whereClause, "?", placeholder, 1)
-			}
-		}
+		// Renumber WHERE placeholders for PostgreSQL ($1, $2, etc.).
+		// DELETE has no SET params so numbering starts at 1.
+		whereClause = replacePlaceholders(whereClause, 1, dq.builder.db.dialect)
 	}
 
 	// Construct SQL
