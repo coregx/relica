@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Sanitizer overhead eliminated for default logger** — `MaskParams`/`FormatParams` (~60µs of regex per query) now skipped entirely when using NoopLogger (default). 7x speedup for default configuration
 - **Statement cache race condition fixed** — new `GetOrSet()` atomic cache-or-insert prevents both the concurrent-close race and the orphaned-stmt leak. Loser of prepare race closes its own unobserved stmt. Note: cache capacity should be >= expected concurrency level
 - **SQL placeholder lexer** — `?` inside single-quoted strings, SQL comments (`--`, `/* */`), and PostgreSQL JSONB operators (`?|`, `?&`) no longer incorrectly replaced with `$N`. `??` now emits single `?` (client-side escape convention)
+- **PostgreSQL $N placeholder renumbering** — subqueries in IN/EXISTS, UNION branches, CTEs, GROUP BY/ORDER BY expressions now correctly renumbered. Previously `$1` was reused across outer and inner queries causing `bind message supplies N parameters, but prepared statement requires M`. New `renderSQL` + single-pass `replacePlaceholders` architecture
 - **Documentation corrections** — all `Exists()`/`In()` subquery examples now use `.AsExpression()` (17 locations). Security/optimizer/tracing guides marked as internal-only where they reference unexported API
 
 ---
