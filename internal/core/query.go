@@ -122,7 +122,11 @@ func (q *Query) prepareStatement(ctx context.Context) (*sql.Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
-	q.db.stmtCache.Set(q.sql, stmt)
+	cached, inserted := q.db.stmtCache.GetOrSet(q.sql, stmt)
+	if !inserted {
+		_ = stmt.Close() // lost the race; our stmt is unobserved, safe to close
+		return cached, nil
+	}
 	return stmt, nil
 }
 

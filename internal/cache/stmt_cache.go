@@ -102,6 +102,28 @@ func (sc *StmtCache) Set(key string, stmt *sql.Stmt) {
 	sc.items[key] = elem
 }
 
+// GetOrSet atomically returns the cached statement for key, or stores stmt if absent.
+// Returns (stmt, true) when inserted. When (cached, false), the caller lost the race
+// and must close its own stmt (which no other goroutine can observe) and use the returned one.
+func (sc *StmtCache) GetOrSet(key string, stmt *sql.Stmt) (*sql.Stmt, bool) {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+
+	if elem, exists := sc.items[key]; exists {
+		sc.lruList.MoveToFront(elem)
+		sc.hits.Add(1)
+		return elem.Value.(*cacheEntry).stmt, false
+	}
+	if sc.lruList.Len() >= sc.capacity {
+		sc.evictOldest()
+	}
+	entry := &cacheEntry{key: key, stmt: stmt}
+	elem := sc.lruList.PushFront(entry)
+	sc.items[key] = elem
+	sc.misses.Add(1)
+	return stmt, true
+}
+
 // evictOldest removes and closes the least recently used statement.
 // Pinned statements are skipped during eviction.
 // Must be called with lock held.

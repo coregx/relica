@@ -503,7 +503,9 @@ func (db *DB) WarmCache(queries []string) (int, error) {
 		if err != nil {
 			return warmed, err
 		}
-		db.stmtCache.Set(query, stmt)
+		if _, inserted := db.stmtCache.GetOrSet(query, stmt); !inserted {
+			_ = stmt.Close() // already cached
+		}
 		warmed++
 	}
 
