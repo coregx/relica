@@ -211,7 +211,6 @@ func (q *Query) Execute() (sql.Result, error) {
 
 // One fetches a single row into a struct.
 // If query is part of a transaction, uses transaction connection.
-//
 func (q *Query) One(dest any) error {
 	ctx := q.getContext()
 	start := time.Now()
@@ -321,7 +320,6 @@ func (q *Query) One(dest any) error {
 //	// For scalar queries
 //	var count int
 //	err := db.NewQuery("SELECT COUNT(*) FROM users").Row(&count)
-//
 func (q *Query) Row(dest ...any) error {
 	ctx := q.getContext()
 	start := time.Now()
@@ -510,7 +508,6 @@ func (q *Query) Column(slice any) error {
 
 // All fetches all rows into a slice of structs.
 // If query is part of a transaction, uses transaction connection.
-//
 func (q *Query) All(dest any) error {
 	ctx := q.getContext()
 	start := time.Now()

@@ -136,11 +136,14 @@ func WithAuditLog(auditor *security.Auditor) Option {
 // If not set, no logging is performed (zero overhead).
 func WithLogger(l logger.Logger) Option {
 	return WithQueryHook(func(_ context.Context, e QueryEvent) {
-		if e.Error != nil {
+		switch {
+		case e.Error != nil && isErrNotFound(e.Error):
+			l.Warn("no rows", "sql", e.SQL, "duration_ms", e.Duration.Milliseconds())
+		case e.Error != nil:
 			l.Error("query failed", "sql", e.SQL, "duration_ms", e.Duration.Milliseconds(), "error", e.Error)
-			return
+		default:
+			l.Info("query executed", "sql", e.SQL, "duration_ms", e.Duration.Milliseconds(), "rows", e.RowsAffected)
 		}
-		l.Info("query executed", "sql", e.SQL, "duration_ms", e.Duration.Milliseconds(), "rows", e.RowsAffected)
 	})
 }
 
@@ -156,6 +159,13 @@ func WithLogger(l logger.Logger) Option {
 //	    }))
 func WithQueryHook(hook QueryHook) Option {
 	return func(db *DB) {
+		if prev := db.queryHook; prev != nil {
+			db.queryHook = func(ctx context.Context, e QueryEvent) {
+				prev(ctx, e)
+				hook(ctx, e)
+			}
+			return
+		}
 		db.queryHook = hook
 	}
 }

@@ -34,6 +34,11 @@ var (
 	ErrNotFound = errors.New("relica: record not found")
 )
 
+// isErrNotFound checks if an error is ErrNotFound.
+func isErrNotFound(err error) bool {
+	return errors.Is(err, ErrNotFound)
+}
+
 // wrapErrNotFound returns an error that satisfies both:
 //   - errors.Is(err, ErrNotFound) == true
 //   - errors.Is(err, sql.ErrNoRows) == true

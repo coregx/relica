@@ -3061,6 +3061,20 @@ func DetectOperation(query string) string { return core.DetectOperation(query) }
 //	db.Select("*").From("users").All(&results)
 type NullStringMap = core.NullStringMap
 
+// MaskArgs masks sensitive parameter values (passwords, tokens, API keys) in query args.
+// Use this in custom QueryHook implementations to safely log parameters.
+//
+// Example:
+//
+//	relica.WithQueryHook(func(ctx context.Context, e relica.QueryEvent) {
+//	    masked := relica.MaskArgs(e.SQL, e.Args)
+//	    slog.Info("query", "sql", e.SQL, "args", masked)
+//	})
+func MaskArgs(query string, args []any) []any {
+	s := logger.NewSanitizer(nil)
+	return s.MaskParams(query, args)
+}
+
 // ============================================================================
 // Re-export expression builders
 // ============================================================================
