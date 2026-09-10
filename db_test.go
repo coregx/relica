@@ -1414,13 +1414,6 @@ func TestWithQueryHook_ReturnsOption(t *testing.T) {
 	}
 }
 
-func TestWithSensitiveFields_ReturnsOption(t *testing.T) {
-	opt := relica.WithSensitiveFields([]string{"password", "token"})
-	if opt == nil {
-		t.Error("expected non-nil option")
-	}
-}
-
 // ─── Logger types ─────────────────────────────────────────────────────────────
 
 func TestNewSlogAdapter_ReturnsNonNil(t *testing.T) {

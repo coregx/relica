@@ -27,9 +27,7 @@ type DB struct {
 	driverName    string
 	stmtCache     *cache.StmtCache
 	dialect       dialects.Dialect
-	logger        logger.Logger       // Structured logger for query logging
 	queryHook     QueryHook           // Query hook for logging/metrics/tracing
-	sanitizer     *logger.Sanitizer   // Sanitizes sensitive data in logs
 	optimizer     Optimizer           // Query optimizer (nil = disabled)
 	healthChecker *healthChecker      // Health checker for connection monitoring (nil = disabled)
 	validator     *security.Validator // SQL injection validator (nil = disabled)
@@ -93,7 +91,7 @@ func WithConnMaxIdleTime(d time.Duration) Option {
 func WithHealthCheck(interval time.Duration) Option {
 	return func(db *DB) {
 		if interval > 0 {
-			db.healthChecker = newHealthChecker(db.sqlDB, db.logger, interval)
+			db.healthChecker = newHealthChecker(db.sqlDB, &logger.NoopLogger{}, interval)
 			db.healthChecker.start()
 		}
 	}
@@ -133,12 +131,17 @@ func WithAuditLog(auditor *security.Auditor) Option {
 	}
 }
 
-// WithLogger sets the logger for the database.
-// If not set, a NoopLogger is used (zero overhead when logging is disabled).
+// WithLogger sets the logger for database query logging by wrapping it as a QueryHook.
+// On error, logs at Error level; on success, logs at Info level.
+// If not set, no logging is performed (zero overhead).
 func WithLogger(l logger.Logger) Option {
-	return func(db *DB) {
-		db.logger = l
-	}
+	return WithQueryHook(func(_ context.Context, e QueryEvent) {
+		if e.Error != nil {
+			l.Error("query failed", "sql", e.SQL, "duration_ms", e.Duration.Milliseconds(), "error", e.Error)
+			return
+		}
+		l.Info("query executed", "sql", e.SQL, "duration_ms", e.Duration.Milliseconds(), "rows", e.RowsAffected)
+	})
 }
 
 // WithQueryHook sets a callback function that is invoked after each query execution.
@@ -157,14 +160,6 @@ func WithQueryHook(hook QueryHook) Option {
 	}
 }
 
-// WithSensitiveFields sets the list of sensitive field names for parameter masking.
-// If not set, default sensitive field patterns are used (password, token, api_key, etc.).
-func WithSensitiveFields(fields []string) Option {
-	return func(db *DB) {
-		db.sanitizer = logger.NewSanitizer(fields)
-	}
-}
-
 // NewDB creates a new DB instance.
 func NewDB(driverName, dsn string) (*DB, error) {
 	sqlDB, err := sql.Open(driverName, dsn)
@@ -178,8 +173,6 @@ func NewDB(driverName, dsn string) (*DB, error) {
 		driverName: driverName,
 		stmtCache:  cache.NewStmtCache(),
 		dialect:    dialect,
-		logger:     &logger.NoopLogger{},
-		sanitizer:  logger.NewSanitizer(nil),
 	}, nil
 }
 
@@ -224,8 +217,6 @@ func WrapDB(sqlDB *sql.DB, driverName string) *DB {
 		driverName: driverName,
 		stmtCache:  cache.NewStmtCache(),
 		dialect:    dialect,
-		logger:     &logger.NoopLogger{},
-		sanitizer:  logger.NewSanitizer(nil),
 	}
 }
 

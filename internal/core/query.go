@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"reflect"
 	"time"
-
-	"github.com/coregx/relica/internal/logger"
 )
 
 // Query represents a database query.
@@ -130,44 +128,6 @@ func (q *Query) prepareStatement(ctx context.Context) (*sql.Stmt, error) {
 	return stmt, nil
 }
 
-// isNoopLogger returns true if the logger is a NoopLogger (no-op, skip expensive sanitization).
-func isNoopLogger(l logger.Logger) bool {
-	_, ok := l.(*logger.NoopLogger)
-	return l == nil || ok
-}
-
-// logExecutionResult logs query execution results if logger is enabled.
-func (q *Query) logExecutionResult(result sql.Result, err error, elapsed time.Duration) {
-	if isNoopLogger(q.db.logger) {
-		return
-	}
-
-	maskedParams := q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params))
-
-	if err != nil {
-		q.db.logger.Error("query execution failed",
-			"sql", q.sql,
-			"params", maskedParams,
-			"duration_ms", elapsed.Milliseconds(),
-			"database", q.db.driverName,
-			"error", err,
-		)
-		return
-	}
-
-	var rowsAffected int64
-	if result != nil {
-		rowsAffected, _ = result.RowsAffected()
-	}
-	q.db.logger.Info("query executed",
-		"sql", q.sql,
-		"params", maskedParams,
-		"duration_ms", elapsed.Milliseconds(),
-		"rows_affected", rowsAffected,
-		"database", q.db.driverName,
-	)
-}
-
 // useDirectTx returns true when the query should use direct tx.Exec/Query
 // instead of Prepare+Exec (saves 2 round-trips per query).
 func (q *Query) useDirectTx() bool {
@@ -201,15 +161,7 @@ func (q *Query) Execute() (sql.Result, error) {
 	ctx := q.getContext()
 	start := time.Now()
 
-	// Validate
 	if err := q.validateBeforeExec(ctx); err != nil {
-		if !isNoopLogger(q.db.logger) {
-			q.db.logger.Error("query preparation failed",
-				"sql", q.sql,
-				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-				"error", err,
-			)
-		}
 		return nil, err
 	}
 
@@ -217,7 +169,6 @@ func (q *Query) Execute() (sql.Result, error) {
 	if q.useDirectTx() {
 		result, err := q.tx.ExecContext(ctx, q.sql, q.params...)
 		elapsed := time.Since(start)
-		q.logExecutionResult(result, err, elapsed)
 		var rowsAffected int64
 		if result != nil {
 			rowsAffected, _ = result.RowsAffected()
@@ -236,20 +187,11 @@ func (q *Query) Execute() (sql.Result, error) {
 	// Standard path: prepare + execute (with cache for non-tx)
 	stmt, err := q.prepareStatement(ctx)
 	if err != nil {
-		if !isNoopLogger(q.db.logger) {
-			q.db.logger.Error("query preparation failed",
-				"sql", q.sql,
-				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-				"error", err,
-			)
-		}
 		return nil, err
 	}
 
 	result, err := stmt.ExecContext(ctx, q.params...)
 	elapsed := time.Since(start)
-
-	q.logExecutionResult(result, err, elapsed)
 
 	var rowsAffected int64
 	if result != nil {
@@ -270,19 +212,11 @@ func (q *Query) Execute() (sql.Result, error) {
 // One fetches a single row into a struct.
 // If query is part of a transaction, uses transaction connection.
 //
-//nolint:cyclop,funlen,gocognit,nestif,gocyclo // Query execution requires comprehensive error handling and logging
 func (q *Query) One(dest any) error {
 	ctx := q.getContext()
 	start := time.Now()
 
 	if err := q.validateBeforeExec(ctx); err != nil {
-		if !isNoopLogger(q.db.logger) {
-			q.db.logger.Error("query preparation failed",
-				"sql", q.sql,
-				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-				"error", err,
-			)
-		}
 		return err
 	}
 
@@ -295,27 +229,12 @@ func (q *Query) One(dest any) error {
 		var stmt *sql.Stmt
 		stmt, err = q.prepareStatement(ctx)
 		if err != nil {
-			if !isNoopLogger(q.db.logger) {
-				q.db.logger.Error("query preparation failed",
-					"sql", q.sql,
-					"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-					"error", err,
-				)
-			}
 			return err
 		}
 		rows, err = stmt.QueryContext(ctx, q.params...)
 	}
 	if err != nil {
 		elapsed := time.Since(start)
-		if !isNoopLogger(q.db.logger) {
-			q.db.logger.Error("query execution failed",
-				"sql", q.sql,
-				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-				"duration_ms", elapsed.Milliseconds(),
-				"error", err,
-			)
-		}
 		q.db.invokeHook(ctx, QueryEvent{
 			SQL:       q.sql,
 			Args:      q.params,
@@ -332,14 +251,6 @@ func (q *Query) One(dest any) error {
 	if !rows.Next() {
 		if rowErr := rows.Err(); rowErr != nil {
 			elapsed := time.Since(start)
-			if !isNoopLogger(q.db.logger) {
-				q.db.logger.Error("query failed during row iteration",
-					"sql", q.sql,
-					"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-					"duration_ms", elapsed.Milliseconds(),
-					"error", rowErr,
-				)
-			}
 			q.db.invokeHook(ctx, QueryEvent{
 				SQL:       q.sql,
 				Args:      q.params,
@@ -351,13 +262,6 @@ func (q *Query) One(dest any) error {
 		}
 		err := wrapErrNotFound()
 		elapsed := time.Since(start)
-		if !isNoopLogger(q.db.logger) {
-			q.db.logger.Warn("query returned no rows",
-				"sql", q.sql,
-				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-				"duration_ms", elapsed.Milliseconds(),
-			)
-		}
 		q.db.invokeHook(ctx, QueryEvent{
 			SQL:       q.sql,
 			Args:      q.params,
@@ -377,14 +281,6 @@ func (q *Query) One(dest any) error {
 	}
 	if scanErr != nil {
 		elapsed := time.Since(start)
-		if !isNoopLogger(q.db.logger) {
-			q.db.logger.Error("row scanning failed",
-				"sql", q.sql,
-				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-				"duration_ms", elapsed.Milliseconds(),
-				"error", scanErr,
-			)
-		}
 		q.db.invokeHook(ctx, QueryEvent{
 			SQL:       q.sql,
 			Args:      q.params,
@@ -396,17 +292,6 @@ func (q *Query) One(dest any) error {
 	}
 
 	elapsed := time.Since(start)
-
-	// Log success
-	if !isNoopLogger(q.db.logger) {
-		q.db.logger.Info("query executed",
-			"sql", q.sql,
-			"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-			"duration_ms", elapsed.Milliseconds(),
-			"rows", 1,
-			"database", q.db.driverName,
-		)
-	}
 
 	// Invoke query hook
 	q.db.invokeHook(ctx, QueryEvent{
@@ -437,19 +322,11 @@ func (q *Query) One(dest any) error {
 //	var count int
 //	err := db.NewQuery("SELECT COUNT(*) FROM users").Row(&count)
 //
-//nolint:cyclop,funlen,nestif // Query execution requires comprehensive error handling and logging
 func (q *Query) Row(dest ...any) error {
 	ctx := q.getContext()
 	start := time.Now()
 
 	if err := q.validateBeforeExec(ctx); err != nil {
-		if !isNoopLogger(q.db.logger) {
-			q.db.logger.Error("query preparation failed",
-				"sql", q.sql,
-				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-				"error", err,
-			)
-		}
 		return err
 	}
 
@@ -462,27 +339,12 @@ func (q *Query) Row(dest ...any) error {
 		var stmt *sql.Stmt
 		stmt, err = q.prepareStatement(ctx)
 		if err != nil {
-			if !isNoopLogger(q.db.logger) {
-				q.db.logger.Error("query preparation failed",
-					"sql", q.sql,
-					"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-					"error", err,
-				)
-			}
 			return err
 		}
 		rows, err = stmt.QueryContext(ctx, q.params...)
 	}
 	if err != nil {
 		elapsed := time.Since(start)
-		if !isNoopLogger(q.db.logger) {
-			q.db.logger.Error("query execution failed",
-				"sql", q.sql,
-				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-				"duration_ms", elapsed.Milliseconds(),
-				"error", err,
-			)
-		}
 		q.db.invokeHook(ctx, QueryEvent{
 			SQL:       q.sql,
 			Args:      q.params,
@@ -501,13 +363,6 @@ func (q *Query) Row(dest ...any) error {
 			err = wrapErrNotFound()
 		}
 		elapsed := time.Since(start)
-		if !isNoopLogger(q.db.logger) {
-			q.db.logger.Warn("query returned no rows",
-				"sql", q.sql,
-				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-				"duration_ms", elapsed.Milliseconds(),
-			)
-		}
 		q.db.invokeHook(ctx, QueryEvent{
 			SQL:       q.sql,
 			Args:      q.params,
@@ -521,14 +376,6 @@ func (q *Query) Row(dest ...any) error {
 	// Scan into dest variables
 	if err := rows.Scan(dest...); err != nil {
 		elapsed := time.Since(start)
-		if !isNoopLogger(q.db.logger) {
-			q.db.logger.Error("row scanning failed",
-				"sql", q.sql,
-				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-				"duration_ms", elapsed.Milliseconds(),
-				"error", err,
-			)
-		}
 		q.db.invokeHook(ctx, QueryEvent{
 			SQL:       q.sql,
 			Args:      q.params,
@@ -540,17 +387,6 @@ func (q *Query) Row(dest ...any) error {
 	}
 
 	elapsed := time.Since(start)
-
-	// Log success
-	if !isNoopLogger(q.db.logger) {
-		q.db.logger.Info("query executed",
-			"sql", q.sql,
-			"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-			"duration_ms", elapsed.Milliseconds(),
-			"rows", 1,
-			"database", q.db.driverName,
-		)
-	}
 
 	// Invoke query hook
 	q.db.invokeHook(ctx, QueryEvent{
@@ -574,19 +410,12 @@ func (q *Query) Row(dest ...any) error {
 //	var emails []string
 //	err := db.Select("email").From("users").Column(&emails)
 //
-//nolint:gocognit,gocyclo,cyclop,funlen,nestif // Query execution requires comprehensive error handling and logging
+//nolint:cyclop // Column scanning requires sequential steps
 func (q *Query) Column(slice any) error {
 	ctx := q.getContext()
 	start := time.Now()
 
 	if err := q.validateBeforeExec(ctx); err != nil {
-		if !isNoopLogger(q.db.logger) {
-			q.db.logger.Error("query preparation failed",
-				"sql", q.sql,
-				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-				"error", err,
-			)
-		}
 		return err
 	}
 
@@ -612,27 +441,12 @@ func (q *Query) Column(slice any) error {
 		var stmt *sql.Stmt
 		stmt, err = q.prepareStatement(ctx)
 		if err != nil {
-			if !isNoopLogger(q.db.logger) {
-				q.db.logger.Error("query preparation failed",
-					"sql", q.sql,
-					"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-					"error", err,
-				)
-			}
 			return err
 		}
 		rows, err = stmt.QueryContext(ctx, q.params...)
 	}
 	if err != nil {
 		elapsed := time.Since(start)
-		if !isNoopLogger(q.db.logger) {
-			q.db.logger.Error("query execution failed",
-				"sql", q.sql,
-				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-				"duration_ms", elapsed.Milliseconds(),
-				"error", err,
-			)
-		}
 		q.db.invokeHook(ctx, QueryEvent{
 			SQL:       q.sql,
 			Args:      q.params,
@@ -653,15 +467,6 @@ func (q *Query) Column(slice any) error {
 		// Scan first column into element
 		if err := rows.Scan(elem.Interface()); err != nil {
 			elapsed := time.Since(start)
-			if !isNoopLogger(q.db.logger) {
-				q.db.logger.Error("column scanning failed",
-					"sql", q.sql,
-					"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-					"duration_ms", elapsed.Milliseconds(),
-					"row", rowCount,
-					"error", err,
-				)
-			}
 			q.db.invokeHook(ctx, QueryEvent{
 				SQL:       q.sql,
 				Args:      q.params,
@@ -680,14 +485,6 @@ func (q *Query) Column(slice any) error {
 	// Check for iteration errors
 	if err := rows.Err(); err != nil {
 		elapsed := time.Since(start)
-		if !isNoopLogger(q.db.logger) {
-			q.db.logger.Error("row iteration failed",
-				"sql", q.sql,
-				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-				"duration_ms", elapsed.Milliseconds(),
-				"error", err,
-			)
-		}
 		q.db.invokeHook(ctx, QueryEvent{
 			SQL:       q.sql,
 			Args:      q.params,
@@ -699,17 +496,6 @@ func (q *Query) Column(slice any) error {
 	}
 
 	elapsed := time.Since(start)
-
-	// Log success
-	if !isNoopLogger(q.db.logger) {
-		q.db.logger.Info("query executed",
-			"sql", q.sql,
-			"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-			"duration_ms", elapsed.Milliseconds(),
-			"rows", rowCount,
-			"database", q.db.driverName,
-		)
-	}
 
 	// Invoke query hook
 	q.db.invokeHook(ctx, QueryEvent{
@@ -725,19 +511,11 @@ func (q *Query) Column(slice any) error {
 // All fetches all rows into a slice of structs.
 // If query is part of a transaction, uses transaction connection.
 //
-//nolint:cyclop,funlen,nestif // Query execution requires comprehensive error handling and logging
 func (q *Query) All(dest any) error {
 	ctx := q.getContext()
 	start := time.Now()
 
 	if err := q.validateBeforeExec(ctx); err != nil {
-		if !isNoopLogger(q.db.logger) {
-			q.db.logger.Error("query preparation failed",
-				"sql", q.sql,
-				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-				"error", err,
-			)
-		}
 		return err
 	}
 
@@ -750,27 +528,12 @@ func (q *Query) All(dest any) error {
 		var stmt *sql.Stmt
 		stmt, err = q.prepareStatement(ctx)
 		if err != nil {
-			if !isNoopLogger(q.db.logger) {
-				q.db.logger.Error("query preparation failed",
-					"sql", q.sql,
-					"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-					"error", err,
-				)
-			}
 			return err
 		}
 		rows, err = stmt.QueryContext(ctx, q.params...)
 	}
 	if err != nil {
 		elapsed := time.Since(start)
-		if !isNoopLogger(q.db.logger) {
-			q.db.logger.Error("query execution failed",
-				"sql", q.sql,
-				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-				"duration_ms", elapsed.Milliseconds(),
-				"error", err,
-			)
-		}
 		q.db.invokeHook(ctx, QueryEvent{
 			SQL:       q.sql,
 			Args:      q.params,
@@ -791,14 +554,6 @@ func (q *Query) All(dest any) error {
 	}
 	if scanErr != nil {
 		elapsed := time.Since(start)
-		if !isNoopLogger(q.db.logger) {
-			q.db.logger.Error("row scanning failed",
-				"sql", q.sql,
-				"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-				"duration_ms", elapsed.Milliseconds(),
-				"error", scanErr,
-			)
-		}
 		q.db.invokeHook(ctx, QueryEvent{
 			SQL:       q.sql,
 			Args:      q.params,
@@ -810,16 +565,6 @@ func (q *Query) All(dest any) error {
 	}
 
 	elapsed := time.Since(start)
-
-	// Log success
-	if !isNoopLogger(q.db.logger) {
-		q.db.logger.Info("query executed",
-			"sql", q.sql,
-			"params", q.db.sanitizer.FormatParams(q.db.sanitizer.MaskParams(q.sql, q.params)),
-			"duration_ms", elapsed.Milliseconds(),
-			"database", q.db.driverName,
-		)
-	}
 
 	// Invoke query hook
 	q.db.invokeHook(ctx, QueryEvent{
