@@ -80,10 +80,10 @@ func (sc *StmtCache) Set(key string, stmt *sql.Stmt) {
 	// Check if key already exists.
 	if elem, exists := sc.items[key]; exists {
 		// Update existing entry and move to front.
+		// Do NOT close old stmt — another goroutine may still be using it.
+		// database/sql manages stmt lifecycle via connection pool.
 		sc.lruList.MoveToFront(elem)
 		entry := elem.Value.(*cacheEntry)
-		// Close old statement before replacing.
-		_ = entry.stmt.Close() // Best effort close.
 		entry.stmt = stmt
 		return
 	}
@@ -113,12 +113,11 @@ func (sc *StmtCache) evictOldest() {
 			continue // Skip pinned entries
 		}
 
-		// Found unpinned entry, evict it
+		// Found unpinned entry, evict it.
+		// Do NOT close stmt — another goroutine may still be using it.
+		// Evicted stmts will be closed when DB.Close() is called.
 		sc.lruList.Remove(elem)
 		delete(sc.items, entry.key)
-
-		// Close the evicted statement (best effort).
-		_ = entry.stmt.Close()
 		sc.evictions.Add(1)
 		return
 	}

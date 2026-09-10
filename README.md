@@ -27,7 +27,7 @@
 - **Row() / Column()** - Convenient scalar and single-column queries
 - **Prepare() / Close()** - Manual statement control for batch operations
 - **Transaction Support** - Full ACID with all isolation levels
-- **Enterprise Security** - SQL injection prevention, audit logging, compliance
+- **Security** - Parameterized queries prevent SQL injection by design
 - **Batch Operations** - Efficient multi-row INSERT and UPDATE
 - **JOIN Operations** - INNER, LEFT, RIGHT, FULL, CROSS JOIN support
 - **Sorting & Pagination** - ORDER BY, LIMIT, OFFSET, DISTINCT, FOR UPDATE/FOR SHARE
@@ -811,11 +811,11 @@ Relica adds powerful SQL features for complex queries.
 ```go
 // Find users who have placed orders
 sub := db.Select("user_id").From("orders").Where("status = ?", "completed")
-db.Select().From("users").Where(relica.In("id", sub)).All(&users)
+db.Select().From("users").Where(relica.In("id", sub.AsExpression())).All(&users)
 
 // Find users with at least one order (EXISTS is often faster)
 orderCheck := db.Select("1").From("orders").Where("orders.user_id = users.id")
-db.Select().From("users").Where(relica.Exists(orderCheck)).All(&users)
+db.Select().From("users").Where(relica.Exists(orderCheck.AsExpression())).All(&users)
 ```
 
 **FROM Subqueries**:
@@ -1206,55 +1206,22 @@ if err := db.PingContext(ctx); err != nil {
 fmt.Println(db.DriverName()) // "postgres", "mysql", or "sqlite3"
 ```
 
-## 🛡️ Enterprise Security
+## 🛡️ Security
 
-Relica provides enterprise-grade security features for protecting your database operations:
-
-### SQL Injection Prevention
-
-**Pattern-based detection** of OWASP Top 10 SQL injection attacks with <2% overhead.
-
-> **Note**: Security features (`WithValidator`, `WithAuditLog`) use internal types from `internal/security`. See [Security Guide](docs/guides/SECURITY.md) for integration instructions.
-
-**Relica's primary defense** against SQL injection is the use of parameterized queries (placeholders `?`). All query builder methods pass values as parameters, never interpolated into SQL strings:
+Relica's primary defense against SQL injection is **parameterized queries by design**. All query builder methods pass values as parameters, never interpolated into SQL strings:
 
 ```go
-// Safe - values are always parameterized
+// Safe — values are always parameterized
 db.Select().From("users").
     Where(relica.Eq("id", userInput)).
     One(&user)
 
-// Safe - Model() API uses parameterized queries internally
+// Safe — Model() API uses parameterized queries internally
 db.Model(&user).Insert()
 db.Model(&user).Update("status")
 ```
 
-**Detected attack vectors:**
-- Tautology attacks (`1 OR 1=1`)
-- Comment injection (`admin'--`)
-- Stacked queries (`; DROP TABLE`)
-- UNION attacks
-- Command execution (`xp_cmdshell`, `exec()`)
-- Information schema access
-- Timing attacks (`pg_sleep`, `benchmark`)
-
-### Audit Logging
-
-**Comprehensive operation tracking** for GDPR, HIPAA, PCI-DSS, SOC2 compliance.
-
-> **Note**: Audit logging uses internal types. See [Security Guide](docs/guides/SECURITY.md) for integration instructions.
-
-**Audit log includes:**
-- Timestamp, user, client IP, request ID
-- Operation (INSERT, UPDATE, DELETE, SELECT)
-- Query execution time
-- Success/failure status
-- **Parameter hashing** (NOT raw values) for GDPR compliance
-
-### Security Guides
-
-- **[Security Guide](docs/guides/SECURITY.md)** - Complete security features overview
-- **[Security Testing Guide](docs/guides/SECURITY_TESTING.md)** - OWASP-based testing examples
+See [Security Guide](docs/guides/SECURITY.md) for more details.
 
 ## 📖 Documentation
 
