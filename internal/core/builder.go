@@ -19,15 +19,24 @@ import (
 // Only matches explicit AS keyword to avoid false positives with expressions like "level + 1".
 var selectAliasRegex = regexp.MustCompile(`(?i)\s+AS\s+([\w\-.]+)$`)
 
-// replacePlaceholders replaces positional ? placeholders with dialect-specific placeholders
-// (e.g. $1, $2 for PostgreSQL), starting from startIndex.
+// replacePlaceholders replaces positional ? placeholders with dialect-specific
+// placeholders (e.g. $1, $2 for PostgreSQL), starting from startIndex.
 //
-// It is safe to use with SQL fragments that contain:
-//   - Single-quoted string literals: WHERE name = 'why?' — the ? inside the literal is not replaced
-//   - Escaped single quotes: WHERE name = 'it”s ok?' — handled correctly
-//   - PostgreSQL JSONB key-existence operator ??: treated as a literal ?? (not replaced)
+// Handles PostgreSQL JSONB operators and SQL syntax:
+//   - ?? (client-side escape) → emits single ? to the server
+//   - ?| and ?& (JSONB array operators) → preserved as-is
+//   - ? followed by 'literal' (JSONB key-existence) → preserved as-is
+//   - ? inside single-quoted strings ('why?') → not replaced
+//   - ? inside SQL comments (-- ... or /* ... */) → not replaced
+//   - Escaped quotes ('it”s') → handled correctly
 //
-// For MySQL/SQLite dialects where Placeholder(1) == "?", sql is returned unchanged.
+// For a JSONB key from a parameter, write: data ?? ? (first ?? escapes to ?,
+// second ? becomes $N).
+//
+// Known limitations: E'...\'..' (C-style escapes), $$...$$ (dollar-quoting),
+// and “odd?col” (quoted identifiers with ?) are not handled.
+//
+// For MySQL/SQLite dialects where Placeholder(1) == “?”, clause is returned unchanged.
 //
 //nolint:funlen // SQL lexer requires sequential state tracking; splitting reduces clarity.
 func replacePlaceholders(clause string, startIndex int, dialect dialects.Dialect) string {

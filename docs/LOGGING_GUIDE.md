@@ -1,5 +1,10 @@
 # Logging and Tracing Guide for Relica
 
+> **Note**: `WithTracer` and `NewOtelTracer` described below are currently
+> **internal** and not part of the public API. Logging via `WithLogger` and
+> `WithQueryHook` is fully public and available. The tracing examples are
+> for architectural reference only.
+
 This guide covers SQL query logging and distributed tracing capabilities in Relica.
 
 ## Table of Contents
