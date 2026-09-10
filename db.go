@@ -3061,7 +3061,12 @@ func DetectOperation(query string) string { return core.DetectOperation(query) }
 //	db.Select("*").From("users").All(&results)
 type NullStringMap = core.NullStringMap
 
+// defaultSanitizer is a package-level singleton to avoid recompiling 20 regexps per call.
+var defaultSanitizer = logger.NewSanitizer(nil)
+
 // MaskArgs masks sensitive parameter values (passwords, tokens, API keys) in query args.
+// If the SQL references a sensitive column (password, token, api_key, etc.), ALL parameters
+// of that statement are masked — not just the sensitive one. This is a conservative heuristic.
 // Use this in custom QueryHook implementations to safely log parameters.
 //
 // Example:
@@ -3071,8 +3076,7 @@ type NullStringMap = core.NullStringMap
 //	    slog.Info("query", "sql", e.SQL, "args", masked)
 //	})
 func MaskArgs(query string, args []any) []any {
-	s := logger.NewSanitizer(nil)
-	return s.MaskParams(query, args)
+	return defaultSanitizer.MaskParams(query, args)
 }
 
 // ============================================================================

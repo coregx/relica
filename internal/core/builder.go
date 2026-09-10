@@ -869,12 +869,15 @@ func (sq *SelectQuery) buildTableWithAlias(table string, dialect dialects.Dialec
 
 // buildFrom constructs the FROM clause, handling both tables and subqueries.
 // Returns the FROM SQL fragment and appends any subquery parameters to params.
+// When called from renderSQL, subqueries are rendered with renderSQL so all
+// placeholders remain as ? for the single final replacePlaceholders pass.
 func (sq *SelectQuery) buildFrom(dialect dialects.Dialect, params *[]any) string {
 	// Prefer fromSrc if set (supports subqueries)
 	if sq.fromSrc != nil {
 		if sq.fromSrc.isSubquery {
-			// FROM (SELECT ...) AS alias
-			subSQL, subArgs := sq.fromSrc.subquery.buildSQL(dialect)
+			// FROM (SELECT ...) AS alias — use renderSQL so ? placeholders are
+			// preserved for the single outer replacePlaceholders pass in buildSQL.
+			subSQL, subArgs := sq.fromSrc.subquery.renderSQL(dialect)
 			*params = append(*params, subArgs...)
 			quotedAlias := dialect.QuoteIdentifier(sq.fromSrc.alias)
 			return " FROM (" + subSQL + ") AS " + quotedAlias
@@ -1181,29 +1184,12 @@ func (sq *SelectQuery) buildHaving(params *[]any) string {
 	return " HAVING " + strings.Join(parts, " AND ")
 }
 
-// renumberHavingPlaceholders renumbers placeholders in HAVING clause for PostgreSQL.
-// For databases using positional placeholders ($1, $2), replaces ? with numbered placeholders.
-func (sq *SelectQuery) renumberHavingPlaceholders(havingClause string, totalParams int, dialect dialects.Dialect) string {
-	if dialect.Placeholder(1) == "?" || len(sq.havingClauses) == 0 {
-		return havingClause
-	}
-
-	// Count HAVING arg count to determine starting placeholder index.
-	// totalParams already includes HAVING args (appended by buildHaving via pointer),
-	// so subtract the total number of HAVING args to get the pre-HAVING param count.
-	havingArgCount := 0
-	for _, c := range sq.havingClauses {
-		havingArgCount += len(c.args)
-	}
-	startIndex := totalParams - havingArgCount + 1
-	return replacePlaceholders(havingClause, startIndex, dialect)
-}
-
 // buildWhere constructs the WHERE clause from the where slice.
 // Returns empty string if no WHERE is specified.
 // Multiple clauses are combined with AND.
-// Appends parameters to params slice and handles placeholder renumbering for PostgreSQL.
-func (sq *SelectQuery) buildWhere(dialect dialects.Dialect, params *[]any) string {
+// Appends parameters to params slice. Placeholders remain as ? — the single
+// replacePlaceholders pass in buildSQL handles final renumbering for PostgreSQL.
+func (sq *SelectQuery) buildWhere(_ dialects.Dialect, params *[]any) string {
 	if len(sq.where) == 0 {
 		return ""
 	}
@@ -1211,11 +1197,7 @@ func (sq *SelectQuery) buildWhere(dialect dialects.Dialect, params *[]any) strin
 	whereParams := sq.params
 	whereClause := " WHERE " + strings.Join(sq.where, " AND ")
 
-	// Renumber WHERE placeholders for PostgreSQL ($1, $2, etc.).
-	// Start numbering after CTE + SelectExpr + FROM + JOIN params.
-	whereClause = replacePlaceholders(whereClause, len(*params)+1, dialect)
-
-	// Append WHERE params after CTE + SelectExpr + FROM + JOIN params
+	// Append WHERE params (no renumbering here — buildSQL does one final pass)
 	*params = append(*params, whereParams...)
 
 	return whereClause
@@ -1246,10 +1228,11 @@ func (sq *SelectQuery) buildWithClause(dialect dialects.Dialect) (string, []any)
 		parts = append(parts, "WITH")
 	}
 
-	// Build each CTE
+	// Build each CTE using renderSQL so ? placeholders are preserved for the
+	// single outer replacePlaceholders pass applied by buildSQL.
 	cteStrings := make([]string, 0, len(sq.ctes))
 	for _, cte := range sq.ctes {
-		cteSQL, cteArgs := cte.query.buildSQL(dialect)
+		cteSQL, cteArgs := cte.query.renderSQL(dialect)
 
 		// Quote CTE name
 		quotedName := dialect.QuoteIdentifier(cte.name)
@@ -1266,17 +1249,20 @@ func (sq *SelectQuery) buildWithClause(dialect dialects.Dialect) (string, []any)
 	return strings.Join(parts, " "), allArgs
 }
 
-// buildSQL constructs the SQL string and parameters for SelectQuery.
-// This is the core implementation shared by both Build() and the Expression interface.
-// Parameter ordering: CTEs → SelectExprs → SubExprs → FROM subquery → JOINs → WHERE → HAVING → GroupByExprs → OrderByExprs
+// renderSQL assembles the full SQL string with all placeholders as literal ?
+// and collects args in textual order. It intentionally does NOT call
+// replacePlaceholders — that single pass is deferred to buildSQL so that
+// subqueries embedded in WHERE (IN, EXISTS), GROUP BY expressions, ORDER BY
+// expressions, CTEs, and UNION branches all share the same flat ? sequence
+// and are renumbered exactly once at the outermost level.
 //
-//nolint:funlen // Central query assembly requires sequential clause building; splitting would reduce clarity.
-func (sq *SelectQuery) buildSQL(dialect dialects.Dialect) (string, []any) {
+// Parameter ordering: CTEs → SelectExprs → SubExprs → FROM subquery → JOINs → WHERE → HAVING → GroupByExprs → OrderByExprs → UNION branches
+func (sq *SelectQuery) renderSQL(dialect dialects.Dialect) (string, []any) {
 	// Collect all parameters in correct order
 	var allParams []any
 	var parts []string
 
-	// 1. Build WITH clause if CTEs exist
+	// 1. Build WITH clause if CTEs exist (uses renderSQL recursively)
 	if len(sq.ctes) > 0 {
 		withClause, withArgs := sq.buildWithClause(dialect)
 		parts = append(parts, withClause)
@@ -1289,20 +1275,11 @@ func (sq *SelectQuery) buildSQL(dialect dialects.Dialect) (string, []any) {
 	}
 
 	// 3. Build type-safe subquery SELECT expressions (SelectSub).
-	// Each expression is built with the correct dialect, then its placeholders are renumbered
-	// so they continue from the current allParams count (for PostgreSQL $N style).
+	// Expressions are rendered with renderSQL so their ? placeholders remain
+	// raw and are renumbered by the single final pass in buildSQL.
 	renderedSubExprs := make([]string, len(sq.subExprs))
 	for i, sub := range sq.subExprs {
 		subSQL, subArgs := sub.exp.Build(dialect)
-		if dialect.Placeholder(1) != "?" && len(subArgs) > 0 {
-			// Renumber placeholders from $1 to the correct offset.
-			startIndex := len(allParams) + 1
-			for j := range subArgs {
-				oldPlaceholder := dialect.Placeholder(j + 1)
-				newPlaceholder := dialect.Placeholder(startIndex + j)
-				subSQL = strings.Replace(subSQL, oldPlaceholder, newPlaceholder, 1)
-			}
-		}
 		renderedSubExprs[i] = subSQL
 		allParams = append(allParams, subArgs...)
 	}
@@ -1310,25 +1287,22 @@ func (sq *SelectQuery) buildSQL(dialect dialects.Dialect) (string, []any) {
 	// 4. Build SELECT clause (handles aggregates, raw expressions, and subExprs)
 	cols := sq.buildSelect(dialect, renderedSubExprs)
 
-	// 5. Build FROM clause (may be table or subquery)
+	// 5. Build FROM clause (may be table or subquery; uses renderSQL for subqueries)
 	fromClause := sq.buildFrom(dialect, &allParams)
 
 	// 6. Build JOIN clause (adds params via pointer)
 	joinClause := sq.buildJoins(dialect, &allParams)
 
-	// 7. Build WHERE clause (adds params via pointer)
+	// 7. Build WHERE clause (appends params; no renumbering — deferred to buildSQL)
 	whereClause := sq.buildWhere(dialect, &allParams)
 
-	// 9. Build GROUP BY clause
+	// 8. Build GROUP BY clause (column names only — no params)
 	groupByClause := sq.buildGroupBy(dialect)
 
-	// 10. Build HAVING clause (adds params via pointer)
+	// 9. Build HAVING clause (adds params via pointer)
 	havingClause := sq.buildHaving(&allParams)
 
-	// Renumber HAVING placeholders if needed (PostgreSQL)
-	havingClause = sq.renumberHavingPlaceholders(havingClause, len(allParams), dialect)
-
-	// 10a. Collect GROUP BY expression params
+	// 10. Collect GROUP BY expression params (raw ? in SQL, renumbered by final pass)
 	for _, expr := range sq.groupByExprs {
 		allParams = append(allParams, expr.Args...)
 	}
@@ -1340,7 +1314,7 @@ func (sq *SelectQuery) buildSQL(dialect dialects.Dialect) (string, []any) {
 	// 11. Build ORDER BY clause
 	orderByClause := sq.buildOrderBy(dialect)
 
-	// 11a. Collect ORDER BY expression params
+	// 12. Collect ORDER BY expression params (raw ? in SQL, renumbered by final pass)
 	for _, expr := range sq.orderByExprs {
 		allParams = append(allParams, expr.Args...)
 	}
@@ -1349,10 +1323,10 @@ func (sq *SelectQuery) buildSQL(dialect dialects.Dialect) (string, []any) {
 		allParams = append(allParams, subArgs...)
 	}
 
-	// 12. Build LIMIT/OFFSET clause
+	// 13. Build LIMIT/OFFSET clause
 	limitOffsetClause := sq.buildLimitOffset()
 
-	// 13. Build lock clause (FOR UPDATE/FOR SHARE — skip for SQLite)
+	// 14. Build lock clause (FOR UPDATE/FOR SHARE — skip for SQLite)
 	lockClause := ""
 	if sq.lockClause != "" && sq.builder != nil {
 		dn := sq.builder.db.DriverName()
@@ -1364,7 +1338,7 @@ func (sq *SelectQuery) buildSQL(dialect dialects.Dialect) (string, []any) {
 	// Construct SQL: SELECT ... FROM ... JOIN ... WHERE ... GROUP BY ... HAVING ... ORDER BY ... LIMIT ... OFFSET ... FOR UPDATE
 	query := "SELECT " + cols + fromClause + joinClause + whereClause + groupByClause + havingClause + orderByClause + limitOffsetClause + lockClause
 
-	// 12. Handle set operations (UNION, INTERSECT, EXCEPT)
+	// 15. Handle set operations (UNION, INTERSECT, EXCEPT) — uses renderSQL recursively
 	if len(sq.unions) > 0 {
 		mainSQL, finalParams := sq.buildSetOperations(query, allParams, dialect)
 		// Prepend WITH clause if exists
@@ -1382,26 +1356,28 @@ func (sq *SelectQuery) buildSQL(dialect dialects.Dialect) (string, []any) {
 	return query, allParams
 }
 
+// buildSQL constructs the final SQL string and parameters for SelectQuery.
+// It calls renderSQL to assemble the full query with all placeholders as ?
+// then applies a single replacePlaceholders pass to renumber them for the
+// target dialect (e.g. $1, $2, $3 for PostgreSQL). This single-pass approach
+// ensures correct sequential numbering across WHERE, GROUP BY, ORDER BY,
+// subqueries, CTEs, and UNION branches without any intermediate renumbering.
+func (sq *SelectQuery) buildSQL(dialect dialects.Dialect) (string, []any) {
+	rawSQL, args := sq.renderSQL(dialect)
+	return replacePlaceholders(rawSQL, 1, dialect), args
+}
+
 // buildSetOperations handles UNION, INTERSECT, EXCEPT operations.
-// This method is extracted from buildSQL to reduce cognitive complexity.
+// This method is extracted from renderSQL to reduce cognitive complexity.
+// Each branch is rendered via renderSQL so all ? placeholders are preserved
+// for the single final replacePlaceholders pass applied by buildSQL.
 func (sq *SelectQuery) buildSetOperations(mainQuery string, allParams []any, dialect dialects.Dialect) (string, []any) {
 	// Wrap main query in parentheses
 	mainSQL := "(" + mainQuery + ")"
 
 	for _, u := range sq.unions {
-		// Build union query SQL
-		unionSQL, unionArgs := u.query.buildSQL(dialect)
-
-		// Renumber placeholders if needed (PostgreSQL)
-		if dialect.Placeholder(1) != "?" {
-			// Renumber placeholders to continue from current parameter count
-			startIndex := len(allParams) + 1
-			for i := 0; i < len(unionArgs); i++ {
-				oldPlaceholder := dialect.Placeholder(i + 1)
-				newPlaceholder := dialect.Placeholder(startIndex + i)
-				unionSQL = strings.Replace(unionSQL, oldPlaceholder, newPlaceholder, 1)
-			}
-		}
+		// Build union query SQL with raw ? placeholders (no renumbering here)
+		unionSQL, unionArgs := u.query.renderSQL(dialect)
 
 		// Determine operation keyword
 		op := u.op
@@ -1717,8 +1693,10 @@ type selectQueryExpression struct {
 
 // Build implements the Expression interface for SelectQuery.
 // This allows SelectQuery to be used in subquery contexts (IN, EXISTS, FROM).
+// Uses renderSQL so ? placeholders are preserved for the single final
+// replacePlaceholders pass applied by the outermost buildSQL call.
 func (sqe *selectQueryExpression) Build(dialect dialects.Dialect) (string, []any) {
-	return sqe.query.buildSQL(dialect)
+	return sqe.query.renderSQL(dialect)
 }
 
 // AsExpression converts a SelectQuery to an Expression, allowing it to be used as a subquery.

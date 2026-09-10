@@ -8,11 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.17.2] - 2026-09-11
 
+### Breaking Changes (pre-v1.0 API cleanup)
+
+- **`WithSensitiveFields` removed** — use `MaskArgs()` in custom hooks instead
+- **`WithLogger` no longer logs parameters** — parameters are not logged by default. Use `MaskArgs()` in a custom `WithQueryHook` to log masked parameters
+
+### Added
+
+- **`MaskArgs(query, args)`** — exported safe parameter masking for custom QueryHook implementations. Note: masks ALL args of a statement that references a sensitive column (conservative heuristic)
+
 ### Changed
 
-- **Logger removed from query hot-path** — `WithLogger()` now wraps Logger as a `QueryHook`. Zero overhead when no hook configured. Sanitizer regex no longer runs on every query (~30µs → 0). `WithQueryHook` composes: multiple hooks chain instead of replacing
-- **`WithSensitiveFields` removed** — use `MaskArgs()` in custom hooks instead
-- **`MaskArgs(sql, args)`** exported — safe parameter masking for custom QueryHook implementations
+- **Logger removed from query hot-path** — `WithLogger()` now wraps Logger as a `QueryHook`. Zero overhead when no hook configured (~30µs → 0). `WithQueryHook` composes: multiple hooks chain instead of replacing
 
 ### Fixed
 

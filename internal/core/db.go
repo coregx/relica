@@ -91,6 +91,8 @@ func WithConnMaxIdleTime(d time.Duration) Option {
 func WithHealthCheck(interval time.Duration) Option {
 	return func(db *DB) {
 		if interval > 0 {
+			// Health checker uses NoopLogger — ping failures are silent.
+			// Use WithQueryHook to observe health check results if needed.
 			db.healthChecker = newHealthChecker(db.sqlDB, &logger.NoopLogger{}, interval)
 			db.healthChecker.start()
 		}
