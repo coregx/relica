@@ -2985,14 +2985,16 @@ func WithHealthCheck(interval time.Duration) Option { return core.WithHealthChec
 func WithStmtCacheCapacity(capacity int) Option { return core.WithStmtCacheCapacity(capacity) }
 
 // WithLogger sets the logger for database query logging.
-// If not set, a NoopLogger is used (zero overhead when logging is disabled).
+// The logger is wrapped as a QueryHook: errors are logged at Error level,
+// successful queries at Info level.
+// If not set, no logging is performed (zero overhead).
 //
 // Example:
 //
 //	import "log/slog"
-//	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+//	l := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 //	db, err := relica.Open("postgres", dsn,
-//	    relica.WithLogger(logger.NewSlogAdapter(logger)))
+//	    relica.WithLogger(relica.NewSlogAdapter(l)))
 func WithLogger(l Logger) Option { return core.WithLogger(l) }
 
 // WithQueryHook sets a callback function that is invoked after each query execution.
@@ -3006,15 +3008,6 @@ func WithLogger(l Logger) Option { return core.WithLogger(l) }
 //	        slog.Info("query", "sql", e.SQL, "duration", e.Duration, "err", e.Error)
 //	    }))
 func WithQueryHook(hook QueryHook) Option { return core.WithQueryHook(hook) }
-
-// WithSensitiveFields sets the list of sensitive field names for parameter masking.
-// If not set, default sensitive field patterns are used.
-//
-// Example:
-//
-//	db, err := relica.Open("postgres", dsn,
-//	    relica.WithSensitiveFields([]string{"password", "token", "api_key"}))
-func WithSensitiveFields(fields []string) Option { return core.WithSensitiveFields(fields) }
 
 // Logger defines the logging interface for Relica.
 // Implementations should handle structured logging with key-value pairs.
@@ -3067,6 +3060,24 @@ func DetectOperation(query string) string { return core.DetectOperation(query) }
 //	var results []relica.NullStringMap
 //	db.Select("*").From("users").All(&results)
 type NullStringMap = core.NullStringMap
+
+// defaultSanitizer is a package-level singleton to avoid recompiling 20 regexps per call.
+var defaultSanitizer = logger.NewSanitizer(nil)
+
+// MaskArgs masks sensitive parameter values (passwords, tokens, API keys) in query args.
+// If the SQL references a sensitive column (password, token, api_key, etc.), ALL parameters
+// of that statement are masked — not just the sensitive one. This is a conservative heuristic.
+// Use this in custom QueryHook implementations to safely log parameters.
+//
+// Example:
+//
+//	relica.WithQueryHook(func(ctx context.Context, e relica.QueryEvent) {
+//	    masked := relica.MaskArgs(e.SQL, e.Args)
+//	    slog.Info("query", "sql", e.SQL, "args", masked)
+//	})
+func MaskArgs(query string, args []any) []any {
+	return defaultSanitizer.MaskParams(query, args)
+}
 
 // ============================================================================
 // Re-export expression builders

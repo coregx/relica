@@ -66,7 +66,7 @@ subquery := db.Select("user_id").
 
 db.Select().
     From("users").
-    Where(relica.In("id", subquery)).
+    Where(relica.In("id", subquery.AsExpression())).
     All(&users)
 ```
 
@@ -79,7 +79,7 @@ orderCheck := db.Select("1").
 
 db.Select().
     From("users").
-    Where(relica.Exists(orderCheck)).
+    Where(relica.Exists(orderCheck.AsExpression())).
     All(&users)
 ```
 

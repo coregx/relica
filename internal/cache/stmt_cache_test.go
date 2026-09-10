@@ -492,3 +492,65 @@ func TestStmtCache_SingleItemCache(t *testing.T) {
 		t.Error("expected true")
 	}
 }
+
+func TestGetOrSet_Insert(t *testing.T) {
+	cache := NewStmtCacheWithCapacity(10)
+	db := setupTestDB(t)
+	stmt := createTestStmt(t, db, "SELECT 1")
+
+	got, inserted := cache.GetOrSet("q1", stmt)
+	if !inserted {
+		t.Error("expected inserted=true for new key")
+	}
+	if got != stmt {
+		t.Error("expected returned stmt to be the one we passed")
+	}
+
+	cached, found := cache.Get("q1")
+	if !found {
+		t.Error("expected key in cache after GetOrSet")
+	}
+	if cached != stmt {
+		t.Error("cached stmt should be the same pointer")
+	}
+}
+
+func TestGetOrSet_RaceLoser(t *testing.T) {
+	cache := NewStmtCacheWithCapacity(10)
+	db := setupTestDB(t)
+	stmt1 := createTestStmt(t, db, "SELECT 1")
+	stmt2 := createTestStmt(t, db, "SELECT 1")
+
+	got1, ins1 := cache.GetOrSet("q1", stmt1)
+	if !ins1 || got1 != stmt1 {
+		t.Error("first GetOrSet should insert")
+	}
+
+	got2, ins2 := cache.GetOrSet("q1", stmt2)
+	if ins2 {
+		t.Error("second GetOrSet should NOT insert")
+	}
+	if got2 != stmt1 {
+		t.Error("loser should get the cached stmt, not its own")
+	}
+}
+
+func TestGetOrSet_NoDoubleCount(t *testing.T) {
+	cache := NewStmtCacheWithCapacity(10)
+	db := setupTestDB(t)
+	stmt := createTestStmt(t, db, "SELECT 1")
+
+	_, found := cache.Get("q1")
+	if found {
+		t.Fatal("should be miss")
+	}
+	cache.GetOrSet("q1", stmt)
+
+	stats := cache.Stats()
+	if stats.Misses != 1 {
+		t.Errorf("expected 1 miss, got %d", stats.Misses)
+	}
+	if stats.Hits != 0 {
+		t.Errorf("expected 0 hits, got %d", stats.Hits)
+	}
+}

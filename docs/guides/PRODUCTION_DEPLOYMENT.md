@@ -28,9 +28,8 @@ db, err := relica.Open("postgres", dsn,
     relica.WithMaxIdleConns(5),      // 20% of MaxOpenConns
     relica.WithConnMaxLifetime(300), // 5 minutes
 
-    // Security
-    relica.WithValidator(validator),  // SQL injection prevention
-    relica.WithAuditLog(auditor),     // Compliance logging
+    // Security: parameterized queries prevent SQL injection by design
+    // Advanced validator/auditor options are internal — see docs/guides/SECURITY.md
 
     // Performance
     relica.WithStmtCacheCapacity(1000), // Prepared statement cache

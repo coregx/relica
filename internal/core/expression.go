@@ -312,10 +312,10 @@ func NotIn(col string, values ...any) Expression {
 	return &InExp{Col: col, Values: values, Not: true}
 }
 
-// selectQueryBuilder is an interface to avoid circular imports.
-// It represents types that can build SQL queries (like SelectQuery).
-type selectQueryBuilder interface {
-	buildSQL(dialect dialects.Dialect) (string, []any)
+// selectQueryRenderer is an interface to avoid circular imports.
+// Uses renderSQL to emit ? placeholders for the single-pass renumbering in buildSQL.
+type selectQueryRenderer interface {
+	renderSQL(dialect dialects.Dialect) (string, []any)
 }
 
 // buildSubqueryIN builds an IN/NOT IN clause with a subquery.
@@ -340,8 +340,8 @@ func buildSubqueryIN(col, subSQL string, subArgs []any, not bool) (string, []any
 // Returns early if the value is a subquery (Expression or SelectQuery).
 func buildInExpSingleValue(col string, val any, not bool, dialect dialects.Dialect) (string, []any, bool) {
 	// Check if value is a SelectQuery (most common subquery case)
-	if sq, ok := val.(selectQueryBuilder); ok {
-		subSQL, subArgs := sq.buildSQL(dialect)
+	if sq, ok := val.(selectQueryRenderer); ok {
+		subSQL, subArgs := sq.renderSQL(dialect)
 		return buildSubqueryIN(col, subSQL, subArgs, not)
 	}
 

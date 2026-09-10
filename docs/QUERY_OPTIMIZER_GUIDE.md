@@ -1,6 +1,10 @@
 # Query Optimizer Guide
 
 >  Automatic query performance optimization and analysis
+>
+> **Note**: The Query Optimizer is currently **internal** (`internal/optimizer`)
+> and not accessible from external Go modules. `WithOptimizer()` is not part of
+> the public API. This guide is for architectural reference only.
 
 The Query Optimizer automatically analyzes query performance, detects issues, and provides actionable optimization suggestions.
 

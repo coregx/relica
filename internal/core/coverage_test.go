@@ -160,8 +160,9 @@ func TestWithLogger(t *testing.T) {
 	opt := WithLogger(l)
 	opt(db)
 
-	if db.logger == nil {
-		t.Error("WithLogger: expected logger to be set, got nil")
+	// WithLogger now wraps the logger as a QueryHook, so the hook must be set.
+	if db.queryHook == nil {
+		t.Error("WithLogger: expected queryHook to be set, got nil")
 	}
 }
 
@@ -185,17 +186,10 @@ func TestWithQueryHook(t *testing.T) {
 	}
 }
 
-func TestWithSensitiveFields(t *testing.T) {
-	db := openCovDB(t)
-	defer db.Close()
-
-	fields := []string{"password", "token"}
-	opt := WithSensitiveFields(fields)
-	opt(db)
-
-	if db.sanitizer == nil {
-		t.Error("WithSensitiveFields: expected sanitizer to be set, got nil")
-	}
+func TestWithSensitiveFields_Removed(t *testing.T) {
+	// WithSensitiveFields has been removed; this test is intentionally empty.
+	// Parameter masking is now the caller's responsibility via WithQueryHook/WithLogger.
+	_ = t
 }
 
 // ─── Category 2: DB lifecycle ─────────────────────────────────────────────────
@@ -222,8 +216,8 @@ func TestNewDB(t *testing.T) {
 	if db.dialect == nil {
 		t.Error("NewDB equivalent: dialect is nil")
 	}
-	if db.logger == nil {
-		t.Error("NewDB equivalent: logger is nil")
+	if db.queryHook != nil {
+		t.Error("NewDB equivalent: queryHook should be nil by default")
 	}
 }
 

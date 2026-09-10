@@ -90,7 +90,7 @@ func GetActiveUsers(db *relica.DB) ([]User, error) {
     var users []User
     err := db.Select().
         From("users").
-        Where(relica.In("id", subquery)).
+        Where(relica.In("id", subquery.AsExpression())).
         All(&users)
 
     return users, err
@@ -115,7 +115,7 @@ func GetPremiumUsers(db *relica.DB) ([]User, error) {
     var premiumUsers []User
     err := db.Select("id", "name", "email").
         From("users").
-        Where(relica.In("id", subquery)).
+        Where(relica.In("id", subquery.AsExpression())).
         OrderBy("name").
         All(&premiumUsers)
 
@@ -141,7 +141,7 @@ func GetInactiveUsers(db *relica.DB) ([]User, error) {
     var inactiveUsers []User
     err := db.Select().
         From("users").
-        Where(relica.NotIn("id", subquery)).
+        Where(relica.NotIn("id", subquery.AsExpression())).
         All(&inactiveUsers)
 
     return inactiveUsers, err
@@ -184,7 +184,7 @@ func GetUsersWithOrders(db *relica.DB) ([]User, error) {
     var activeUsers []User
     err := db.Select().
         From("users").
-        Where(relica.Exists(orderCheck)).
+        Where(relica.Exists(orderCheck.AsExpression())).
         All(&activeUsers)
 
     return activeUsers, err
@@ -211,7 +211,7 @@ func GetUsersWithoutOrders(db *relica.DB) ([]User, error) {
     var inactiveUsers []User
     err := db.Select().
         From("users").
-        Where(relica.NotExists(orderCheck)).
+        Where(relica.NotExists(orderCheck.AsExpression())).
         All(&inactiveUsers)
 
     return inactiveUsers, err
@@ -237,7 +237,7 @@ func GetHighValueRecentCustomers(db *relica.DB, since time.Time) ([]User, error)
     var users []User
     err := db.Select().
         From("users u").
-        Where(relica.Exists(recentOrders)).
+        Where(relica.Exists(recentOrders.AsExpression())).
         All(&users)
 
     return users, err
@@ -270,8 +270,8 @@ func GetEngagedUsers(db *relica.DB) ([]User, error) {
     err := db.Select().
         From("users").
         Where(relica.And(
-            relica.Exists(hasOrders),
-            relica.Exists(hasReviews),
+            relica.Exists(hasOrders.AsExpression()),
+            relica.Exists(hasReviews.AsExpression()),
         )).
         All(&users)
 
@@ -539,7 +539,7 @@ subquery := db.Select("user_id").
 
 db.Select().
     From("users").
-    Where(relica.In("id", subquery))
+    Where(relica.In("id", subquery.AsExpression()))
 ```
 
 **Performance**: Database executes subquery **once**, caches results, then filters outer query.
@@ -562,7 +562,7 @@ orderCheck := db.Select("1").
 
 db.Select().
     From("users").
-    Where(relica.Exists(orderCheck))
+    Where(relica.Exists(orderCheck.AsExpression()))
 ```
 
 **Performance**: Database may execute subquery **for each outer row** (can be optimized by database).
@@ -704,7 +704,7 @@ orderCheck := db.Select("1").
 
 db.Select().
     From("users").
-    Where(relica.Exists(orderCheck))
+    Where(relica.Exists(orderCheck.AsExpression()))
 ```
 
 **Note**: Most databases optimize EXISTS automatically, but explicit LIMIT doesn't hurt.
@@ -746,7 +746,8 @@ db.Select("u.id", "COUNT(o.id) as order_count").
 
 1. **Use EXISTS for existence checks**
    ```go
-   relica.Exists(db.Select("1").From("orders").Where("user_id = users.id"))
+   sub := db.Select("1").From("orders").Where("user_id = users.id")
+   relica.Exists(sub.AsExpression())
    ```
 
 2. **Add LIMIT 1 to EXISTS subqueries** (clarity)
@@ -785,10 +786,10 @@ db.Select("u.id", "COUNT(o.id) as order_count").
 2. **Don't use NOT IN with NULLable columns** (use NOT EXISTS)
    ```go
    // ❌ Bad: returns no rows if NULL exists
-   relica.NotIn("id", subquery)
+   relica.NotIn("id", subquery.AsExpression())
 
    // ✅ Good: NULL-safe
-   relica.NotExists(subquery)
+   relica.NotExists(subquery.AsExpression())
    ```
 
 3. **Don't nest too deeply** (2-3 levels max)
@@ -829,7 +830,7 @@ func GetUsersWithoutOrders(db *relica.DB) ([]User, error) {
     var users []User
     err := db.Select().
         From("users").
-        Where(relica.NotExists(orderCheck)).
+        Where(relica.NotExists(orderCheck.AsExpression())).
         All(&users)
 
     return users, err
@@ -868,7 +869,7 @@ func GetHighSpenders(db *relica.DB) ([]User, error) {
     var highSpenders []User
     err := db.Select("u.*").
         From("users u").
-        Where(relica.In("u.id", spendingQuery)).
+        Where(relica.In("u.id", spendingQuery.AsExpression())).
         All(&highSpenders)
 
     return highSpenders, err
@@ -887,7 +888,7 @@ func GetLatestOrders(db *relica.DB) ([]Order, error) {
     var orders []Order
     err := db.Select().
         From("orders").
-        Where(relica.In("id", latestOrderIds)).
+        Where(relica.In("id", latestOrderIds.AsExpression())).
         All(&orders)
 
     return orders, err
@@ -909,7 +910,7 @@ func GetDiverseShoppers(db *relica.DB) ([]User, error) {
     var users []User
     err := db.Select().
         From("users").
-        Where(relica.In("id", diverseUsers)).
+        Where(relica.In("id", diverseUsers.AsExpression())).
         All(&users)
 
     return users, err
@@ -925,7 +926,7 @@ func GetDiverseShoppers(db *relica.DB) ([]User, error) {
 // ❌ BAD: Returns nothing if subquery has NULL
 db.Select().
     From("users").
-    Where(relica.NotIn("id", subquery))
+    Where(relica.NotIn("id", subquery.AsExpression()))
 ```
 
 **Explanation**: `NULL NOT IN (1, 2, NULL)` evaluates to `UNKNOWN`, which filters out all rows.
@@ -939,7 +940,7 @@ orderCheck := db.Select("1").
 
 db.Select().
     From("users").
-    Where(relica.NotExists(orderCheck))
+    Where(relica.NotExists(orderCheck.AsExpression()))
 ```
 
 ### Issue: Slow Correlated Subquery
@@ -1001,8 +1002,8 @@ db.Select().FromSelect(subquery, "stats")
 ```go
 sql, params := db.Select().
     From("users").
-    Where(relica.In("id", subquery1)).
-    Where(relica.Exists(subquery2)).
+    Where(relica.In("id", subquery1.AsExpression())).
+    Where(relica.Exists(subquery2.AsExpression())).
     ToSQL()
 
 // Verify parameter order

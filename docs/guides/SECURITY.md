@@ -1,18 +1,17 @@
 # Security Guide
 
-> **Relica Security Features** - SQL Injection Prevention & Audit Logging
+> **Relica Security** - SQL Injection Prevention by Design
 >
-> **Last Updated**: 2025-11-13
+> **Last Updated**: 2026-09-04
 >
-> **Note**: Security features (`WithValidator`, `WithAuditLog`) use types from
-> `internal/security`, which is an internal package. These features are available
-> for use within the same Go module only. For external usage, the public API
-> exports these option functions via `relica.WithValidator()` and
-> `relica.WithAuditLog()` — but the validator/auditor types themselves must be
-> constructed from within the module. In practice, **these features are designed
-> for embedding Relica in your own Go module alongside the internal packages**.
-> The primary SQL injection defense is parameterized queries (all builder methods
-> use `?` placeholders, never string interpolation).
+> **Important**: Relica's primary and always-active defense against SQL injection
+> is **parameterized queries**. All query builder methods use placeholders — values
+> are never interpolated into SQL strings. No configuration needed.
+>
+> **Note on advanced features**: The `WithValidator` and `WithAuditLog` options
+> described below are currently **internal** (`internal/security` package) and
+> not accessible from external Go modules. They are documented here for
+> architectural reference only. Do not attempt to import `internal/security`.
 
 ---
 

@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.17.2] - 2026-09-11
+
+### Breaking Changes (pre-v1.0 API cleanup)
+
+- **`WithSensitiveFields` removed** — use `MaskArgs()` in custom hooks instead
+- **`WithLogger` no longer logs parameters** — parameters are not logged by default. Use `MaskArgs()` in a custom `WithQueryHook` to log masked parameters
+
+### Added
+
+- **`MaskArgs(query, args)`** — exported safe parameter masking for custom QueryHook implementations. Note: masks ALL args of a statement that references a sensitive column (conservative heuristic)
+
+### Changed
+
+- **Logger removed from query hot-path** — `WithLogger()` now wraps Logger as a `QueryHook`. Zero overhead when no hook configured (~30µs → 0). `WithQueryHook` composes: multiple hooks chain instead of replacing
+
+### Fixed
+
+- **`One()` no longer masks errors as `ErrNotFound`** — `rows.Err()` is now checked before returning not-found. Context cancellation, network errors, and driver errors are returned as-is instead of being silently converted to ErrNotFound
+- **Sanitizer overhead eliminated for default logger** — `MaskParams`/`FormatParams` (~60µs of regex per query) now skipped entirely when using NoopLogger (default). 7x speedup for default configuration
+- **Statement cache race condition fixed** — new `GetOrSet()` atomic cache-or-insert prevents both the concurrent-close race and the orphaned-stmt leak. Loser of prepare race closes its own unobserved stmt. Note: cache capacity should be >= expected concurrency level
+- **SQL placeholder lexer** — `?` inside single-quoted strings, SQL comments (`--`, `/* */`), and PostgreSQL JSONB operators (`?|`, `?&`) no longer incorrectly replaced with `$N`. `??` now emits single `?` (client-side escape convention)
+- **PostgreSQL $N placeholder renumbering** — subqueries in IN/EXISTS, UNION branches, CTEs, GROUP BY/ORDER BY expressions now correctly renumbered. Previously `$1` was reused across outer and inner queries causing `bind message supplies N parameters, but prepared statement requires M`. New `renderSQL` + single-pass `replacePlaceholders` architecture
+- **Documentation corrections** — all `Exists()`/`In()` subquery examples now use `.AsExpression()` (17 locations). Security/optimizer/tracing guides marked as internal-only where they reference unexported API
+
+---
+
 ## [0.17.1] - 2026-09-04
 
 ### Fixed

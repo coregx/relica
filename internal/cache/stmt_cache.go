@@ -80,10 +80,10 @@ func (sc *StmtCache) Set(key string, stmt *sql.Stmt) {
 	// Check if key already exists.
 	if elem, exists := sc.items[key]; exists {
 		// Update existing entry and move to front.
+		// Do NOT close old stmt — another goroutine may still be using it.
+		// database/sql manages stmt lifecycle via connection pool.
 		sc.lruList.MoveToFront(elem)
 		entry := elem.Value.(*cacheEntry)
-		// Close old statement before replacing.
-		_ = entry.stmt.Close() // Best effort close.
 		entry.stmt = stmt
 		return
 	}
@@ -102,6 +102,27 @@ func (sc *StmtCache) Set(key string, stmt *sql.Stmt) {
 	sc.items[key] = elem
 }
 
+// GetOrSet atomically returns the cached statement for key, or stores stmt if absent.
+// Returns (stmt, true) when inserted. When (cached, false), the caller lost the race
+// and must close its own stmt (which no other goroutine can observe) and use the returned one.
+// Does NOT update hits/misses — the preceding Get() already counted the lookup.
+func (sc *StmtCache) GetOrSet(key string, stmt *sql.Stmt) (*sql.Stmt, bool) {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+
+	if elem, exists := sc.items[key]; exists {
+		sc.lruList.MoveToFront(elem)
+		return elem.Value.(*cacheEntry).stmt, false
+	}
+	if sc.lruList.Len() >= sc.capacity {
+		sc.evictOldest()
+	}
+	entry := &cacheEntry{key: key, stmt: stmt}
+	elem := sc.lruList.PushFront(entry)
+	sc.items[key] = elem
+	return stmt, true
+}
+
 // evictOldest removes and closes the least recently used statement.
 // Pinned statements are skipped during eviction.
 // Must be called with lock held.
@@ -113,11 +134,12 @@ func (sc *StmtCache) evictOldest() {
 			continue // Skip pinned entries
 		}
 
-		// Found unpinned entry, evict it
+		// Evict: remove from cache and close.
+		// Safe: evicted entries are LRU (least recently used), unlikely in-flight.
+		// Close error intentionally ignored — eviction is async, no caller to return to.
+		// database/sql logs driver-level close errors internally.
 		sc.lruList.Remove(elem)
 		delete(sc.items, entry.key)
-
-		// Close the evicted statement (best effort).
 		_ = entry.stmt.Close()
 		sc.evictions.Add(1)
 		return

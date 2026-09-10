@@ -394,8 +394,12 @@ func TestSelectQuery_SelectExpr_WithParams(t *testing.T) {
 		From("users")
 	sql, args := outer.buildSQL(dialect)
 
-	if !strings.Contains(sql, `(SELECT COUNT(*) FROM orders WHERE orders.user_id = users.id AND status = ?) as order_count`) {
-		t.Errorf("%q does not contain %q", sql, `(SELECT COUNT(*) FROM orders WHERE orders.user_id = users.id AND status = ?) as order_count`)
+	// PostgreSQL: ? must be renumbered to $1 by the single final replacePlaceholders pass
+	if !strings.Contains(sql, `(SELECT COUNT(*) FROM orders WHERE orders.user_id = users.id AND status = $1) as order_count`) {
+		t.Errorf("%q does not contain %q", sql, `(SELECT COUNT(*) FROM orders WHERE orders.user_id = users.id AND status = $1) as order_count`)
+	}
+	if strings.Contains(sql, "?") {
+		t.Errorf("raw ? remaining in PostgreSQL SQL: %s", sql)
 	}
 	want := []interface{}{"completed"}
 	if len(args) != len(want) || args[0] != want[0] {
