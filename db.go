@@ -2176,7 +2176,7 @@ func (sq *SelectQuery) Model(dest any) error {
 
 // One scans a single row into dest.
 //
-// Returns sql.ErrNoRows if no row is found.
+// Returns ErrNotFound if no row is found (wraps sql.ErrNoRows).
 //
 // Example:
 //
