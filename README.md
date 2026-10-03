@@ -1310,7 +1310,7 @@ Relica is released under the [MIT License](LICENSE).
 
 ## 🙏 Acknowledgments
 
-- Inspired by [ozzo-dbx](https://github.com/go-ozzo/ozzo-dbx)
+- Successor to [ozzo-dbx](https://github.com/go-ozzo/ozzo-dbx) by Qiang Xue (Yii framework). Andrey Kolkov maintains both [go-ozzo](https://github.com/go-ozzo) and [coregx](https://github.com/coregx) organizations
 - Built with Go 1.25+ features
 - Zero-dependency philosophy inspired by Go standard library
 

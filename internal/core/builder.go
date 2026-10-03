@@ -1706,8 +1706,8 @@ func (sqe *selectQueryExpression) Build(dialect dialects.Dialect) (string, []any
 //	sub := db.Builder().Select("user_id").From("orders").Where("total > ?", 100)
 //	db.Builder().Select("*").From("users").Where(In("id", sub.AsExpression())).All(&users)
 //
-// Note: In most cases, you can pass SelectQuery directly to expressions without calling AsExpression,
-// as the expression builders will detect and handle SelectQuery automatically.
+// Note: The public relica.SelectQuery wrapper does NOT implement Expression directly.
+// Always call AsExpression() when passing a SelectQuery to In(), Exists(), or other expressions.
 func (sq *SelectQuery) AsExpression() Expression {
 	return &selectQueryExpression{query: sq}
 }
