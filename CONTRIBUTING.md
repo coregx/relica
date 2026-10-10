@@ -450,7 +450,7 @@ See [docs/reports/INTERNAL_VS_NO_INTERNAL_2025.md](docs/reports/INTERNAL_VS_NO_I
 
 ## 🎯 Release Process
 
-See [RELEASE_GUIDE.md](RELEASE_GUIDE.md) for detailed release process.
+Releases are managed via the `/release-go` automation skill.
 
 **Summary:**
 1. Feature branches created from `main`
