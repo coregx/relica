@@ -134,6 +134,13 @@ func (q *Query) useDirectTx() bool {
 	return q.tx != nil && !q.prepared
 }
 
+// WithContext sets the context for this query. It overrides the context
+// inherited from DB.WithContext or from the transaction's Begin.
+func (q *Query) WithContext(ctx context.Context) *Query {
+	q.ctx = ctx
+	return q
+}
+
 // getContext returns the query context, defaulting to context.Background().
 func (q *Query) getContext() context.Context {
 	if q.ctx != nil {

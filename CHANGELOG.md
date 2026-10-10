@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.18.0] - 2026-10-11
+
+### Fixed
+
+- **`DB.WithContext()` context was never applied to queries** — `Select`, `Insert`, `Update`, `Delete`, `Upsert`, `BatchInsert`, `BatchUpdate`, `NewQuery` and `Model` built from the returned `*DB` ran with `context.Background()`: `Builder()` and `NewQuery()` did not carry the stored context. Cancellation and deadlines passed through `WithContext` had no effect on non-transactional queries (transactions were unaffected — `Tx` binds the `Begin` context). The context now flows into every query; a per-query `WithContext` still takes priority
+
+### Added
+
+- **`Query.WithContext(ctx)`** — per-query context for the `*Query` returned by `Insert`, `InsertStruct`, `BatchInsertStruct` and `NewQuery`. Every other query type already had it; this closes the gap and matches `ozzo-dbx`
+- **`DB.WrapTx(ctx, *sql.Tx)`** — adapt a transaction started outside Relica (another library, a migration tool, sqlc) into a `*relica.Tx`, so repository code taking `relica.Executor` can join it. Counterpart of `ozzo-dbx` `DB.Wrap`; complements `WrapDB`. Ownership stays with the caller — Commit/Rollback on either handle end the same transaction
+- **`relica.Executor`** — exported interface implemented by both `*DB` and `*Tx`: all query builders (`Select`, `Insert`, `InsertStruct`, `BatchInsertStruct`, `Update`, `UpdateStruct`, `Delete`, `Upsert`, `BatchInsert`, `BatchUpdate`), `Model`, `NewQuery`, and raw `ExecContext`/`QueryContext`/`QueryRowContext`. Repositories and dbcontext-style `With(ctx)` helpers can now return one type for "the transaction from the context, or the plain connection" — the role `dbx.Builder` plays in ozzo-dbx. Compile-time assertions guarantee both types satisfy it. Lifecycle methods (`Begin`, `Commit`, `Rollback`, `Transactional`), `Builder()`, `WithContext()` and `Unwrap()` are intentionally excluded. The method set is frozen: future `*DB`/`*Tx` methods are not added to the interface, so external test doubles keep compiling
+
+---
+
 ## [0.17.3] - 2026-09-11
 
 ### Fixed

@@ -961,6 +961,42 @@ if err != nil {
 return tx.Commit()
 ```
 
+#### Executor — one type for *DB and *Tx
+
+`relica.Executor` is implemented by both `*relica.DB` and `*relica.Tx`, so repository code can run inside or outside a transaction without knowing which:
+
+```go
+func (r *UserRepo) Save(ctx context.Context, ex relica.Executor, u *User) error {
+    _, err := ex.Insert("users", map[string]any{"name": u.Name}).Execute()
+    return err
+}
+
+repo.Save(ctx, db, &u)                                                        // plain connection
+db.Transactional(ctx, func(tx *relica.Tx) error { return repo.Save(ctx, tx, &u) }) // same code, in a tx
+```
+
+It also enables the go-rest-api / ozzo-dbx `dbcontext` pattern — store the transaction in the context and let `With(ctx)` hand it back:
+
+```go
+func (d *DB) With(ctx context.Context) relica.Executor {
+    if tx, ok := ctx.Value(txKey).(*relica.Tx); ok {
+        return tx // repositories join the active transaction
+    }
+    return d.db.WithContext(ctx)
+}
+```
+
+`Executor` covers all query builders, `Model`, `NewQuery` and raw `ExecContext`/`QueryContext`/`QueryRowContext`. Lifecycle methods (`Begin`, `Commit`, `Rollback`, `Transactional`) are intentionally excluded, and the method set is frozen so test doubles keep compiling.
+
+A transaction started outside Relica joins the same pattern through `WrapTx`:
+
+```go
+sqlTx, _ := sqlDB.BeginTx(ctx, nil)      // opened by another library, a migration tool, sqlc…
+tx := db.WrapTx(ctx, sqlTx)              // *relica.Tx — and therefore an Executor
+err := repo.Save(ctx, tx, &u)            // repository code is unchanged
+// commit or roll back on sqlTx or tx — both act on the same transaction
+```
+
 ### AutoID — Enterprise ID Pattern
 
 **Stripe-like prefixed IDs** with dual-key pattern. First query builder with native support.
@@ -1187,6 +1223,15 @@ defer sqlDB.Close()  // NOT db.Close()
 - Each `WrapDB()` call creates a new Relica instance with its own statement cache
 - The caller is responsible for closing the underlying `*sql.DB` connection
 - Multiple wraps of the same connection are isolated (separate caches)
+
+**Joining an existing transaction** — the same idea one level down. When another library, a migration tool or sqlc has already opened a `*sql.Tx`, `WrapTx` lets Relica run inside it instead of starting its own:
+
+```go
+sqlTx, err := sqlDB.BeginTx(ctx, nil)
+tx := db.WrapTx(ctx, sqlTx)   // *relica.Tx on the caller's transaction
+_, err = tx.Insert("users", data).Execute()
+err = sqlTx.Commit()          // or tx.Commit() — same transaction, caller decides
+```
 
 #### Connection Inspection
 

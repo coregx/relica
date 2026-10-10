@@ -162,6 +162,54 @@ type Tx struct {
 	tx *core.Tx
 }
 
+// Executor is the set of query-building and raw-SQL methods shared by *DB and
+// *Tx. Code that must run either inside or outside a transaction without
+// knowing which — repositories, the dbcontext pattern — should accept an
+// Executor instead of a concrete type.
+//
+// It plays the role of dbx.Builder in ozzo-dbx: a single return type for
+// "the transaction from the context, or the plain connection":
+//
+//	func (d *DB) With(ctx context.Context) relica.Executor {
+//	    if tx, ok := ctx.Value(txKey).(*relica.Tx); ok {
+//	        return tx
+//	    }
+//	    return d.db.WithContext(ctx)
+//	}
+//
+// Lifecycle methods (Begin, Commit, Rollback, Transactional) are deliberately
+// absent: a holder of an Executor must not be able to end a transaction it did
+// not start. WithContext is absent because a *Tx is already bound to the
+// context passed to Begin.
+//
+// The method set is frozen. Methods added to *DB and *Tx in the future are not
+// added here, so external implementations (test doubles) keep compiling.
+type Executor interface {
+	Select(cols ...string) *SelectQuery
+	Insert(table string, data map[string]any) *Query
+	InsertStruct(table string, data any) *Query
+	BatchInsertStruct(table string, data any) *Query
+	Update(table string) *UpdateQuery
+	UpdateStruct(table string, data any) *UpdateQuery
+	Delete(table string) *DeleteQuery
+	Upsert(table string, values map[string]any) *UpsertQuery
+	BatchInsert(table string, columns []string) *BatchInsertQuery
+	BatchUpdate(table, keyColumn string) *BatchUpdateQuery
+	Model(model any) *ModelQuery
+	NewQuery(query string) *Query
+
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// Compile-time guarantees that both execution contexts satisfy Executor.
+// If a method is ever removed from either type, the build fails here.
+var (
+	_ Executor = (*DB)(nil)
+	_ Executor = (*Tx)(nil)
+)
+
 // ModelQuery provides CRUD operations for struct models.
 //
 // ModelQuery simplifies database operations by automatically inferring
@@ -364,6 +412,29 @@ func NewDB(driverName, dsn string) (*DB, error) {
 func WrapDB(sqlDB *sql.DB, driverName string) *DB {
 	coreDB := core.WrapDB(sqlDB, driverName)
 	return &DB{db: coreDB}
+}
+
+// WrapTx adapts an existing *sql.Tx so Relica's transaction API — and the
+// Executor interface — can run on a transaction that was started elsewhere
+// (another library, a migration tool, sqlc). This is the counterpart of
+// ozzo-dbx's DB.Wrap.
+//
+// ctx is attached to every query built from the returned Tx; pass the context
+// the transaction was begun with. Ownership stays with the caller: Commit and
+// Rollback may be called on the returned Tx or on the original *sql.Tx, both
+// act on the same transaction. Panics if sqlTx is nil (programmer error, same
+// as WrapDB).
+//
+// Example:
+//
+//	sqlTx, _ := sqlDB.BeginTx(ctx, nil)
+//	tx := db.WrapTx(ctx, sqlTx)
+//	if err := repo.Save(ctx, tx, &user); err != nil { // repo takes relica.Executor
+//	    return sqlTx.Rollback()
+//	}
+//	return sqlTx.Commit()
+func (d *DB) WrapTx(ctx context.Context, sqlTx *sql.Tx) *Tx {
+	return &Tx{tx: d.db.WrapTx(ctx, sqlTx)}
 }
 
 // Close releases all database resources including the connection pool
@@ -2670,6 +2741,20 @@ func (buq *BatchUpdateQuery) ToSQL() (string, []any) {
 // ============================================================================
 // Query Methods
 // ============================================================================
+
+// WithContext sets the context for this query, overriding the context
+// inherited from DB.WithContext or from the transaction. Use it to attach a
+// per-query deadline to an INSERT or raw query:
+//
+//	_, err := db.Insert("users", data).WithContext(ctx).Execute()
+//	err = db.NewQuery("DELETE FROM sessions WHERE expired").WithContext(ctx).Execute()
+func (q *Query) WithContext(ctx context.Context) *Query {
+	if q.err != nil {
+		return q
+	}
+	q.q.WithContext(ctx)
+	return q
+}
 
 // Execute runs the query and returns results.
 func (q *Query) Execute() (sql.Result, error) {

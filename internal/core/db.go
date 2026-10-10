@@ -266,8 +266,10 @@ func (db *DB) WithContext(ctx context.Context) *DB {
 }
 
 // Builder returns a query builder for this database.
+// The builder inherits the context set via WithContext, so every query it
+// builds runs under that context unless the query sets its own.
 func (db *DB) Builder() *QueryBuilder {
-	return &QueryBuilder{db: db}
+	return &QueryBuilder{db: db, ctx: db.ctx}
 }
 
 // NewQuery creates a raw SQL query for execution.
@@ -285,13 +287,15 @@ func (db *DB) NewQuery(query string) *Query {
 	return &Query{
 		sql: query,
 		db:  db,
+		ctx: db.ctx,
 	}
 }
 
 // NewQueryBuilder creates a new query builder with optional transaction support.
 // When tx is not nil, all queries built by this builder execute within that transaction.
+// The builder inherits the DB context; Tx.Builder replaces it with the transaction's.
 func NewQueryBuilder(db *DB, tx *sql.Tx) *QueryBuilder {
-	return &QueryBuilder{db: db, tx: tx}
+	return &QueryBuilder{db: db, tx: tx, ctx: db.ctx}
 }
 
 // Begin starts a transaction with default options.
@@ -320,6 +324,29 @@ func (db *DB) BeginTx(ctx context.Context, opts *TxOptions) (*Tx, error) {
 		builder: NewQueryBuilder(db, tx),
 		ctx:     ctx,
 	}, nil
+}
+
+// WrapTx adapts an existing *sql.Tx so Relica's transaction API can run on it.
+// Use it when the transaction was started elsewhere (another library, a
+// migration tool, sqlc) and Relica must join it rather than open its own.
+//
+// ctx is attached to every query built from the returned Tx; pass the context
+// the transaction was begun with. If ctx is nil the DB context is used.
+//
+// Ownership stays with the caller: Commit and Rollback may be called either on
+// the returned Tx or on the original *sql.Tx — they act on the same transaction.
+func (db *DB) WrapTx(ctx context.Context, sqlTx *sql.Tx) *Tx {
+	if sqlTx == nil {
+		panic("relica: WrapTx called with nil *sql.Tx")
+	}
+	if ctx == nil {
+		ctx = db.ctx
+	}
+	return &Tx{
+		tx:      sqlTx,
+		builder: NewQueryBuilder(db, sqlTx),
+		ctx:     ctx,
+	}
 }
 
 // Builder returns the query builder for this transaction.

@@ -351,6 +351,90 @@ return tx.Commit()
 tx.ExecContext(ctx, "CREATE INDEX idx_users_email ON users(email)")
 ```
 
+**Joining a transaction started elsewhere** — `WrapTx` turns a raw `*sql.Tx` (from another
+library, a migration tool, sqlc) into a `*relica.Tx`. The caller keeps ownership: commit or
+roll back on either handle, both act on the same transaction.
+
+```go
+sqlTx, err := sqlDB.BeginTx(ctx, nil)
+tx := db.WrapTx(ctx, sqlTx)           // pass the ctx the tx was begun with
+err = repo.Save(ctx, tx, &user)       // repo takes relica.Executor
+```
+
+### Executor — one type for *DB and *Tx
+
+`relica.Executor` is implemented by both `*relica.DB` and `*relica.Tx`. Repository
+code should accept it instead of a concrete type, so the same function runs inside
+or outside a transaction:
+
+```go
+func (r *UserRepo) Save(ctx context.Context, ex relica.Executor, u *User) error {
+    return ex.Model(u).WithContext(ctx).Insert()
+}
+
+// Works with both:
+repo.Save(ctx, db, &u)
+db.Transactional(ctx, func(tx *relica.Tx) error { return repo.Save(ctx, tx, &u) })
+```
+
+**dbcontext pattern (transaction in context).** This is the go-rest-api / ozzo-dbx
+`dbx.Builder` pattern. `With(ctx)` MUST check the context for a stored transaction
+and return it; returning `*relica.DB` unconditionally silently breaks every
+`Transactional` block (writes commit on their own and survive the rollback):
+
+```go
+type contextKey struct{}
+
+// CORRECT — repositories calling With(ctx) join the active transaction
+func (d *DB) With(ctx context.Context) relica.Executor {
+    if tx, ok := ctx.Value(contextKey{}).(*relica.Tx); ok {
+        return tx
+    }
+    return d.db.WithContext(ctx)
+}
+
+func (d *DB) Transactional(ctx context.Context, f func(ctx context.Context) error) error {
+    if _, ok := ctx.Value(contextKey{}).(*relica.Tx); ok {
+        return f(ctx) // already in a tx — join it, never nest
+    }
+    return d.db.Transactional(ctx, func(tx *relica.Tx) error {
+        return f(context.WithValue(ctx, contextKey{}, tx))
+    })
+}
+
+// WRONG — tx in context is ignored, Transactional does nothing
+func (d *DB) With(ctx context.Context) *relica.DB {
+    return d.db.WithContext(ctx)
+}
+```
+
+Executor deliberately excludes `Begin`, `Commit`, `Rollback`, `Transactional`,
+`Builder()`, `WithContext()` and `Unwrap()`. Its method set is frozen — new `*DB`/`*Tx`
+methods are not added to it, so test doubles keep compiling.
+
+### Context propagation — the invariant
+
+Every object derived from a `*DB` inherits its context; every narrower `WithContext`
+overrides it. Priority: **per-query ctx > DB/builder ctx > `context.Background()`**.
+
+```go
+reqDB := db.WithContext(ctx)              // request-scoped copy; db itself is untouched
+reqDB.Select().From("users").All(&us)     // runs under ctx
+reqDB.Insert("users", data).Execute()     // runs under ctx
+reqDB.NewQuery("DELETE ...").Execute()    // runs under ctx
+reqDB.Model(&u).Insert()                  // runs under ctx
+
+// Per-query override, including the *Query returned by Insert/InsertStruct/NewQuery:
+db.Insert("users", data).WithContext(ctx).Execute()
+db.NewQuery("SELECT ...").WithContext(ctx).Row(&n)
+
+// A *Tx is bound to the ctx passed to Begin/Transactional, never to the DB ctx.
+```
+
+A canceled context fails with `context.Canceled` — it is never reported as `ErrNotFound`.
+In the dbcontext pattern this is why `With(ctx)` must return `d.db.WithContext(ctx)` on the
+non-transactional path and not the bare `d.db`: otherwise request deadlines never reach SQL.
+
 ---
 
 ## Row Locking (FOR UPDATE / FOR SHARE)
