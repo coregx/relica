@@ -47,6 +47,7 @@ func (db *DB) Model(model any) *ModelQuery {
 		model:   model,
 		table:   inferTableName(model),
 		exclude: make(map[string]bool),
+		ctx:     db.ctx, // inherit DB.WithContext; ModelQuery.WithContext overrides
 	}
 }
 

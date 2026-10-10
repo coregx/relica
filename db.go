@@ -2719,6 +2719,20 @@ func (buq *BatchUpdateQuery) ToSQL() (string, []any) {
 // Query Methods
 // ============================================================================
 
+// WithContext sets the context for this query, overriding the context
+// inherited from DB.WithContext or from the transaction. Use it to attach a
+// per-query deadline to an INSERT or raw query:
+//
+//	_, err := db.Insert("users", data).WithContext(ctx).Execute()
+//	err = db.NewQuery("DELETE FROM sessions WHERE expired").WithContext(ctx).Execute()
+func (q *Query) WithContext(ctx context.Context) *Query {
+	if q.err != nil {
+		return q
+	}
+	q.q.WithContext(ctx)
+	return q
+}
+
 // Execute runs the query and returns results.
 func (q *Query) Execute() (sql.Result, error) {
 	if q.err != nil {

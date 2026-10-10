@@ -266,8 +266,10 @@ func (db *DB) WithContext(ctx context.Context) *DB {
 }
 
 // Builder returns a query builder for this database.
+// The builder inherits the context set via WithContext, so every query it
+// builds runs under that context unless the query sets its own.
 func (db *DB) Builder() *QueryBuilder {
-	return &QueryBuilder{db: db}
+	return &QueryBuilder{db: db, ctx: db.ctx}
 }
 
 // NewQuery creates a raw SQL query for execution.
@@ -285,13 +287,15 @@ func (db *DB) NewQuery(query string) *Query {
 	return &Query{
 		sql: query,
 		db:  db,
+		ctx: db.ctx,
 	}
 }
 
 // NewQueryBuilder creates a new query builder with optional transaction support.
 // When tx is not nil, all queries built by this builder execute within that transaction.
+// The builder inherits the DB context; Tx.Builder replaces it with the transaction's.
 func NewQueryBuilder(db *DB, tx *sql.Tx) *QueryBuilder {
-	return &QueryBuilder{db: db, tx: tx}
+	return &QueryBuilder{db: db, tx: tx, ctx: db.ctx}
 }
 
 // Begin starts a transaction with default options.

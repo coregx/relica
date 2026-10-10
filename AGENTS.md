@@ -402,6 +402,29 @@ Executor deliberately excludes `Begin`, `Commit`, `Rollback`, `Transactional`,
 `Builder()`, `WithContext()` and `Unwrap()`. Its method set is frozen — new `*DB`/`*Tx`
 methods are not added to it, so test doubles keep compiling.
 
+### Context propagation — the invariant
+
+Every object derived from a `*DB` inherits its context; every narrower `WithContext`
+overrides it. Priority: **per-query ctx > DB/builder ctx > `context.Background()`**.
+
+```go
+reqDB := db.WithContext(ctx)              // request-scoped copy; db itself is untouched
+reqDB.Select().From("users").All(&us)     // runs under ctx
+reqDB.Insert("users", data).Execute()     // runs under ctx
+reqDB.NewQuery("DELETE ...").Execute()    // runs under ctx
+reqDB.Model(&u).Insert()                  // runs under ctx
+
+// Per-query override, including the *Query returned by Insert/InsertStruct/NewQuery:
+db.Insert("users", data).WithContext(ctx).Execute()
+db.NewQuery("SELECT ...").WithContext(ctx).Row(&n)
+
+// A *Tx is bound to the ctx passed to Begin/Transactional, never to the DB ctx.
+```
+
+A canceled context fails with `context.Canceled` — it is never reported as `ErrNotFound`.
+In the dbcontext pattern this is why `With(ctx)` must return `d.db.WithContext(ctx)` on the
+non-transactional path and not the bare `d.db`: otherwise request deadlines never reach SQL.
+
 ---
 
 ## Row Locking (FOR UPDATE / FOR SHARE)

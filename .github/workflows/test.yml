@@ -139,33 +139,10 @@ jobs:
       matrix:
         database: [postgres, mysql]
 
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_DB: test
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-      mysql:
-        image: mysql:8
-        env:
-          MYSQL_DATABASE: test
-          MYSQL_ROOT_PASSWORD: test
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
+    # Databases are started by testcontainers inside the test binary: every
+    # Setup*TestDB call gets a fresh container, which is the isolation the
+    # suite relies on (tables are shared by name across files). A job-level
+    # `services:` block would be a second, unused database.
 
     steps:
     - name: Checkout code
@@ -187,16 +164,12 @@ jobs:
     - name: Run PostgreSQL integration tests
       if: matrix.database == 'postgres'
       working-directory: test
-      env:
-        POSTGRES_DSN: "postgres://test:test@localhost:5432/test?sslmode=disable"
       run: |
         go test -v -tags=integration ./... -run Postgres
 
     - name: Run MySQL integration tests
       if: matrix.database == 'mysql'
       working-directory: test
-      env:
-        MYSQL_DSN: "root:test@tcp(localhost:3306)/test?parseTime=true"
       run: |
         go test -v -tags=integration ./... -run MySQL
 
