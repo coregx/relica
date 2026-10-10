@@ -351,6 +351,57 @@ return tx.Commit()
 tx.ExecContext(ctx, "CREATE INDEX idx_users_email ON users(email)")
 ```
 
+### Executor — one type for *DB and *Tx
+
+`relica.Executor` is implemented by both `*relica.DB` and `*relica.Tx`. Repository
+code should accept it instead of a concrete type, so the same function runs inside
+or outside a transaction:
+
+```go
+func (r *UserRepo) Save(ctx context.Context, ex relica.Executor, u *User) error {
+    return ex.Model(u).WithContext(ctx).Insert()
+}
+
+// Works with both:
+repo.Save(ctx, db, &u)
+db.Transactional(ctx, func(tx *relica.Tx) error { return repo.Save(ctx, tx, &u) })
+```
+
+**dbcontext pattern (transaction in context).** This is the go-rest-api / ozzo-dbx
+`dbx.Builder` pattern. `With(ctx)` MUST check the context for a stored transaction
+and return it; returning `*relica.DB` unconditionally silently breaks every
+`Transactional` block (writes commit on their own and survive the rollback):
+
+```go
+type contextKey struct{}
+
+// CORRECT — repositories calling With(ctx) join the active transaction
+func (d *DB) With(ctx context.Context) relica.Executor {
+    if tx, ok := ctx.Value(contextKey{}).(*relica.Tx); ok {
+        return tx
+    }
+    return d.db.WithContext(ctx)
+}
+
+func (d *DB) Transactional(ctx context.Context, f func(ctx context.Context) error) error {
+    if _, ok := ctx.Value(contextKey{}).(*relica.Tx); ok {
+        return f(ctx) // already in a tx — join it, never nest
+    }
+    return d.db.Transactional(ctx, func(tx *relica.Tx) error {
+        return f(context.WithValue(ctx, contextKey{}, tx))
+    })
+}
+
+// WRONG — tx in context is ignored, Transactional does nothing
+func (d *DB) With(ctx context.Context) *relica.DB {
+    return d.db.WithContext(ctx)
+}
+```
+
+Executor deliberately excludes `Begin`, `Commit`, `Rollback`, `Transactional`,
+`Builder()`, `WithContext()` and `Unwrap()`. Its method set is frozen — new `*DB`/`*Tx`
+methods are not added to it, so test doubles keep compiling.
+
 ---
 
 ## Row Locking (FOR UPDATE / FOR SHARE)

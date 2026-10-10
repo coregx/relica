@@ -961,6 +961,33 @@ if err != nil {
 return tx.Commit()
 ```
 
+#### Executor — one type for *DB and *Tx
+
+`relica.Executor` is implemented by both `*relica.DB` and `*relica.Tx`, so repository code can run inside or outside a transaction without knowing which:
+
+```go
+func (r *UserRepo) Save(ctx context.Context, ex relica.Executor, u *User) error {
+    _, err := ex.Insert("users", map[string]any{"name": u.Name}).Execute()
+    return err
+}
+
+repo.Save(ctx, db, &u)                                                        // plain connection
+db.Transactional(ctx, func(tx *relica.Tx) error { return repo.Save(ctx, tx, &u) }) // same code, in a tx
+```
+
+It also enables the go-rest-api / ozzo-dbx `dbcontext` pattern — store the transaction in the context and let `With(ctx)` hand it back:
+
+```go
+func (d *DB) With(ctx context.Context) relica.Executor {
+    if tx, ok := ctx.Value(txKey).(*relica.Tx); ok {
+        return tx // repositories join the active transaction
+    }
+    return d.db.WithContext(ctx)
+}
+```
+
+`Executor` covers all query builders, `Model`, `NewQuery` and raw `ExecContext`/`QueryContext`/`QueryRowContext`. Lifecycle methods (`Begin`, `Commit`, `Rollback`, `Transactional`) are intentionally excluded, and the method set is frozen so test doubles keep compiling.
+
 ### AutoID — Enterprise ID Pattern
 
 **Stripe-like prefixed IDs** with dual-key pattern. First query builder with native support.
