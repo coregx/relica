@@ -1,7 +1,7 @@
 # Relica Roadmap
 
-> **Current Version**: v0.16.0 (August 2026)
-> **Previous Release**: v0.15.0 (Released: August 5, 2026)
+> **Current Version**: v0.18.0 (October 2026)
+> **Previous Release**: v0.17.3 (Released: October 3, 2026)
 > **Production Ready**: v1.0.0 (Target: Q4 2026)
 
 ---
@@ -14,9 +14,22 @@
 
 ---
 
-## 📍 Current State (v0.16.0)
+## 📍 Current State (v0.18.0)
 
-### ✅ What's New in v0.16.0
+### ✅ What's New in v0.18.0
+
+- **`relica.Executor`** (v0.18.0): common interface for `*DB` and `*Tx` — the `dbx.Builder` role for dbcontext-style `With(ctx)`; frozen method set, compile-time assertions
+- **`DB.WithContext` fix** (v0.18.0): the stored context now reaches every query built from the returned `*DB`; previously cancellation and deadlines were silently ignored on the non-transactional path
+- **`Query.WithContext`, `DB.WrapTx`** (v0.18.0): per-query context for `Insert`/`NewQuery`; join a `*sql.Tx` started by another library (ozzo-dbx `Wrap` parity)
+- **Integration suite on real databases** (v0.18.0): 14 transaction/Executor scenarios on PostgreSQL, MySQL, SQLite, 7 of them negative
+
+### ✅ Shipped in v0.17.x
+
+- **`SelectQuery.Model(&struct)`** (v0.17.0): fetch by PK read from struct fields, composite PK, `.Where()`/`.ForUpdate()` composable
+- **External audit fixes** (v0.17.2): `One()` no longer masks errors as `ErrNotFound`; PostgreSQL `$N` renumbering via single-pass `renderSQL`; placeholder lexer for JSONB `?|`/`?&`/`??`, string literals and comments; statement-cache race (`GetOrSet`); logger removed from the query hot path (`WithLogger` = `QueryHook`)
+- **Wildcard quoting** (v0.17.1): `Select("n.*")` no longer emits `"n"."*"`
+
+### ✅ Earlier
 
 - **AutoID — Native Dual-Key Pattern** (v0.16.0): Stripe-like prefixed IDs via `autoid:prefix` struct tag, `FindByPublicID()`, `BeforeInserter` interface, pluggable generators
 - **Truly Zero Dependencies** (v0.16.0): Empty go.mod — no require blocks. All test deps isolated in sub-modules. Tests use stdlib `testing` only
@@ -36,7 +49,7 @@
 
 ## 🚀 Upcoming Releases
 
-### v0.17.0 — Go 1.27 + Generic Methods
+### Next minor — Go 1.27 + Generic Methods
 
 **Goal**: Leverage Go 1.27 generic methods for fluent type-safe API.
 
@@ -192,6 +205,18 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 - **v0.14.3** (2026-07-17) - InsertStruct/BatchInsertStruct zero PK skip
 - **v0.15.0** (2026-08-05) - Generic One[T]/All[T]/Scalar[T], UUID PK autoincrement
 - **v0.16.0** (2026-08-07) - AutoID dual-key pattern, truly zero deps, Explain export, 85%+ coverage
+- **v0.16.1** (2026-08-07) - Tx.Model() context propagation, ModelQuery.WithContext immutability, Row() returns ErrNotFound
+- **v0.16.2** (2026-09-03) - UpsertOn custom conflict columns, BatchInsert OnConflict/DoUpdate/DoNothing
+- **v0.16.3** (2026-09-03) - SQLite upsert ID population via RETURNING (#48)
+- **v0.16.4** (2026-09-03) - SQLite upsert zero-PK fix, `interface{}` → `any`
+- **v0.16.5** (2026-09-03) - BatchInsertQuery.OnConflict exported in public API
+- **v0.16.6** (2026-09-03) - SqlDB, PingContext, DriverName, Tx raw SQL, ForUpdate/ForShare/SkipLocked, IsNull, Find
+- **v0.16.7** (2026-09-03) - Scanner strips table alias prefix (silent data loss on SQLite JOINs)
+- **v0.17.0** (2026-09-03) - SelectQuery.Model(&struct) fetch by PK, JOIN documentation
+- **v0.17.1** (2026-09-04) - Wildcard quoting fix for Select("n.*")
+- **v0.17.2** (2026-09-11) - External audit: One() error masking, $N renumbering, placeholder lexer, cache race, logger off hot path, MaskArgs
+- **v0.17.3** (2026-10-03) - Docs: successor to ozzo-dbx, One()/AsExpression docstrings
+- **v0.18.0** (2026-10-11) - relica.Executor, DB.WithContext fix, Query.WithContext, DB.WrapTx, integration suite on real databases
 - **v1.0.0** (Target: Q4 2026) - Production stable release
 
 ---
@@ -205,5 +230,5 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 
 ---
 
-*Last Updated: 2026-08-07*
+*Last Updated: 2026-10-11*
 *Maintained by: Andrey Kolkov and CoreGX contributors*
