@@ -147,6 +147,12 @@ sqlDB, _ := sql.Open("postgres", dsn)
 db := relica.WrapDB(sqlDB, "postgres")
 ```
 
+**Join a transaction started elsewhere** (another library, a migration tool):
+```go
+sqlTx, _ := sqlDB.BeginTx(ctx, nil)
+tx := db.WrapTx(ctx, sqlTx)   // *relica.Tx on the caller's transaction
+```
+
 **Configure connection pool:**
 ```go
 db, err := relica.Open("postgres", dsn,

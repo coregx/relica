@@ -884,11 +884,25 @@ sqlxDB := sqlx.NewDb(sqlDB, "postgres")
 relicaDB := relica.WrapDB(sqlDB, "postgres")
 ```
 
+They can even share one transaction. `*sqlx.Tx` embeds `*sql.Tx`, and `WrapTx` adopts it:
+```go
+sqlxTx, _ := sqlxDB.BeginTxx(ctx, nil)
+tx := relicaDB.WrapTx(ctx, sqlxTx.Tx)      // *relica.Tx on the same transaction
+_, err := tx.Insert("users", data).Execute()
+err = sqlxTx.Commit()                       // one commit covers both libraries
+```
+
 **Q: Do I need to change my struct tags?**
 A: No! Both use `db:"column_name"` tags.
 
 **Q: What about NamedQuery in Relica?**
-A: Relica doesn't support named params (`:name`). Use builder API or convert to `?` placeholders.
+A: Relica has named placeholders too, with a different syntax — `{:name}` bound through `relica.Params`:
+```go
+db.NewQuery("SELECT * FROM users WHERE id = {:id}").
+    BindParams(relica.Params{"id": 1}).
+    One(&user)
+```
+There is no struct-based `NamedExec`; for struct inserts use `db.Model(&user).Insert()` or `InsertStruct`.
 
 **Q: Performance difference?**
 A: Relica is faster for repeated queries (statement cache) and bulk operations (batch API).

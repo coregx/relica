@@ -26,10 +26,13 @@ When generating Relica code, follow this priority:
 user := User{Name: "Alice", Email: "alice@example.com"}
 db.Model(&user).Insert()
 
-// SELECT - Use Expression API
-db.Select("*").From("users").
+// SELECT - Use Expression API (Select() with no args = SELECT *)
+db.Select().From("users").
     Where(relica.Eq("status", "active")).
     All(&users)
+
+// Repositories take relica.Executor — implemented by *DB and *Tx —
+// so the same code runs inside or outside a transaction.
 
 // DO NOT use map[string]interface{} for CRUD!
 ```

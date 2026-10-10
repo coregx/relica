@@ -1224,6 +1224,15 @@ defer sqlDB.Close()  // NOT db.Close()
 - The caller is responsible for closing the underlying `*sql.DB` connection
 - Multiple wraps of the same connection are isolated (separate caches)
 
+**Joining an existing transaction** — the same idea one level down. When another library, a migration tool or sqlc has already opened a `*sql.Tx`, `WrapTx` lets Relica run inside it instead of starting its own:
+
+```go
+sqlTx, err := sqlDB.BeginTx(ctx, nil)
+tx := db.WrapTx(ctx, sqlTx)   // *relica.Tx on the caller's transaction
+_, err = tx.Insert("users", data).Execute()
+err = sqlTx.Commit()          // or tx.Commit() — same transaction, caller decides
+```
+
 #### Connection Inspection
 
 Access the underlying connection for pool tuning, health checks, or driver identification:
