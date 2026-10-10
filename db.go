@@ -414,6 +414,29 @@ func WrapDB(sqlDB *sql.DB, driverName string) *DB {
 	return &DB{db: coreDB}
 }
 
+// WrapTx adapts an existing *sql.Tx so Relica's transaction API — and the
+// Executor interface — can run on a transaction that was started elsewhere
+// (another library, a migration tool, sqlc). This is the counterpart of
+// ozzo-dbx's DB.Wrap.
+//
+// ctx is attached to every query built from the returned Tx; pass the context
+// the transaction was begun with. Ownership stays with the caller: Commit and
+// Rollback may be called on the returned Tx or on the original *sql.Tx, both
+// act on the same transaction. Panics if sqlTx is nil (programmer error, same
+// as WrapDB).
+//
+// Example:
+//
+//	sqlTx, _ := sqlDB.BeginTx(ctx, nil)
+//	tx := db.WrapTx(ctx, sqlTx)
+//	if err := repo.Save(ctx, tx, &user); err != nil { // repo takes relica.Executor
+//	    return sqlTx.Rollback()
+//	}
+//	return sqlTx.Commit()
+func (d *DB) WrapTx(ctx context.Context, sqlTx *sql.Tx) *Tx {
+	return &Tx{tx: d.db.WrapTx(ctx, sqlTx)}
+}
+
 // Close releases all database resources including the connection pool
 // and statement cache.
 //

@@ -326,6 +326,29 @@ func (db *DB) BeginTx(ctx context.Context, opts *TxOptions) (*Tx, error) {
 	}, nil
 }
 
+// WrapTx adapts an existing *sql.Tx so Relica's transaction API can run on it.
+// Use it when the transaction was started elsewhere (another library, a
+// migration tool, sqlc) and Relica must join it rather than open its own.
+//
+// ctx is attached to every query built from the returned Tx; pass the context
+// the transaction was begun with. If ctx is nil the DB context is used.
+//
+// Ownership stays with the caller: Commit and Rollback may be called either on
+// the returned Tx or on the original *sql.Tx — they act on the same transaction.
+func (db *DB) WrapTx(ctx context.Context, sqlTx *sql.Tx) *Tx {
+	if sqlTx == nil {
+		panic("relica: WrapTx called with nil *sql.Tx")
+	}
+	if ctx == nil {
+		ctx = db.ctx
+	}
+	return &Tx{
+		tx:      sqlTx,
+		builder: NewQueryBuilder(db, sqlTx),
+		ctx:     ctx,
+	}
+}
+
 // Builder returns the query builder for this transaction.
 // All queries built using this builder will execute within the transaction.
 // The builder automatically inherits the transaction's context.

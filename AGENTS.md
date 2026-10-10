@@ -351,6 +351,16 @@ return tx.Commit()
 tx.ExecContext(ctx, "CREATE INDEX idx_users_email ON users(email)")
 ```
 
+**Joining a transaction started elsewhere** — `WrapTx` turns a raw `*sql.Tx` (from another
+library, a migration tool, sqlc) into a `*relica.Tx`. The caller keeps ownership: commit or
+roll back on either handle, both act on the same transaction.
+
+```go
+sqlTx, err := sqlDB.BeginTx(ctx, nil)
+tx := db.WrapTx(ctx, sqlTx)           // pass the ctx the tx was begun with
+err = repo.Save(ctx, tx, &user)       // repo takes relica.Executor
+```
+
 ### Executor — one type for *DB and *Tx
 
 `relica.Executor` is implemented by both `*relica.DB` and `*relica.Tx`. Repository

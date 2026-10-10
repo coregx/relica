@@ -444,6 +444,41 @@ func runExecutorTests(t *testing.T, ds *DatabaseSetup) {
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), n)
 	})
+
+	// Interop: a transaction started outside Relica (raw database/sql, as
+	// another library or sqlc would) is joined via WrapTx. Repository code
+	// sees an Executor; the external owner decides commit vs rollback.
+	t.Run("WrapTx_JoinsExternalTransaction", func(t *testing.T) {
+		reset(t)
+		raw := db.SqlDB()
+
+		// Rollback by the external owner discards Relica's writes.
+		sqlTx, err := raw.BeginTx(ctx, nil)
+		require.NoError(t, err)
+		var ex relica.Executor = db.WrapTx(ctx, sqlTx)
+		require.NoError(t, insertRow(ctx, ex, "external-rollback", 1))
+		require.NoError(t, sqlTx.Rollback())
+
+		n, err := countRows(ctx, db)
+		require.NoError(t, err)
+		assert.Equal(t, int64(0), n)
+
+		// Commit by the external owner persists them.
+		sqlTx, err = raw.BeginTx(ctx, nil)
+		require.NoError(t, err)
+		ex = db.WrapTx(ctx, sqlTx)
+		require.NoError(t, insertRow(ctx, ex, "external-commit", 2))
+		require.NoError(t, ex.Model(&execRow{Name: "external-model", Value: 3}).Insert())
+		require.NoError(t, sqlTx.Commit())
+
+		n, err = countRows(ctx, db)
+		require.NoError(t, err)
+		assert.Equal(t, int64(2), n)
+
+		// The wrapper is bound to the finished transaction, not to a new one.
+		err = insertRow(ctx, ex, "too-late", 4)
+		assert.ErrorIs(t, err, sql.ErrTxDone)
+	})
 }
 
 // ---------------------------------------------------------------------------

@@ -988,6 +988,15 @@ func (d *DB) With(ctx context.Context) relica.Executor {
 
 `Executor` covers all query builders, `Model`, `NewQuery` and raw `ExecContext`/`QueryContext`/`QueryRowContext`. Lifecycle methods (`Begin`, `Commit`, `Rollback`, `Transactional`) are intentionally excluded, and the method set is frozen so test doubles keep compiling.
 
+A transaction started outside Relica joins the same pattern through `WrapTx`:
+
+```go
+sqlTx, _ := sqlDB.BeginTx(ctx, nil)      // opened by another library, a migration tool, sqlc…
+tx := db.WrapTx(ctx, sqlTx)              // *relica.Tx — and therefore an Executor
+err := repo.Save(ctx, tx, &u)            // repository code is unchanged
+// commit or roll back on sqlTx or tx — both act on the same transaction
+```
+
 ### AutoID — Enterprise ID Pattern
 
 **Stripe-like prefixed IDs** with dual-key pattern. First query builder with native support.
