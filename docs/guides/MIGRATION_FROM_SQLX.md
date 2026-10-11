@@ -246,6 +246,7 @@ db.Select().From("users").
 - For INSERT/UPDATE: use `Model()` API — cleaner and type-safe
 - For SELECT WHERE: use `relica.Params{}` with `{:name}` syntax
 - `:name` params (colon-prefix) are not supported; use `{:name}` or positional `?`
+- Why not `:name`? It conflicts with PostgreSQL `::` type casts and JSON operators. `{:name}` uses curly braces which are not part of SQL syntax, so parsing is unambiguous across all dialects
 
 ---
 
