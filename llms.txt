@@ -16,8 +16,9 @@ When generating Relica code, follow this priority:
 1. **PREFERRED**: `db.Model(&struct).Insert/Update/Delete()` - All CRUD operations
 2. **PREFERRED**: `relica.Eq()`, `relica.And()`, `relica.In()` - WHERE conditions
 3. **PREFERRED**: `relica.HashExp{"col": val}` - Simple equality
-4. **ACCEPTABLE**: `Where("col = ?", val)` - Simple parameterized queries
-5. **AVOID**: `map[string]interface{}` - Only for dynamic/unknown schemas
+4. **ACCEPTABLE**: `Where("col = {:col}", relica.Params{"col": val})` - Named placeholders (`{:name}` syntax, no SQL operator conflicts)
+5. **ACCEPTABLE**: `Where("col = ?", val)` - Positional placeholders
+6. **AVOID**: `map[string]interface{}` - Only for dynamic/unknown schemas
 
 ## Quick Examples
 

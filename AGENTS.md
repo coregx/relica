@@ -132,6 +132,8 @@ db.Select().From("categories").
 
 Works in `Where`, `AndWhere`, `OrWhere` on Select, Update, and Delete.
 
+> `{:name}` (not `:name` or `@name`) — curly braces are not SQL syntax, so no conflicts with PostgreSQL `::` casts, MySQL `@var`, or JSONB `?` operators. Inherited from ozzo-dbx.
+
 ### 4. FALLBACK ONLY: Positional Placeholders
 
 **Use ONLY when named params or expressions don't fit:**

@@ -397,6 +397,8 @@ db.Select().From("categories").
 
 Named placeholders work in `Where`, `AndWhere`, `OrWhere` on Select, Update, and Delete queries.
 
+> **Why `{:name}` and not `:name` or `@name`?** Curly braces are not part of SQL syntax, so `{:name}` never conflicts with PostgreSQL type casts (`::`), MySQL user variables (`@var`), or JSONB operators (`?`). This syntax is inherited from [ozzo-dbx](https://github.com/go-ozzo/ozzo-dbx), Relica's predecessor.
+
 #### Positional Placeholders
 
 Positional `?` parameters also work (backward compatible):
