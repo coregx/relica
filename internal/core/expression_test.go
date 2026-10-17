@@ -480,7 +480,7 @@ func TestLikeExp_Build(t *testing.T) {
 			name:     "NOT LIKE sqlite",
 			dialect:  "sqlite",
 			exp:      NotLike("email", "spam"),
-			wantSQL:  `"email" NOT LIKE ?`,
+			wantSQL:  `"email" NOT LIKE ? ESCAPE '\'`, // SQLite has no default LIKE escape
 			wantArgs: []interface{}{"%spam%"},
 		},
 		{

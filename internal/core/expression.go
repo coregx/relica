@@ -541,6 +541,15 @@ func (e *LikeExp) Build(dialect dialects.Dialect) (string, []any) {
 	parts := make([]string, 0, len(e.Values))
 	args := make([]any, 0, len(e.Values))
 
+	// SQLite LIKE has no default escape character; PostgreSQL and MySQL use
+	// backslash. Declare it for SQLite so escaped wildcards (\% \_) behave the
+	// same on all dialects. (MySQL must not get it: '\' is not a complete
+	// string literal there.)
+	escapeClause := ""
+	if _, ok := dialect.(*dialects.SQLiteDialect); ok {
+		escapeClause = ` ESCAPE '\'`
+	}
+
 	for _, val := range e.Values {
 		// Escape special characters
 		for j := 0; j < len(e.Escape); j += 2 {
@@ -555,7 +564,7 @@ func (e *LikeExp) Build(dialect dialects.Dialect) (string, []any) {
 			val += "%"
 		}
 
-		parts = append(parts, fmt.Sprintf("%s %s ?", col, e.Like))
+		parts = append(parts, fmt.Sprintf("%s %s ?%s", col, e.Like, escapeClause))
 		args = append(args, val)
 	}
 

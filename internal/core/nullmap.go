@@ -2,6 +2,7 @@ package core
 
 import (
 	"database/sql"
+	"sort"
 )
 
 // NullStringMap represents a map of nullable string values scanned from database rows.
@@ -39,12 +40,14 @@ func (m NullStringMap) Has(key string) bool {
 	return ok
 }
 
-// Keys returns all column names in the map.
+// Keys returns all column names in the map, sorted, so the result is
+// deterministic (map iteration order is not).
 func (m NullStringMap) Keys() []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
 	}
+	sort.Strings(keys)
 	return keys
 }
 

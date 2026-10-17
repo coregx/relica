@@ -2,6 +2,7 @@ package core
 
 import (
 	"database/sql"
+	"strings"
 	"testing"
 )
 
@@ -69,5 +70,25 @@ func TestNullStringMap_BasicMethods(t *testing.T) {
 	val, ok = m.Get("nonexistent")
 	if ok {
 		t.Error("Get(\"nonexistent\") ok = true, want false")
+	}
+}
+
+// TestNullStringMap_KeysSorted: Keys must be deterministic. Iterating a Go map
+// gives a different order on every call, which made Keys() unusable for stable
+// output (column lists, logs, comparisons).
+func TestNullStringMap_KeysSorted(t *testing.T) {
+	m := NullStringMap{}
+	for _, k := range []string{"zeta", "id", "name", "email", "a_b", "Z"} {
+		m[k] = sql.NullString{String: k, Valid: true}
+	}
+	want := []string{"Z", "a_b", "email", "id", "name", "zeta"}
+	for i := 0; i < 20; i++ {
+		got := m.Keys()
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Fatalf("call %d: Keys() = %v, want %v", i, got, want)
+		}
+	}
+	if got := (NullStringMap{}).Keys(); len(got) != 0 {
+		t.Errorf("empty map Keys() = %v", got)
 	}
 }

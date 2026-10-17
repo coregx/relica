@@ -151,7 +151,7 @@ func resolveNamedParams(condition string, params []any) (string, []any, error) {
 	if len(params) != 1 {
 		return condition, params, nil
 	}
-	p, ok := params[0].(Params)
+	p, ok := asParams(params[0])
 	if !ok {
 		return condition, params, nil
 	}
@@ -397,6 +397,10 @@ func (sq *SelectQuery) SelectSub(exp Expression, alias string) *SelectQuery {
 		sq.buildErr = fmt.Errorf("relica: SelectSub requires a non-empty alias")
 		return sq
 	}
+	if err := ExpressionError(exp); err != nil {
+		sq.buildErr = err
+		return sq
+	}
 	sq.subExprs = append(sq.subExprs, subExprEntry{exp: exp, alias: alias})
 	return sq
 }
@@ -426,7 +430,10 @@ func (sq *SelectQuery) Where(condition any, params ...any) *SelectQuery {
 		sq.params = append(sq.params, resolvedArgs...)
 
 	case Expression:
-		// New Expression-based WHERE
+		if err := ExpressionError(cond); err != nil {
+			sq.buildErr = err
+			return sq
+		}
 		sqlStr, args := cond.Build(sq.builder.db.dialect)
 		if sqlStr != "" {
 			sq.where = append(sq.where, sqlStr)
@@ -489,6 +496,10 @@ func (sq *SelectQuery) OrWhere(condition any, params ...any) *SelectQuery {
 		}
 
 	case Expression:
+		if err := ExpressionError(cond); err != nil {
+			sq.buildErr = err
+			return sq
+		}
 		newSQL, newArgs = cond.Build(sq.builder.db.dialect)
 		if newSQL == "" {
 			return sq
@@ -523,6 +534,10 @@ func (sq *SelectQuery) OrWhere(condition any, params ...any) *SelectQuery {
 //	Join("INNER JOIN", "users u", "m.user_id = u.id")
 //	Join("LEFT JOIN", "attachments a", relica.Eq("m.id", relica.Raw("a.message_id")))
 func (sq *SelectQuery) Join(joinType, table string, on any) *SelectQuery {
+	if err := ExpressionError(on); err != nil {
+		sq.buildErr = err
+		return sq
+	}
 	sq.joins = append(sq.joins, JoinInfo{
 		JoinType: joinType,
 		Table:    table,
@@ -625,6 +640,10 @@ func (sq *SelectQuery) OrderByExpr(expr string, args ...any) *SelectQuery {
 //	    When("t.due_date IS NULL", 3).
 //	    Else(1))
 func (sq *SelectQuery) OrderBySub(exp Expression) *SelectQuery {
+	if err := ExpressionError(exp); err != nil {
+		sq.buildErr = err
+		return sq
+	}
 	sq.subOrderByExprs = append(sq.subOrderByExprs, exp)
 	return sq
 }
@@ -1087,6 +1106,10 @@ func (sq *SelectQuery) GroupByExpr(expr string, args ...any) *SelectQuery {
 
 // GroupBySub adds a type-safe expression to the GROUP BY clause.
 func (sq *SelectQuery) GroupBySub(exp Expression) *SelectQuery {
+	if err := ExpressionError(exp); err != nil {
+		sq.buildErr = err
+		return sq
+	}
 	sq.subGroupByExprs = append(sq.subGroupByExprs, exp)
 	return sq
 }
@@ -1132,17 +1155,25 @@ func (sq *SelectQuery) buildGroupBy(dialect dialects.Dialect) string {
 func (sq *SelectQuery) Having(condition any, args ...any) *SelectQuery {
 	switch cond := condition.(type) {
 	case string:
-		// String-based HAVING
+		// String-based HAVING; {:name} placeholders resolve exactly as in Where.
+		resolved, resolvedArgs, err := resolveNamedParams(cond, args)
+		if err != nil {
+			sq.buildErr = err
+			return sq
+		}
 		sq.havingClauses = append(sq.havingClauses, struct {
 			condition string
 			args      []any
 		}{
-			condition: cond,
-			args:      args,
+			condition: resolved,
+			args:      resolvedArgs,
 		})
 
 	case Expression:
-		// Expression-based HAVING
+		if err := ExpressionError(cond); err != nil {
+			sq.buildErr = err
+			return sq
+		}
 		sqlStr, exprArgs := cond.Build(sq.builder.db.dialect)
 		if sqlStr != "" {
 			sq.havingClauses = append(sq.havingClauses, struct {
@@ -1930,6 +1961,12 @@ func (qb *QueryBuilder) Update(table string) *UpdateQuery {
 // Set specifies the columns and values to update.
 // Values should be a map of column names to new values.
 func (uq *UpdateQuery) Set(values map[string]any) *UpdateQuery {
+	for _, v := range values {
+		if err := ExpressionError(v); err != nil {
+			uq.buildErr = err
+			return uq
+		}
+	}
 	uq.values = values
 	return uq
 }
@@ -1957,6 +1994,10 @@ func (uq *UpdateQuery) Where(condition any, params ...any) *UpdateQuery {
 		uq.params = append(uq.params, resolvedArgs...)
 
 	case Expression:
+		if err := ExpressionError(cond); err != nil {
+			uq.buildErr = err
+			return uq
+		}
 		sqlStr, args := cond.Build(uq.builder.db.dialect)
 		if sqlStr != "" {
 			uq.where = append(uq.where, sqlStr)
@@ -2019,6 +2060,10 @@ func (uq *UpdateQuery) OrWhere(condition any, params ...any) *UpdateQuery {
 		}
 
 	case Expression:
+		if err := ExpressionError(cond); err != nil {
+			uq.buildErr = err
+			return uq
+		}
 		newSQL, newArgs = cond.Build(uq.builder.db.dialect)
 		if newSQL == "" {
 			return uq
@@ -2189,6 +2234,10 @@ func (dq *DeleteQuery) Where(condition any, params ...any) *DeleteQuery {
 		dq.params = append(dq.params, resolvedArgs...)
 
 	case Expression:
+		if err := ExpressionError(cond); err != nil {
+			dq.buildErr = err
+			return dq
+		}
 		sqlStr, args := cond.Build(dq.builder.db.dialect)
 		if sqlStr != "" {
 			dq.where = append(dq.where, sqlStr)
@@ -2251,6 +2300,10 @@ func (dq *DeleteQuery) OrWhere(condition any, params ...any) *DeleteQuery {
 		}
 
 	case Expression:
+		if err := ExpressionError(cond); err != nil {
+			dq.buildErr = err
+			return dq
+		}
 		newSQL, newArgs = cond.Build(dq.builder.db.dialect)
 		if newSQL == "" {
 			return dq
