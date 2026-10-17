@@ -91,8 +91,6 @@ func (h *healthChecker) isHealthy() bool {
 }
 
 // lastError returns the error from the most recent health check.
-//
-//nolint:unused // May be used for debugging/monitoring
 func (h *healthChecker) lastError() error {
 	h.mu.RLock()
 	defer h.mu.RUnlock()

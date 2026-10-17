@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -51,36 +52,46 @@ func TestGenerateUUIDv7_Uniqueness(t *testing.T) {
 	}
 }
 
+// The timestamp is wall-clock milliseconds. On a real clock "sleep, then expect
+// a later millisecond" depends on the OS clock tick (15.6 ms on Windows unless
+// something raised the timer resolution) and on clock adjustments. The synctest
+// fake clock advances by exactly the slept duration.
 func TestGenerateUUIDv7_TimeOrdering(t *testing.T) {
-	id1 := GenerateUUIDv7()
-	time.Sleep(2 * time.Millisecond)
-	id2 := GenerateUUIDv7()
+	synctest.Test(t, func(t *testing.T) {
+		id1 := GenerateUUIDv7()
+		time.Sleep(time.Millisecond)
+		id2 := GenerateUUIDv7()
 
-	if id2 <= id1 {
-		t.Errorf("later UUID must sort higher: %s should be > %s", id2, id1)
-	}
+		// Within one millisecond the order is decided by random bits, so check
+		// the timestamps first: a constant timestamp would otherwise pass half
+		// the time.
+		if ms1, ms2 := uuidv7Millis(t, id1), uuidv7Millis(t, id2); ms2 != ms1+1 {
+			t.Fatalf("timestamps %d then %d, want consecutive milliseconds", ms1, ms2)
+		}
+		if id2 <= id1 {
+			t.Errorf("later UUID must sort higher: %s should be > %s", id2, id1)
+		}
+	})
 }
 
 func TestGenerateUUIDv7_TimestampEmbedded(t *testing.T) {
-	before := time.Now().UnixMilli()
-	id := GenerateUUIDv7()
-	after := time.Now().UnixMilli()
+	synctest.Test(t, func(t *testing.T) {
+		want := time.Now().UnixMilli() // fake clock: stays put until we block
+		if got := uuidv7Millis(t, GenerateUUIDv7()); got != want {
+			t.Errorf("embedded timestamp = %d, want %d", got, want)
+		}
+	})
+}
 
-	raw := strings.ReplaceAll(id, "-", "")
-	b, err := hex.DecodeString(raw)
+// uuidv7Millis returns the 48-bit Unix millisecond timestamp of a UUIDv7.
+func uuidv7Millis(t *testing.T, id string) int64 {
+	t.Helper()
+	b, err := hex.DecodeString(strings.ReplaceAll(id, "-", ""))
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("decode %q: %v", id, err)
 	}
-
-	ms := uint64(b[0])<<40 | uint64(b[1])<<32 | uint64(b[2])<<24 |
-		uint64(b[3])<<16 | uint64(b[4])<<8 | uint64(b[5])
-
-	if ms < uint64(before) {
-		t.Errorf("expected %v >= %v", ms, uint64(before))
-	}
-	if ms > uint64(after) {
-		t.Errorf("expected %v <= %v", ms, uint64(after))
-	}
+	return int64(b[0])<<40 | int64(b[1])<<32 | int64(b[2])<<24 |
+		int64(b[3])<<16 | int64(b[4])<<8 | int64(b[5])
 }
 
 func TestGenerateUUIDv7_Lowercase(t *testing.T) {
