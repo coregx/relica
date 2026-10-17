@@ -1,7 +1,7 @@
 # Relica Roadmap
 
-> **Current Version**: v0.18.0 (October 2026)
-> **Previous Release**: v0.17.3 (Released: October 3, 2026)
+> **Current Version**: v0.19.0 (October 2026)
+> **Previous Release**: v0.18.0 (Released: October 11, 2026)
 > **Production Ready**: v1.0.0 (Target: Q4 2026)
 
 ---
@@ -14,9 +14,16 @@
 
 ---
 
-## 📍 Current State (v0.18.0)
+## 📍 Current State (v0.19.0)
 
-### ✅ What's New in v0.18.0
+### ✅ What's New in v0.19.0
+
+- **No internal types in the public API** (v0.19.0): all 20 types that were aliases to internal packages are declared in `relica` with full docs on pkg.go.dev; `Expression` is a sealed interface, `LikeExp`/`CaseExp`/`CoalesceExp`/`NullIfExp`/`GreatestLeastExp`/`ConcatExp` are interfaces, `Option` is opaque; `Unwrap()` removed; a test guards the whole class
+- **Invalid expressions fail instead of dropping the filter** (v0.19.0): an invalid `Like(...).EscapeChars` no longer turns a `DELETE`/`UPDATE` into an unconditional one
+- **CASE, SQLite LIKE, HAVING fixes** (v0.19.0): Expression operands in CASE are rendered; `ESCAPE '\'` on SQLite; `{:name}` in `Having`
+- **Integration suite** (v0.19.0): 20 scenarios for the public types on PostgreSQL, MySQL, SQLite, 7 of them negative
+
+### ✅ Shipped in v0.18.0
 
 - **`relica.Executor`** (v0.18.0): common interface for `*DB` and `*Tx` — the `dbx.Builder` role for dbcontext-style `With(ctx)`; frozen method set, compile-time assertions
 - **`DB.WithContext` fix** (v0.18.0): the stored context now reaches every query built from the returned `*DB`; previously cancellation and deadlines were silently ignored on the non-transactional path
@@ -217,6 +224,7 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 - **v0.17.2** (2026-09-11) - External audit: One() error masking, $N renumbering, placeholder lexer, cache race, logger off hot path, MaskArgs
 - **v0.17.3** (2026-10-03) - Docs: successor to ozzo-dbx, One()/AsExpression docstrings
 - **v0.18.0** (2026-10-11) - relica.Executor, DB.WithContext fix, Query.WithContext, DB.WrapTx, integration suite on real databases
+- **v0.19.0** (2026-10-18) - No internal types in the public API (20 aliases → real types, Unwrap removed), invalid-expression filter drop fixed, CASE/SQLite LIKE/HAVING fixes
 - **v1.0.0** (Target: Q4 2026) - Production stable release
 
 ---
@@ -230,5 +238,5 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 
 ---
 
-*Last Updated: 2026-10-11*
+*Last Updated: 2026-10-18*
 *Maintained by: Andrey Kolkov and CoreGX contributors*
