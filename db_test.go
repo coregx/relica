@@ -190,14 +190,6 @@ func TestWithContext_ReturnsNewDB(t *testing.T) {
 	}
 }
 
-func TestUnwrap_ReturnsNonNil(t *testing.T) {
-	db := openTestDB(t)
-	core := db.Unwrap()
-	if core == nil {
-		t.Fatal("Unwrap returned nil")
-	}
-}
-
 // ─── Cache management ─────────────────────────────────────────────────────────
 
 func TestWarmCache_NoError(t *testing.T) {
@@ -229,14 +221,6 @@ func TestBuilder_ReturnsNonNil(t *testing.T) {
 	qb := db.Builder()
 	if qb == nil {
 		t.Fatal("Builder returned nil")
-	}
-}
-
-func TestBuilder_Unwrap_ReturnsNonNil(t *testing.T) {
-	db := openTestDB(t)
-	core := db.Builder().Unwrap()
-	if core == nil {
-		t.Fatal("QueryBuilder.Unwrap returned nil")
 	}
 }
 
@@ -482,14 +466,6 @@ func TestSelect_AsExpression(t *testing.T) {
 	expr := sub.AsExpression()
 	if expr == nil {
 		t.Fatal("AsExpression returned nil")
-	}
-}
-
-func TestSelect_Unwrap(t *testing.T) {
-	db := openTestDB(t)
-	inner := db.Select("id").From("users").Unwrap()
-	if inner == nil {
-		t.Fatal("SelectQuery.Unwrap returned nil")
 	}
 }
 
@@ -1071,19 +1047,6 @@ func TestBeginTx_Serializable(t *testing.T) {
 	}
 }
 
-func TestTx_Unwrap(t *testing.T) {
-	db := openTestDB(t)
-	tx, err := db.Begin(context.Background())
-	if err != nil {
-		t.Fatalf("Begin: %v", err)
-	}
-	defer tx.Rollback()
-	core := tx.Unwrap()
-	if core == nil {
-		t.Fatal("Tx.Unwrap returned nil")
-	}
-}
-
 func TestTx_Builder(t *testing.T) {
 	db := openTestDB(t)
 	tx, _ := db.Begin(context.Background())
@@ -1355,62 +1318,65 @@ func TestDetectOperation(t *testing.T) {
 	}
 }
 
-// ─── Configuration options (smoke tests for nil panic) ───────────────────────
+// ─── Configuration options ───────────────────────────────────────────────────
 
-func TestWithMaxOpenConns_ReturnsOption(t *testing.T) {
-	opt := relica.WithMaxOpenConns(10)
-	if opt == nil {
-		t.Error("expected non-nil option")
+// TestOptions_ApplyInOpen opens a DB with every option constructor: none may
+// panic or fail, and the pool limit — observable through Stats — must apply.
+func TestOptions_ApplyInOpen(t *testing.T) {
+	opts := map[string]relica.Option{
+		"WithMaxOpenConns":      relica.WithMaxOpenConns(10),
+		"WithMaxIdleConns":      relica.WithMaxIdleConns(5),
+		"WithConnMaxLifetime":   relica.WithConnMaxLifetime(5 * time.Minute),
+		"WithConnMaxIdleTime":   relica.WithConnMaxIdleTime(time.Minute),
+		"WithHealthCheck":       relica.WithHealthCheck(30 * time.Second),
+		"WithStmtCacheCapacity": relica.WithStmtCacheCapacity(128),
+		"WithLogger":            relica.WithLogger(relica.NewSlogAdapter(slog.Default())),
+		"WithQueryHook":         relica.WithQueryHook(func(context.Context, relica.QueryEvent) {}),
+		"WithLogger(nil)":       relica.WithLogger(nil),
+		"WithQueryHook(nil)":    relica.WithQueryHook(nil),
+	}
+	for name, opt := range opts {
+		t.Run(name, func(t *testing.T) {
+			db, err := relica.Open("sqlite3", "opt-"+name, opt)
+			if err != nil {
+				t.Fatalf("Open: %v", err)
+			}
+			defer db.Close()
+			if _, err := db.Delete("t").Where(relica.Eq("id", 1)).Execute(); err != nil {
+				t.Fatalf("query after %s: %v", name, err)
+			}
+		})
+	}
+
+	db, err := relica.Open("sqlite3", "opt-limit", relica.WithMaxOpenConns(10))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if got := db.Stats().MaxOpenConnections; got != 10 {
+		t.Errorf("MaxOpenConnections = %d, want 10", got)
 	}
 }
 
-func TestWithMaxIdleConns_ReturnsOption(t *testing.T) {
-	opt := relica.WithMaxIdleConns(5)
-	if opt == nil {
-		t.Error("expected non-nil option")
+// TestNilLoggerAndHook_DoNotPanicAfterAnotherHook: before v0.19.0 a nil hook
+// registered after a real one was composed into the chain and panicked on the
+// first query; a nil logger panicked the same way.
+func TestNilLoggerAndHook_DoNotPanicAfterAnotherHook(t *testing.T) {
+	var calls int
+	db, err := relica.Open("sqlite3", "nil-after-hook",
+		relica.WithQueryHook(func(context.Context, relica.QueryEvent) { calls++ }),
+		relica.WithQueryHook(nil),
+		relica.WithLogger(nil),
+	)
+	if err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestWithConnMaxLifetime_ReturnsOption(t *testing.T) {
-	opt := relica.WithConnMaxLifetime(5 * time.Minute)
-	if opt == nil {
-		t.Error("expected non-nil option")
+	defer db.Close()
+	if _, err := db.Delete("t").Where(relica.Eq("id", 1)).Execute(); err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestWithConnMaxIdleTime_ReturnsOption(t *testing.T) {
-	opt := relica.WithConnMaxIdleTime(time.Minute)
-	if opt == nil {
-		t.Error("expected non-nil option")
-	}
-}
-
-func TestWithHealthCheck_ReturnsOption(t *testing.T) {
-	opt := relica.WithHealthCheck(30 * time.Second)
-	if opt == nil {
-		t.Error("expected non-nil option")
-	}
-}
-
-func TestWithStmtCacheCapacity_ReturnsOption(t *testing.T) {
-	opt := relica.WithStmtCacheCapacity(128)
-	if opt == nil {
-		t.Error("expected non-nil option")
-	}
-}
-
-func TestWithLogger_ReturnsOption(t *testing.T) {
-	logger := relica.NewSlogAdapter(slog.Default())
-	opt := relica.WithLogger(logger)
-	if opt == nil {
-		t.Error("expected non-nil option")
-	}
-}
-
-func TestWithQueryHook_ReturnsOption(t *testing.T) {
-	opt := relica.WithQueryHook(func(ctx context.Context, e relica.QueryEvent) {})
-	if opt == nil {
-		t.Error("expected non-nil option")
+	if calls != 1 {
+		t.Errorf("hook calls = %d, want 1", calls)
 	}
 }
 
@@ -1470,7 +1436,7 @@ func TestLike_DoNotPanic(t *testing.T) {
 	db := openTestDB(t)
 	tests := []struct {
 		name string
-		exp  *relica.LikeExp
+		exp  relica.LikeExp
 	}{
 		{"Like", relica.Like("name", "john%")},
 		{"NotLike", relica.NotLike("name", "john%")},
