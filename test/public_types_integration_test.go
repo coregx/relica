@@ -377,6 +377,24 @@ func runPublicTypesTests(t *testing.T, ds *DatabaseSetup) {
 		assert.True(t, strings.HasPrefix(plan.Database, ds.Dialect[:3]), "Database = %q", plan.Database)
 	})
 
+	t.Run("QueryPlan_ExplainAnalyze", func(t *testing.T) {
+		seedPtItems(t, db)
+		q := db.Select().From("pt_item").Where(relica.Eq("state", 1))
+		plan, err := q.ExplainAnalyze()
+		if ds.Dialect == "sqlite" {
+			// Negative: SQLite has no EXPLAIN ANALYZE; the error must be explicit.
+			require.Error(t, err)
+			assert.Nil(t, plan)
+			return
+		}
+		require.NoError(t, err)
+		require.NotNil(t, plan)
+		assert.NotEmpty(t, plan.RawOutput)
+		assert.Equal(t, int64(1), plan.ActualRows, "one row has state = 1; raw:\n%s", plan.RawOutput)
+		assert.Positive(t, plan.ActualTime, "raw:\n%s", plan.RawOutput)
+		assert.True(t, plan.FullScan, "no index on state: expected a full scan; raw:\n%s", plan.RawOutput)
+	})
+
 	// ── BeforeInserter ───────────────────────────────────────────────────
 
 	t.Run("BeforeInserter_SetsFieldsAndCanAbort", func(t *testing.T) {

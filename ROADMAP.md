@@ -21,6 +21,7 @@
 - **No internal types in the public API** (v0.19.0): all 20 types that were aliases to internal packages are declared in `relica` with full docs on pkg.go.dev; `Expression` is a sealed interface, `LikeExp`/`CaseExp`/`CoalesceExp`/`NullIfExp`/`GreatestLeastExp`/`ConcatExp` are interfaces, `Option` is opaque; `Unwrap()` removed; a test guards the whole class
 - **Invalid expressions fail instead of dropping the filter** (v0.19.0): an invalid `Like(...).EscapeChars` no longer turns a `DELETE`/`UPDATE` into an unconditional one
 - **CASE, SQLite LIKE, HAVING fixes** (v0.19.0): Expression operands in CASE are rendered; `ESCAPE '\'` on SQLite; `{:name}` in `Having`
+- **MySQL `Explain`/`ExplainAnalyze`** (v0.19.0): did not work on any real MySQL server (quoted numbers in the JSON plan; `EXPLAIN ANALYZE` is TREE text) — both fixed
 - **Integration suite** (v0.19.0): 20 scenarios for the public types on PostgreSQL, MySQL, SQLite, 7 of them negative
 
 ### ✅ Shipped in v0.18.0
@@ -224,7 +225,7 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 - **v0.17.2** (2026-09-11) - External audit: One() error masking, $N renumbering, placeholder lexer, cache race, logger off hot path, MaskArgs
 - **v0.17.3** (2026-10-03) - Docs: successor to ozzo-dbx, One()/AsExpression docstrings
 - **v0.18.0** (2026-10-11) - relica.Executor, DB.WithContext fix, Query.WithContext, DB.WrapTx, integration suite on real databases
-- **v0.19.0** (2026-10-18) - No internal types in the public API (20 aliases → real types, Unwrap removed), invalid-expression filter drop fixed, CASE/SQLite LIKE/HAVING fixes
+- **v0.19.0** (2026-10-18) - No internal types in the public API (20 aliases → real types, Unwrap removed), invalid-expression filter drop fixed, CASE/SQLite LIKE/HAVING fixes, MySQL Explain/ExplainAnalyze fixed
 - **v1.0.0** (Target: Q4 2026) - Production stable release
 
 ---

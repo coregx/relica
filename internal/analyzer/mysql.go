@@ -40,7 +40,13 @@ func (ma *MySQLAnalyzer) executeExplain(ctx context.Context, explainQuery string
 		return nil, fmt.Errorf("failed to execute EXPLAIN: %w", err)
 	}
 
-	plan, err := parseMySQLExplain(rawJSON, withAnalyze)
+	// EXPLAIN ANALYZE has no JSON form on MySQL 8.0: it always prints TREE text.
+	var plan *QueryPlan
+	if withAnalyze {
+		plan, err = parseMySQLExplainTree(rawJSON)
+	} else {
+		plan, err = parseMySQLExplain(rawJSON, false)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse EXPLAIN output: %w", err)
 	}
@@ -74,9 +80,9 @@ type mysqlTableAccess struct {
 	UsedKeyParts        []string      `json:"used_key_parts"`
 	KeyLength           string        `json:"key_length"`
 	Ref                 []string      `json:"ref"`
-	RowsExaminedPerScan int64         `json:"rows_examined_per_scan"`
-	RowsProducedPerJoin int64         `json:"rows_produced_per_join"`
-	Filtered            float64       `json:"filtered"` // Percentage of rows filtered by WHERE
+	RowsExaminedPerScan mysqlInt      `json:"rows_examined_per_scan"`
+	RowsProducedPerJoin mysqlInt      `json:"rows_produced_per_join"`
+	Filtered            mysqlFloat    `json:"filtered"` // Percentage of rows filtered by WHERE
 	CostInfo            mysqlCostInfo `json:"cost_info"`
 	AttachedCondition   string        `json:"attached_condition"` // WHERE clause
 }
@@ -207,12 +213,12 @@ func updateMySQLTableMetrics(table *mysqlTableAccess, plan *QueryPlan) {
 
 	// Accumulate row estimates
 	if table.RowsExaminedPerScan > 0 {
-		plan.EstimatedRows += table.RowsExaminedPerScan
-		plan.RowsExamined += table.RowsExaminedPerScan
+		plan.EstimatedRows += int64(table.RowsExaminedPerScan)
+		plan.RowsExamined += int64(table.RowsExaminedPerScan)
 	}
 
 	if table.RowsProducedPerJoin > 0 {
-		plan.RowsProduced += table.RowsProducedPerJoin
+		plan.RowsProduced += int64(table.RowsProducedPerJoin)
 	}
 }
 
