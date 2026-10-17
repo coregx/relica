@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -219,37 +220,35 @@ func TestContextCancellation_BeforeExecute(t *testing.T) {
 	}
 }
 
-// TestContextTimeout tests context with timeout
+// TestContextTimeout tests context with timeout.
+// synctest: the deadline's cancel runs in a time.AfterFunc goroutine, so a
+// Sleep-past-the-deadline check on a real clock can wake before it runs.
 func TestContextTimeout(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-	defer cancel()
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+		defer cancel()
 
-	// Wait for timeout
-	time.Sleep(50 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
+		synctest.Wait()
 
-	if ctx.Err() == nil {
-		t.Error("Context should have timed out")
-	}
-
-	if ctx.Err() != context.DeadlineExceeded {
-		t.Errorf("Expected context.DeadlineExceeded, got %v", ctx.Err())
-	}
+		if ctx.Err() != context.DeadlineExceeded {
+			t.Errorf("Expected context.DeadlineExceeded, got %v", ctx.Err())
+		}
+	})
 }
 
-// TestContextDeadline tests context with deadline
+// TestContextDeadline tests context with deadline.
 func TestContextDeadline(t *testing.T) {
-	deadline := time.Now().Add(10 * time.Millisecond)
-	ctx, cancel := context.WithDeadline(context.Background(), deadline)
-	defer cancel()
+	synctest.Test(t, func(t *testing.T) {
+		deadline := time.Now().Add(10 * time.Millisecond)
+		ctx, cancel := context.WithDeadline(context.Background(), deadline)
+		defer cancel()
 
-	// Wait for deadline
-	time.Sleep(50 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
+		synctest.Wait()
 
-	if ctx.Err() == nil {
-		t.Error("Context should have exceeded deadline")
-	}
-
-	if ctx.Err() != context.DeadlineExceeded {
-		t.Errorf("Expected context.DeadlineExceeded, got %v", ctx.Err())
-	}
+		if ctx.Err() != context.DeadlineExceeded {
+			t.Errorf("Expected context.DeadlineExceeded, got %v", ctx.Err())
+		}
+	})
 }

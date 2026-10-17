@@ -2,7 +2,9 @@ package util
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -35,12 +37,15 @@ func TestIsCanceled(t *testing.T) {
 	})
 
 	t.Run("expired deadline context is canceled", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
-		defer cancel()
-		time.Sleep(5 * time.Millisecond)
-		if !IsCanceled(ctx) {
-			t.Error("expected true")
-		}
+		synctest.Test(t, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			time.Sleep(time.Second)
+			synctest.Wait() // let the timer's cancel goroutine finish
+			if !IsCanceled(ctx) {
+				t.Error("expected true")
+			}
+		})
 	})
 
 	t.Run("context with future deadline is not canceled", func(t *testing.T) {
@@ -69,14 +74,33 @@ func TestWithTimeout(t *testing.T) {
 		}
 	})
 
-	t.Run("context expires after timeout", func(t *testing.T) {
-		ctx, cancel := WithTimeout(context.Background(), 1*time.Millisecond)
-		defer cancel()
+	// The deadline is enforced by time.AfterFunc, which cancels the context from
+	// its own goroutine. On a real clock a test that sleeps past the deadline can
+	// wake before that goroutine runs (both timers fire in one scheduler pass when
+	// the process is descheduled), so the old Sleep-based version was flaky.
+	// synctest uses a fake clock, and synctest.Wait returns only after the cancel
+	// goroutine is done, which makes the check exact at the boundary.
+	t.Run("context expires exactly at the timeout", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			const timeout = 5 * time.Second
+			ctx, cancel := WithTimeout(context.Background(), timeout)
+			defer cancel()
 
-		time.Sleep(5 * time.Millisecond)
-		if !IsCanceled(ctx) {
-			t.Error("expected true")
-		}
+			time.Sleep(timeout - time.Nanosecond)
+			synctest.Wait()
+			if IsCanceled(ctx) {
+				t.Fatalf("canceled before the timeout: %v", ctx.Err())
+			}
+
+			time.Sleep(time.Nanosecond)
+			synctest.Wait()
+			if !IsCanceled(ctx) {
+				t.Fatal("not canceled at the timeout")
+			}
+			if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				t.Errorf("ctx.Err() = %v, want %v", ctx.Err(), context.DeadlineExceeded)
+			}
+		})
 	})
 
 	t.Run("cancel function stops context before timeout", func(t *testing.T) {
@@ -91,21 +115,20 @@ func TestWithTimeout(t *testing.T) {
 	})
 
 	t.Run("deadline is set correctly", func(t *testing.T) {
-		timeout := 5 * time.Second
-		before := time.Now()
-		ctx, cancel := WithTimeout(context.Background(), timeout)
-		defer cancel()
+		synctest.Test(t, func(t *testing.T) {
+			const timeout = 5 * time.Second
+			start := time.Now() // the fake clock does not move until we block
+			ctx, cancel := WithTimeout(context.Background(), timeout)
+			defer cancel()
 
-		deadline, ok := ctx.Deadline()
-		if !ok {
-			t.Fatal("expected true")
-		}
-		if !deadline.After(before) {
-			t.Error("expected true")
-		}
-		if !deadline.Before(before.Add(timeout + 100*time.Millisecond)) {
-			t.Error("expected true")
-		}
+			deadline, ok := ctx.Deadline()
+			if !ok {
+				t.Fatal("expected a deadline")
+			}
+			if want := start.Add(timeout); !deadline.Equal(want) {
+				t.Errorf("deadline = %v, want %v", deadline, want)
+			}
+		})
 	})
 
 	t.Run("inherits parent context values", func(t *testing.T) {

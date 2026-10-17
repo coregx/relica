@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/coregx/relica/internal/logger"
@@ -85,19 +86,53 @@ func TestWithConnMaxIdleTime(t *testing.T) {
 	opt(db) // must not panic
 }
 
+// TestWithHealthCheck checks what the health checker actually does: it pings on
+// every tick, records the time, and reports a failed ping as unhealthy.
+// synctest's fake clock makes the ticks exact; the DB is opened inside the
+// bubble so database/sql's goroutines belong to it.
 func TestWithHealthCheck(t *testing.T) {
-	db := openCovDB(t)
-	defer db.Close()
+	synctest.Test(t, func(t *testing.T) {
+		const interval = 100 * time.Millisecond
+		db := openCovDB(t)
+		defer db.Close()
 
-	opt := WithHealthCheck(100 * time.Millisecond)
-	opt(db)
+		start := time.Now()
+		WithHealthCheck(interval)(db)
+		if db.healthChecker == nil {
+			t.Fatal("WithHealthCheck: expected healthChecker to be set, got nil")
+		}
 
-	if db.healthChecker == nil {
-		t.Fatal("WithHealthCheck: expected healthChecker to be set, got nil")
-	}
+		synctest.Wait()
+		if got := db.Stats().LastHealthCheck; !got.IsZero() {
+			t.Fatalf("LastHealthCheck before the first tick = %v, want zero", got)
+		}
 
-	// Give health checker one tick to run, then stop it cleanly via Close.
-	time.Sleep(150 * time.Millisecond)
+		time.Sleep(interval)
+		synctest.Wait()
+		s := db.Stats()
+		if want := start.Add(interval); !s.LastHealthCheck.Equal(want) {
+			t.Errorf("LastHealthCheck after the first tick = %v, want %v", s.LastHealthCheck, want)
+		}
+		if !s.Healthy || !db.IsHealthy() {
+			t.Error("expected healthy after a successful ping")
+		}
+
+		// Negative: the database goes away, the next tick must report it.
+		if err := db.sqlDB.Close(); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(interval)
+		synctest.Wait()
+		if db.IsHealthy() || db.Stats().Healthy {
+			t.Error("expected unhealthy after the ping failed on a closed database")
+		}
+		if err := db.healthChecker.lastError(); err == nil {
+			t.Error("expected the failed ping's error to be recorded")
+		}
+		if want := start.Add(2 * interval); !db.Stats().LastHealthCheck.Equal(want) {
+			t.Errorf("LastHealthCheck after the second tick = %v, want %v", db.Stats().LastHealthCheck, want)
+		}
+	})
 }
 
 func TestWithHealthCheckZeroInterval(t *testing.T) {
