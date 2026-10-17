@@ -1,3 +1,5 @@
+> Upgrading to **v0.19.0**? Jump to [v0.18.x → v0.19.0](#migration-guide-v018x--v0190).
+
 # Migration Guide: v0.3.0-beta → v0.4.0-beta
 
 **Date**: October 26, 2025
@@ -76,6 +78,10 @@ db.Select("u.id", "u.name").
 ---
 
 ## ⚠️ What Might Break (5% of code)
+
+> **v0.19.0:** `Unwrap()` was removed from `DB`, `Tx`, `SelectQuery` and `QueryBuilder` — it exposed
+> internal types. The advice below applies to v0.4.0–v0.18.x only. See
+> [v0.18.x → v0.19.0](#migration-guide-v018x--v0190); use `DB.SqlDB()` for the underlying `*sql.DB`.
 
 ### 1. Type Assertions to Internal Types
 
@@ -571,3 +577,44 @@ The following continue to work exactly as before:
 - Batch operations
 - Statement cache
 - Connection pool configuration
+
+---
+
+# Migration Guide: v0.18.x → v0.19.0
+
+**Type**: MINOR (pre-v1.0 API cleanup). Most code compiles unchanged.
+
+## What Changed
+
+Twenty exported types were aliases to internal packages (`type HashExp = core.HashExp`), so
+pkg.go.dev and IDEs showed no fields, methods or docs for them. They are now declared in package
+`relica`. See CHANGELOG `[0.19.0]` and the godoc of each type.
+
+## Upgrade Steps
+
+1. `go get github.com/coregx/relica@v0.19.0`
+2. Fix the compile errors below, if any. Each has a mechanical fix.
+
+| Compile error | Fix |
+|---------------|-----|
+| `cannot use relica.Case(...) (value of interface type relica.CaseExp) as *relica.CaseExp value` | Drop the `*`: `var c relica.CaseExp`. Same for `LikeExp`, `CoalesceExp`, `NullIfExp`, `GreatestLeastExp`, `ConcatExp` |
+| `db.Unwrap undefined` (also `Tx`, `SelectQuery`, `QueryBuilder`) | Use the public API; for the raw connection use `db.SqlDB()` |
+| `invalid operation: opt == nil (mismatched types relica.Option and untyped nil)` | Options are values now; drop the nil check. The zero `Option` is a no-op |
+
+## Behavior Fixes You May Notice
+
+- A query whose condition contains an invalid expression (`Like(...).EscapeChars` with an odd number
+  of arguments) now **returns an error instead of running without the filter**.
+- `CaseWhen().When(relica.Eq(...), ...)` now renders the condition; Expressions as `THEN`/`ELSE` values
+  are rendered instead of bound as parameters.
+- `Like` on SQLite now matches escaped `%`/`_` literally (Relica adds `ESCAPE '\'`).
+- `Having("... {:name}", relica.Params{...})` now resolves named parameters.
+- `NullStringMap.Keys()` returns sorted keys.
+- `WithQueryHook(nil)`, `WithLogger(nil)` are ignored instead of panicking; `NewSlogAdapter(nil)` uses
+  `slog.Default()`.
+
+## No Action Required
+
+Struct literals (`relica.TxOptions{...}`), map literals (`relica.HashExp{...}`, `relica.Params{...}`),
+`NullStringMap` methods, `QueryHook` functions, custom `Logger` implementations and
+`BeforeInserter` models compile and behave as before.

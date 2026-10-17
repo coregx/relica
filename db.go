@@ -49,13 +49,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"log/slog"
 	"reflect"
 	"sort"
 	"time"
 
 	"github.com/coregx/relica/internal/core"
-	"github.com/coregx/relica/internal/logger"
 	"github.com/coregx/relica/internal/util"
 )
 
@@ -102,16 +100,54 @@ type QueryBuilder struct {
 	qb *core.QueryBuilder
 }
 
-// QueryPlan represents a unified query execution plan from database EXPLAIN.
-// It provides performance metrics, index usage analysis, and database-specific details.
-// Returned by [SelectQuery.Explain] and [SelectQuery.ExplainAnalyze].
+// QueryPlan is a database-independent summary of an execution plan, returned
+// by [SelectQuery.Explain] and [SelectQuery.ExplainAnalyze].
 //
 // Fields populated by EXPLAIN (always available):
 //   - Cost, EstimatedRows, UsesIndex, IndexName, FullScan, RawOutput, Database
 //
 // Fields populated only by EXPLAIN ANALYZE (require actual execution):
 //   - ActualRows, ActualTime, BuffersHit, BuffersMiss, RowsExamined, RowsProduced
-type QueryPlan = core.QueryPlan
+type QueryPlan struct {
+	// Cost is the estimated query cost in database-specific units.
+	Cost float64
+	// EstimatedRows is the estimated number of rows to be processed.
+	EstimatedRows int64
+	// ActualRows is the number of rows actually processed (EXPLAIN ANALYZE only, else 0).
+	ActualRows int64
+	// ActualTime is the actual execution time (EXPLAIN ANALYZE only, else 0).
+	ActualTime time.Duration
+
+	// UsesIndex is true if the plan uses any index.
+	UsesIndex bool
+	// IndexName is the primary index used (empty if several or none).
+	IndexName string
+	// FullScan is true if a full table scan is performed.
+	FullScan bool
+
+	// RawOutput is the full EXPLAIN output from the database.
+	RawOutput string
+	// Database is "postgres", "mysql" or "sqlite".
+	Database string
+
+	// BuffersHit is the number of buffer cache hits (PostgreSQL, EXPLAIN ANALYZE).
+	BuffersHit int64
+	// BuffersMiss is the number of buffer cache misses (PostgreSQL, EXPLAIN ANALYZE).
+	BuffersMiss int64
+	// RowsExamined is the number of rows examined (MySQL).
+	RowsExamined int64
+	// RowsProduced is the number of rows produced (MySQL).
+	RowsProduced int64
+}
+
+// queryPlan converts an internal plan (nil stays nil).
+func queryPlan(p *core.QueryPlan) *QueryPlan {
+	if p == nil {
+		return nil
+	}
+	plan := QueryPlan(*p)
+	return &plan
+}
 
 // SelectQuery represents a SELECT query being built.
 //
@@ -263,7 +299,19 @@ type ModelQuery struct {
 //	    u.CreatedAt = time.Now()
 //	    return nil
 //	}
-type BeforeInserter = core.BeforeInserter
+//
+// An error returned by BeforeInsert aborts the insert and is returned to the
+// caller; nothing is sent to the database.
+type BeforeInserter interface {
+	BeforeInsert() error
+}
+
+// The public and internal hook interfaces must stay interchangeable: the
+// internal Model API detects the hook with its own interface.
+var (
+	_ core.BeforeInserter = BeforeInserter(nil)
+	_ BeforeInserter      = core.BeforeInserter(nil)
+)
 
 // Query represents a built query ready for execution.
 //
@@ -279,75 +327,6 @@ type Query struct {
 	q   *core.Query
 	err error // Error from query construction (e.g., struct conversion).
 }
-
-// TxOptions represents transaction options including isolation level.
-//
-// Example:
-//
-//	opts := &relica.TxOptions{
-//	    Isolation: sql.LevelSerializable,
-//	    ReadOnly:  true,
-//	}
-//	tx, err := db.BeginTx(ctx, opts)
-type TxOptions = core.TxOptions
-
-// PoolStats represents database connection pool statistics.
-// It provides insights into connection pool health and usage patterns.
-type PoolStats = core.PoolStats
-
-// Option is a functional option for configuring DB.
-//
-// Example:
-//
-//	db, err := relica.Open("postgres", dsn,
-//	    relica.WithMaxOpenConns(100),
-//	    relica.WithMaxIdleConns(50))
-type Option = core.Option
-
-// Expression represents a database expression for building complex WHERE clauses.
-//
-// Expressions provide a type-safe way to construct SQL conditions without
-// writing raw SQL strings. They support nesting and composition.
-//
-// Example:
-//
-//	expr := relica.And(
-//	    relica.Eq("status", 1),
-//	    relica.Or(
-//	        relica.GreaterThan("age", 18),
-//	        relica.Eq("verified", true),
-//	    ),
-//	)
-//	db.Builder().Select("*").From("users").Where(expr).All(&users)
-type Expression = core.Expression
-
-// HashExp represents a hash-based expression using column-value pairs.
-//
-// HashExp provides a convenient map syntax for simple equality conditions.
-// Special values are handled automatically:
-//   - nil → "column IS NULL"
-//   - []any → "column IN (...)"
-//
-// Example:
-//
-//	db.Builder().Select("*").From("users").Where(relica.HashExp{
-//	    "status": 1,
-//	    "role": []string{"admin", "moderator"},
-//	    "deleted_at": nil,
-//	}).All(&users)
-type HashExp = core.HashExp
-
-// LikeExp represents a LIKE expression with automatic escaping.
-//
-// LikeExp provides pattern matching with automatic escaping of
-// SQL wildcard characters (%, _).
-//
-// Example:
-//
-//	db.Builder().Select("*").From("users").Where(
-//	    relica.Like("name", "john%"),
-//	).All(&users)
-type LikeExp = core.LikeExp
 
 // ============================================================================
 // DB Methods
@@ -372,7 +351,7 @@ type LikeExp = core.LikeExp
 //	}
 //	defer db.Close()
 func Open(driverName, dsn string, opts ...Option) (*DB, error) {
-	coreDB, err := core.Open(driverName, dsn, opts...)
+	coreDB, err := core.Open(driverName, dsn, coreOptions(opts)...)
 	if err != nil {
 		return nil, err
 	}
@@ -500,7 +479,7 @@ func (d *DB) WithContext(ctx context.Context) *DB {
 //	    log.Warn("Database health check failed")
 //	}
 func (d *DB) Stats() PoolStats {
-	return d.db.Stats()
+	return PoolStats(d.db.Stats())
 }
 
 // IsHealthy returns true if the database connection is healthy.
@@ -908,7 +887,7 @@ func (d *DB) Begin(ctx context.Context) (*Tx, error) {
 //	}
 //	tx, err := db.BeginTx(ctx, opts)
 func (d *DB) BeginTx(ctx context.Context, opts *TxOptions) (*Tx, error) {
-	coreTx, err := d.db.BeginTx(ctx, opts)
+	coreTx, err := d.db.BeginTx(ctx, coreTxOptions(opts))
 	if err != nil {
 		return nil, err
 	}
@@ -963,7 +942,7 @@ func (d *DB) Transactional(ctx context.Context, f func(*Tx) error) error {
 //	    return tx.Model(&user).Update()
 //	})
 func (d *DB) TransactionalTx(ctx context.Context, opts *TxOptions, f func(*Tx) error) error {
-	return d.db.TransactionalTx(ctx, opts, func(coreTx *core.Tx) error {
+	return d.db.TransactionalTx(ctx, coreTxOptions(opts), func(coreTx *core.Tx) error {
 		return f(&Tx{tx: coreTx})
 	})
 }
@@ -1059,19 +1038,6 @@ func (d *DB) QuoteColumnName(column string) string {
 //	ph2 := db.GenerateParamName(2) // PostgreSQL: "$2", MySQL/SQLite: "?"
 func (d *DB) GenerateParamName(index int) string {
 	return d.db.GenerateParamName(index)
-}
-
-// Unwrap returns the underlying core.DB for advanced use cases.
-//
-// This method is provided for edge cases where direct access to
-// internal types is needed. Most users should not need this.
-//
-// Example:
-//
-//	coreDB := db.Unwrap()
-//	// Use coreDB for advanced operations
-func (d *DB) Unwrap() *core.DB {
-	return d.db
 }
 
 // ============================================================================
@@ -1243,14 +1209,6 @@ func (t *Tx) Commit() error {
 //	defer tx.Rollback() // Safe even after Commit
 func (t *Tx) Rollback() error {
 	return t.tx.Rollback()
-}
-
-// Unwrap returns the underlying core.Tx for advanced use cases.
-//
-// This method is provided for edge cases where direct access to
-// internal types is needed. Most users should not need this.
-func (t *Tx) Unwrap() *core.Tx {
-	return t.tx
 }
 
 // ExecContext executes a raw SQL query within the transaction.
@@ -1783,14 +1741,6 @@ func (qb *QueryBuilder) Upsert(table string, values map[string]any) *UpsertQuery
 	return &UpsertQuery{uq: qb.qb.Upsert(table, values)}
 }
 
-// Unwrap returns the underlying core.QueryBuilder for advanced use cases.
-//
-// This method is provided for edge cases where direct access to
-// internal types is needed. Most users should not need this.
-func (qb *QueryBuilder) Unwrap() *core.QueryBuilder {
-	return qb.qb
-}
-
 // ============================================================================
 // SelectQuery Methods (40+ methods)
 // ============================================================================
@@ -1877,7 +1827,7 @@ func (sq *SelectQuery) AndSelect(cols ...string) *SelectQuery {
 //
 //	SELECT "id", "name", (SELECT COUNT(*) FROM "orders" WHERE "orders"."user_id" = "users"."id") AS "order_count" FROM "users"
 func (sq *SelectQuery) SelectSub(exp Expression, alias string) *SelectQuery {
-	sq.sq.SelectSub(exp, alias)
+	sq.sq.SelectSub(coreExp(exp), alias)
 	return sq
 }
 
@@ -1897,7 +1847,7 @@ func (sq *SelectQuery) SelectSub(exp Expression, alias string) *SelectQuery {
 //	    relica.GreaterThan("age", 18),
 //	))
 func (sq *SelectQuery) Where(condition any, params ...any) *SelectQuery {
-	sq.sq.Where(condition, params...)
+	sq.sq.Where(coreArg(condition), params...)
 	return sq
 }
 
@@ -1910,7 +1860,7 @@ func (sq *SelectQuery) Where(condition any, params ...any) *SelectQuery {
 //	    Where("status = ?", 1).
 //	    AndWhere("age > ?", 18)
 func (sq *SelectQuery) AndWhere(condition any, params ...any) *SelectQuery {
-	sq.sq.AndWhere(condition, params...)
+	sq.sq.AndWhere(coreArg(condition), params...)
 	return sq
 }
 
@@ -1923,7 +1873,7 @@ func (sq *SelectQuery) AndWhere(condition any, params ...any) *SelectQuery {
 //	    Where("status = ?", 1).
 //	    OrWhere("role = ?", "admin")
 func (sq *SelectQuery) OrWhere(condition any, params ...any) *SelectQuery {
-	sq.sq.OrWhere(condition, params...)
+	sq.sq.OrWhere(coreArg(condition), params...)
 	return sq
 }
 
@@ -1936,7 +1886,7 @@ func (sq *SelectQuery) OrWhere(condition any, params ...any) *SelectQuery {
 //	    InnerJoin("orders o", "o.user_id = u.id").
 //	    All(&results)
 func (sq *SelectQuery) InnerJoin(table string, on any) *SelectQuery {
-	sq.sq.InnerJoin(table, on)
+	sq.sq.InnerJoin(table, coreArg(on))
 	return sq
 }
 
@@ -1949,7 +1899,7 @@ func (sq *SelectQuery) InnerJoin(table string, on any) *SelectQuery {
 //	    LeftJoin("orders o", "o.user_id = u.id").
 //	    All(&results)
 func (sq *SelectQuery) LeftJoin(table string, on any) *SelectQuery {
-	sq.sq.LeftJoin(table, on)
+	sq.sq.LeftJoin(table, coreArg(on))
 	return sq
 }
 
@@ -1962,7 +1912,7 @@ func (sq *SelectQuery) LeftJoin(table string, on any) *SelectQuery {
 //	    RightJoin("orders o", "o.user_id = u.id").
 //	    All(&results)
 func (sq *SelectQuery) RightJoin(table string, on any) *SelectQuery {
-	sq.sq.RightJoin(table, on)
+	sq.sq.RightJoin(table, coreArg(on))
 	return sq
 }
 
@@ -1977,7 +1927,7 @@ func (sq *SelectQuery) RightJoin(table string, on any) *SelectQuery {
 //	    FullJoin("orders o", "o.user_id = u.id").
 //	    All(&results)
 func (sq *SelectQuery) FullJoin(table string, on any) *SelectQuery {
-	sq.sq.FullJoin(table, on)
+	sq.sq.FullJoin(table, coreArg(on))
 	return sq
 }
 
@@ -2032,7 +1982,7 @@ func (sq *SelectQuery) OrderByExpr(expr string, args ...any) *SelectQuery {
 //	    OrderBy("t.due_date ASC").
 //	    All(&rows)
 func (sq *SelectQuery) OrderBySub(exp Expression) *SelectQuery {
-	sq.sq.OrderBySub(exp)
+	sq.sq.OrderBySub(coreExp(exp))
 	return sq
 }
 
@@ -2082,7 +2032,7 @@ func (sq *SelectQuery) GroupByExpr(expr string, args ...any) *SelectQuery {
 
 // GroupBySub adds a type-safe expression to the GROUP BY clause.
 func (sq *SelectQuery) GroupBySub(exp Expression) *SelectQuery {
-	sq.sq.GroupBySub(exp)
+	sq.sq.GroupBySub(coreExp(exp))
 	return sq
 }
 
@@ -2094,7 +2044,7 @@ func (sq *SelectQuery) GroupBySub(exp Expression) *SelectQuery {
 //
 //	Having("COUNT(*) > ?", 100)
 func (sq *SelectQuery) Having(condition any, args ...any) *SelectQuery {
-	sq.sq.Having(condition, args...)
+	sq.sq.Having(coreArg(condition), args...)
 	return sq
 }
 
@@ -2335,7 +2285,8 @@ func (sq *SelectQuery) ToSQL() (string, []any) {
 //	fmt.Printf("Cost: %.2f, Rows: %d, Uses Index: %v\n",
 //	    plan.Cost, plan.EstimatedRows, plan.UsesIndex)
 func (sq *SelectQuery) Explain() (*QueryPlan, error) {
-	return sq.sq.Explain()
+	plan, err := sq.sq.Explain()
+	return queryPlan(plan), err
 }
 
 // ExplainAnalyze analyzes the query execution plan AND executes the query.
@@ -2354,7 +2305,8 @@ func (sq *SelectQuery) Explain() (*QueryPlan, error) {
 //	fmt.Printf("Actual Time: %v, Actual Rows: %d, Buffers Hit: %d\n",
 //	    plan.ActualTime, plan.ActualRows, plan.BuffersHit)
 func (sq *SelectQuery) ExplainAnalyze() (*QueryPlan, error) {
-	return sq.sq.ExplainAnalyze()
+	plan, err := sq.sq.ExplainAnalyze()
+	return queryPlan(plan), err
 }
 
 // AsExpression converts a SelectQuery to an Expression for subquery use.
@@ -2365,15 +2317,7 @@ func (sq *SelectQuery) ExplainAnalyze() (*QueryPlan, error) {
 //	db.Builder().Select("*").From("users").
 //	    Where(relica.In("id", sub.AsExpression())).All(&users)
 func (sq *SelectQuery) AsExpression() Expression {
-	return sq.sq.AsExpression()
-}
-
-// Unwrap returns the underlying core.SelectQuery for advanced use cases.
-//
-// This method is provided for edge cases where direct access to
-// internal types is needed. Most users should not need this.
-func (sq *SelectQuery) Unwrap() *core.SelectQuery {
-	return sq.sq
+	return wrapExp(sq.sq.AsExpression())
 }
 
 // ============================================================================
@@ -2407,7 +2351,7 @@ func (uq *UpdateQuery) Set(values map[string]any) *UpdateQuery {
 //
 //	Update("users").Set(...).Where("id = ?", 123)
 func (uq *UpdateQuery) Where(condition any, params ...any) *UpdateQuery {
-	uq.uq.Where(condition, params...)
+	uq.uq.Where(coreArg(condition), params...)
 	return uq
 }
 
@@ -2421,7 +2365,7 @@ func (uq *UpdateQuery) Where(condition any, params ...any) *UpdateQuery {
 //	    Where("id > ?", 100).
 //	    AndWhere("active = ?", true)
 func (uq *UpdateQuery) AndWhere(condition any, params ...any) *UpdateQuery {
-	uq.uq.AndWhere(condition, params...)
+	uq.uq.AndWhere(coreArg(condition), params...)
 	return uq
 }
 
@@ -2435,7 +2379,7 @@ func (uq *UpdateQuery) AndWhere(condition any, params ...any) *UpdateQuery {
 //	    Where("banned = ?", true).
 //	    OrWhere("deleted = ?", true)
 func (uq *UpdateQuery) OrWhere(condition any, params ...any) *UpdateQuery {
-	uq.uq.OrWhere(condition, params...)
+	uq.uq.OrWhere(coreArg(condition), params...)
 	return uq
 }
 
@@ -2488,7 +2432,7 @@ func (dq *DeleteQuery) WithContext(ctx context.Context) *DeleteQuery {
 //
 //	Delete("users").Where("id = ?", 123)
 func (dq *DeleteQuery) Where(condition any, params ...any) *DeleteQuery {
-	dq.dq.Where(condition, params...)
+	dq.dq.Where(coreArg(condition), params...)
 	return dq
 }
 
@@ -2501,7 +2445,7 @@ func (dq *DeleteQuery) Where(condition any, params ...any) *DeleteQuery {
 //	    Where("status = ?", 0).
 //	    AndWhere("created_at < ?", "2020-01-01")
 func (dq *DeleteQuery) AndWhere(condition any, params ...any) *DeleteQuery {
-	dq.dq.AndWhere(condition, params...)
+	dq.dq.AndWhere(coreArg(condition), params...)
 	return dq
 }
 
@@ -2514,7 +2458,7 @@ func (dq *DeleteQuery) AndWhere(condition any, params ...any) *DeleteQuery {
 //	    Where("banned = ?", true).
 //	    OrWhere("deleted = ?", true)
 func (dq *DeleteQuery) OrWhere(condition any, params ...any) *DeleteQuery {
-	dq.dq.OrWhere(condition, params...)
+	dq.dq.OrWhere(coreArg(condition), params...)
 	return dq
 }
 
@@ -2882,7 +2826,7 @@ func (q *Query) BindParams(params Params) *Query {
 	if q.err != nil {
 		return q
 	}
-	q.q.BindParams(params)
+	q.q.BindParams(core.Params(params))
 	return q
 }
 
@@ -3025,279 +2969,3 @@ func IsNotNullViolation(err error) bool { return core.IsNotNullViolation(err) }
 //	    // handle check constraint failure
 //	}
 func IsCheckViolation(err error) bool { return core.IsCheckViolation(err) }
-
-// ============================================================================
-// Re-export configuration options
-// ============================================================================
-
-// WithMaxOpenConns sets the maximum number of open connections.
-func WithMaxOpenConns(n int) Option { return core.WithMaxOpenConns(n) }
-
-// WithMaxIdleConns sets the maximum number of idle connections.
-func WithMaxIdleConns(n int) Option { return core.WithMaxIdleConns(n) }
-
-// WithConnMaxLifetime sets the maximum amount of time a connection may be reused.
-// Expired connections may be closed lazily before reuse.
-// If duration <= 0, connections are not closed due to a connection's age.
-//
-// Example:
-//
-//	db, err := relica.Open("postgres", dsn,
-//	    relica.WithConnMaxLifetime(5*time.Minute))
-func WithConnMaxLifetime(d time.Duration) Option { return core.WithConnMaxLifetime(d) }
-
-// WithConnMaxIdleTime sets the maximum amount of time a connection may be idle.
-// Expired connections may be closed lazily before reuse.
-// If duration <= 0, connections are not closed due to a connection's idle time.
-//
-// Example:
-//
-//	db, err := relica.Open("postgres", dsn,
-//	    relica.WithConnMaxIdleTime(1*time.Minute))
-func WithConnMaxIdleTime(d time.Duration) Option { return core.WithConnMaxIdleTime(d) }
-
-// WithHealthCheck enables periodic health checks on database connections.
-// The health checker pings the database at the specified interval to detect dead connections.
-// If interval <= 0, health checks are disabled.
-//
-// Example:
-//
-//	db, err := relica.Open("postgres", dsn,
-//	    relica.WithHealthCheck(30*time.Second))
-func WithHealthCheck(interval time.Duration) Option { return core.WithHealthCheck(interval) }
-
-// WithStmtCacheCapacity sets the prepared statement cache capacity.
-func WithStmtCacheCapacity(capacity int) Option { return core.WithStmtCacheCapacity(capacity) }
-
-// WithLogger sets the logger for database query logging.
-// The logger is wrapped as a QueryHook: errors are logged at Error level,
-// successful queries at Info level.
-// If not set, no logging is performed (zero overhead).
-//
-// Example:
-//
-//	import "log/slog"
-//	l := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-//	db, err := relica.Open("postgres", dsn,
-//	    relica.WithLogger(relica.NewSlogAdapter(l)))
-func WithLogger(l Logger) Option { return core.WithLogger(l) }
-
-// WithQueryHook sets a callback function that is invoked after each query execution.
-// Use this for logging, metrics, distributed tracing, or debugging.
-// If not set, no hook is called (zero overhead).
-//
-// Example:
-//
-//	db, _ := relica.Open("postgres", dsn,
-//	    relica.WithQueryHook(func(ctx context.Context, e relica.QueryEvent) {
-//	        slog.Info("query", "sql", e.SQL, "duration", e.Duration, "err", e.Error)
-//	    }))
-func WithQueryHook(hook QueryHook) Option { return core.WithQueryHook(hook) }
-
-// Logger defines the logging interface for Relica.
-// Implementations should handle structured logging with key-value pairs.
-type Logger = logger.Logger
-
-// NoopLogger is a logger that does nothing (zero overhead when logging is disabled).
-type NoopLogger = logger.NoopLogger
-
-// SlogAdapter wraps log/slog.Logger to implement the Logger interface.
-type SlogAdapter = logger.SlogAdapter
-
-// NewSlogAdapter creates a new logger adapter wrapping an slog.Logger.
-func NewSlogAdapter(l *slog.Logger) *SlogAdapter { return logger.NewSlogAdapter(l) }
-
-// QueryEvent contains information about an executed query.
-// This is passed to QueryHook callbacks for logging, metrics, or tracing.
-type QueryEvent = core.QueryEvent
-
-// QueryHook is a callback function invoked after each query execution.
-// Use this for logging, metrics, distributed tracing, or debugging.
-type QueryHook = core.QueryHook
-
-// Params represents named parameter values for query binding.
-// Named parameters are specified in SQL using {:name} syntax.
-//
-// Example:
-//
-//	db.NewQuery("SELECT * FROM users WHERE id={:id} AND status={:status}").
-//	    BindParams(relica.Params{"id": 1, "status": "active"}).
-//	    All(&users)
-type Params = core.Params
-
-// DetectOperation detects the SQL operation type (SELECT, INSERT, UPDATE, DELETE, UNKNOWN).
-func DetectOperation(query string) string { return core.DetectOperation(query) }
-
-// NullStringMap represents a map of nullable string values scanned from database rows.
-// Each value is a sql.NullString that can be checked for NULL.
-// This type is useful for dynamic queries where the schema is not known at compile time.
-//
-// Example:
-//
-//	var result relica.NullStringMap
-//	db.Select("*").From("users").Where("id = ?", 1).One(&result)
-//	name := result.String("name")   // returns empty string if NULL
-//	if !result.IsNull("email") {
-//	    email := result.String("email")
-//	}
-//
-//	// Multiple rows
-//	var results []relica.NullStringMap
-//	db.Select("*").From("users").All(&results)
-type NullStringMap = core.NullStringMap
-
-// defaultSanitizer is a package-level singleton to avoid recompiling 20 regexps per call.
-var defaultSanitizer = logger.NewSanitizer(nil)
-
-// MaskArgs masks sensitive parameter values (passwords, tokens, API keys) in query args.
-// If the SQL references a sensitive column (password, token, api_key, etc.), ALL parameters
-// of that statement are masked — not just the sensitive one. This is a conservative heuristic.
-// Use this in custom QueryHook implementations to safely log parameters.
-//
-// Example:
-//
-//	relica.WithQueryHook(func(ctx context.Context, e relica.QueryEvent) {
-//	    masked := relica.MaskArgs(e.SQL, e.Args)
-//	    slog.Info("query", "sql", e.SQL, "args", masked)
-//	})
-func MaskArgs(query string, args []any) []any {
-	return defaultSanitizer.MaskParams(query, args)
-}
-
-// ============================================================================
-// Re-export expression builders
-// ============================================================================
-
-// NewExp creates a new raw SQL expression.
-func NewExp(rawSQL string, args ...any) Expression { return core.NewExp(rawSQL, args...) }
-
-// Eq creates an equality expression (column = value).
-func Eq(col string, value any) Expression { return core.Eq(col, value) }
-
-// NotEq creates a not-equal expression (column != value).
-func NotEq(col string, value any) Expression { return core.NotEq(col, value) }
-
-// GreaterThan creates a greater-than expression (column > value).
-func GreaterThan(col string, value any) Expression { return core.GreaterThan(col, value) }
-
-// LessThan creates a less-than expression (column < value).
-func LessThan(col string, value any) Expression { return core.LessThan(col, value) }
-
-// EqCol creates a column-to-column equality expression (col1 = col2).
-// Both identifiers are quoted using the current dialect.
-// Useful for JOIN ON conditions and correlated subquery WHERE clauses.
-//
-// Example:
-//
-//	relica.EqCol("orders.user_id", "users.id")  →  "orders"."user_id" = "users"."id"
-func EqCol(col1, col2 string) Expression { return core.EqCol(col1, col2) }
-
-// NotEqCol creates a column-to-column inequality expression (col1 <> col2).
-func NotEqCol(col1, col2 string) Expression { return core.NotEqCol(col1, col2) }
-
-// GreaterThanCol creates a column-to-column greater-than expression (col1 > col2).
-func GreaterThanCol(col1, col2 string) Expression { return core.GreaterThanCol(col1, col2) }
-
-// LessThanCol creates a column-to-column less-than expression (col1 < col2).
-func LessThanCol(col1, col2 string) Expression { return core.LessThanCol(col1, col2) }
-
-// GreaterOrEqualCol creates a column-to-column >= expression (col1 >= col2).
-func GreaterOrEqualCol(col1, col2 string) Expression { return core.GreaterOrEqualCol(col1, col2) }
-
-// LessOrEqualCol creates a column-to-column <= expression (col1 <= col2).
-func LessOrEqualCol(col1, col2 string) Expression { return core.LessOrEqualCol(col1, col2) }
-
-// IsNull creates an IS NULL expression. Equivalent to Eq(col, nil) but more explicit.
-func IsNull(col string) Expression { return core.Eq(col, nil) }
-
-// IsNotNull creates an IS NOT NULL expression. Equivalent to NotEq(col, nil) but more explicit.
-func IsNotNull(col string) Expression { return core.NotEq(col, nil) }
-
-// GreaterOrEqual creates a greater-or-equal expression (column >= value).
-func GreaterOrEqual(col string, value any) Expression {
-	return core.GreaterOrEqual(col, value)
-}
-
-// LessOrEqual creates a less-or-equal expression (column <= value).
-func LessOrEqual(col string, value any) Expression { return core.LessOrEqual(col, value) }
-
-// In creates an IN expression (column IN (values...)).
-func In(col string, values ...any) Expression { return core.In(col, values...) }
-
-// NotIn creates a NOT IN expression (column NOT IN (values...)).
-func NotIn(col string, values ...any) Expression { return core.NotIn(col, values...) }
-
-// Between creates a BETWEEN expression (column BETWEEN low AND high).
-func Between(col string, from, to any) Expression { return core.Between(col, from, to) }
-
-// NotBetween creates a NOT BETWEEN expression.
-func NotBetween(col string, from, to any) Expression {
-	return core.NotBetween(col, from, to)
-}
-
-// Like creates a LIKE expression with automatic escaping.
-func Like(col string, values ...string) *LikeExp { return core.Like(col, values...) }
-
-// NotLike creates a NOT LIKE expression.
-func NotLike(col string, values ...string) *LikeExp { return core.NotLike(col, values...) }
-
-// OrLike creates a LIKE expression combined with OR.
-func OrLike(col string, values ...string) *LikeExp { return core.OrLike(col, values...) }
-
-// OrNotLike creates a NOT LIKE expression combined with OR.
-func OrNotLike(col string, values ...string) *LikeExp { return core.OrNotLike(col, values...) }
-
-// And combines expressions with AND.
-func And(exps ...Expression) Expression { return core.And(exps...) }
-
-// Or combines expressions with OR.
-func Or(exps ...Expression) Expression { return core.Or(exps...) }
-
-// Not negates an expression.
-func Not(exp Expression) Expression { return core.Not(exp) }
-
-// Exists creates an EXISTS subquery expression.
-func Exists(exp Expression) Expression { return core.Exists(exp) }
-
-// NotExists creates a NOT EXISTS subquery expression.
-func NotExists(exp Expression) Expression { return core.NotExists(exp) }
-
-// ============================================================================
-// Re-export functional expressions (CASE, COALESCE, NULLIF, etc.)
-// ============================================================================
-
-// Case creates a simple CASE expression.
-func Case(column string) *CaseExp { return core.Case(column) }
-
-// CaseWhen creates a searched CASE expression (without column).
-func CaseWhen() *CaseExp { return core.CaseWhen() }
-
-// Coalesce creates a COALESCE expression.
-func Coalesce(values ...any) *CoalesceExp { return core.Coalesce(values...) }
-
-// NullIf creates a NULLIF expression.
-func NullIf(expr1, expr2 any) *NullIfExp { return core.NullIf(expr1, expr2) }
-
-// Greatest creates a GREATEST expression.
-func Greatest(values ...any) *GreatestLeastExp { return core.Greatest(values...) }
-
-// Least creates a LEAST expression.
-func Least(values ...any) *GreatestLeastExp { return core.Least(values...) }
-
-// Concat creates a string concatenation expression.
-func Concat(values ...any) *ConcatExp { return core.Concat(values...) }
-
-// CaseExp represents a SQL CASE expression.
-type CaseExp = core.CaseExp
-
-// CoalesceExp represents a SQL COALESCE expression.
-type CoalesceExp = core.CoalesceExp
-
-// NullIfExp represents a SQL NULLIF expression.
-type NullIfExp = core.NullIfExp
-
-// GreatestLeastExp represents a SQL GREATEST or LEAST expression.
-type GreatestLeastExp = core.GreatestLeastExp
-
-// ConcatExp represents a SQL string concatenation expression.
-type ConcatExp = core.ConcatExp

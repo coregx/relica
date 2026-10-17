@@ -28,6 +28,9 @@ type DatabaseSetup struct {
 	DB        *relica.DB
 	Container testcontainers.Container
 	Dialect   string
+	// DSN reopens the same database with options (hooks, loggers); empty for
+	// in-memory SQLite.
+	DSN string
 }
 
 // Close cleans up database resources.
@@ -49,7 +52,7 @@ func SetupPostgreSQLTestDB(t *testing.T) *DatabaseSetup {
 	if dsn := os.Getenv("POSTGRES_TEST_DSN"); dsn != "" {
 		db, err := relica.NewDB("postgres", dsn)
 		require.NoError(t, err)
-		return &DatabaseSetup{DB: db, Dialect: "postgres"}
+		return &DatabaseSetup{DB: db, Dialect: "postgres", DSN: dsn}
 	}
 
 	// Start PostgreSQL in Docker via testcontainers
@@ -79,6 +82,7 @@ func SetupPostgreSQLTestDB(t *testing.T) *DatabaseSetup {
 		DB:        db,
 		Container: pgContainer,
 		Dialect:   "postgres",
+		DSN:       dsn,
 	}
 }
 
@@ -99,7 +103,7 @@ func SetupMySQLTestDB(t *testing.T) *DatabaseSetup {
 		}
 		db, err := relica.NewDB("mysql", dsn)
 		require.NoError(t, err)
-		return &DatabaseSetup{DB: db, Dialect: "mysql"}
+		return &DatabaseSetup{DB: db, Dialect: "mysql", DSN: dsn}
 	}
 
 	// Start MySQL in Docker via testcontainers
@@ -133,6 +137,7 @@ func SetupMySQLTestDB(t *testing.T) *DatabaseSetup {
 		DB:        db,
 		Container: mysqlContainer,
 		Dialect:   "mysql",
+		DSN:       dsn,
 	}
 }
 

@@ -411,7 +411,7 @@ func (d *DB) With(ctx context.Context) *relica.DB {
 ```
 
 Executor deliberately excludes `Begin`, `Commit`, `Rollback`, `Transactional`,
-`Builder()`, `WithContext()` and `Unwrap()`. Its method set is frozen — new `*DB`/`*Tx`
+`Builder()` and `WithContext()`. Its method set is frozen — new `*DB`/`*Tx`
 methods are not added to it, so test doubles keep compiling.
 
 ### Context propagation — the invariant
@@ -703,7 +703,59 @@ HashExp{"deleted_at": nil}
 // IN clause (slice)
 HashExp{"status": []interface{}{1, 2, 3}}
 // → status IN (1, 2, 3)
+
+// Empty slice → always-false condition (never "no condition")
+HashExp{"status": []any{}}
 ```
+
+### Functional Expressions (CASE, COALESCE, NULLIF, GREATEST/LEAST, CONCAT)
+
+Use as computed columns (`SelectSub(exp, "alias")`), in conditions, in `OrderBySub`/`GroupBySub`,
+or as values in `Update().Set(...)`. They nest.
+
+```go
+db.Select("id").
+    SelectSub(relica.CaseWhen().
+        When(relica.GreaterThan("balance", 1000), "gold"). // condition: Expression (preferred)
+        Else("basic"), "tier").
+    SelectSub(relica.Coalesce("nickname", "first_name", "'Anonymous'"), "display_name").
+    From("account").All(&rows)
+
+db.Update("account").Set(map[string]any{
+    "balance": relica.NewExp("balance + ?", 10),
+    "label":   relica.Coalesce("nickname", "name"),
+}).Where(relica.Eq("id", id)).Execute()
+```
+
+String arguments differ by function — get this right:
+
+| Function | A plain string means | Literal string |
+|----------|---------------------|----------------|
+| `Coalesce`, `NullIf`, `Greatest`, `Least`, `Concat` | column name (quoted) | `"'text'"` (single quotes inside) |
+| `Case(...).When(value, result)` / `.Else(v)` | a **value** (bound parameter) | — |
+| `CaseWhen().When(cond, ...)` condition | **raw SQL** — never user input | — |
+
+Dialect differences are handled for you: `Greatest`/`Least` → `MAX`/`MIN` on SQLite, `Concat` → `CONCAT()`
+on MySQL and `||` elsewhere, `Like` → explicit `ESCAPE '\'` on SQLite.
+
+### Expression Types (for declarations)
+
+All types are declared in package `relica` (no aliases to internal packages, enforced by a test):
+
+```go
+var e relica.Expression   = relica.Eq("a", 1)      // sealed: values only from relica constructors
+var l relica.LikeExp      = relica.Like("name", "x") // LikeExp, CaseExp, CoalesceExp, ... are interfaces
+var c relica.CaseExp      = relica.Case("s").When(1, "a")
+var h relica.HashExp      = relica.HashExp{"a": 1}   // map type
+var p relica.Params       = relica.Params{"id": 1}   // map type
+// WRONG (pre-v0.19.0 shape): var c *relica.CaseExp
+```
+
+`Expression` cannot be implemented outside Relica. For SQL no constructor covers, use
+`relica.NewExp("sql with ? placeholders", args...)`.
+
+An expression built with invalid input (e.g. `Like(...).EscapeChars("!")` — odd count) makes the
+query return that error; nothing is executed. Check `LikeExp.Err()` early if you build it from config.
 
 ---
 

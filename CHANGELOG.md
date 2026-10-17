@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.19.0] - 2026-10-18
+
+### Fixed
+
+- **An invalid expression no longer drops the filter** — `Like(...).EscapeChars(...)` with an odd number of arguments stored an error and rendered as an empty condition; an empty condition is skipped, so `db.Delete("t").Where(invalidLike).Execute()` ran as an unconditional `DELETE`. Construction errors are now detected anywhere inside a condition tree (`And`/`Or`/`Not`, `HashExp` values, `CASE` branches, function arguments, subqueries) and in `Where`/`AndWhere`/`OrWhere`/`Having`/joins/`SelectSub`/`OrderBySub`/`GroupBySub`/`Update().Set` values. The query returns the error and nothing is sent to the database
+- **`CASE` with Expression operands** — a searched-`CASE` condition that was an Expression (`CaseWhen().When(relica.GreaterThan("balance", 100), "gold")`) was printed with `fmt` into the SQL (`CASE WHEN &{balance > 100} …`) and its arguments were lost; Expressions used as `THEN`/`ELSE` values (`When(1, relica.Coalesce(…))`) were bound as parameters instead of rendered. Operands that are Expressions are now built into SQL; other values are parameters; a string condition in `CaseWhen` is still raw SQL as documented
+- **SQLite `LIKE` escaping** — `Like("note", "50%")` escaped the `%` as `\%`, but SQLite has no default `LIKE` escape character, so the pattern never matched on SQLite. Relica now emits `ESCAPE '\'` on SQLite; PostgreSQL and MySQL already use backslash
+- **Named parameters in `Having`** — `Having("COUNT(*) > {:min}", relica.Params{"min": 5})` sent `{:min}` to the database. `Having` now resolves `{:name}` like `Where`
+- **`NullStringMap.Keys()` is sorted** — it returned map iteration order, different on every call
+- **`WithQueryHook(nil)` and `WithLogger(nil)` no longer panic** — a nil hook registered after another hook, or a nil logger, panicked on the first query. Both are now ignored. `NewSlogAdapter(nil)` uses `slog.Default()`
+
+### Changed — no internal types in the public API (ADR-016)
+
+Twenty exported types were aliases to internal packages (`type HashExp = core.HashExp`): pkg.go.dev, IDE hovers and AI agents saw an empty declaration with no fields, methods or docs. All of them are now declared in package `relica` with full documentation. A test (`api_surface_test.go`) fails the build if any exported identifier is an alias or mentions an internal package again.
+
+- **Plain data types** — `TxOptions`, `PoolStats`, `QueryEvent`, `QueryPlan` are structs with the same fields; `QueryHook` is `func(ctx, QueryEvent)`. Source compatible
+- **`Logger`, `BeforeInserter`** — interfaces with the same methods; `NoopLogger` and `SlogAdapter` are structs. Source compatible (`NoopLogger{}` and `&NoopLogger{}` both satisfy `Logger`)
+- **`Params`, `NullStringMap`, `HashExp`** — defined map types; literals, indexing and methods work as before
+- **`Expression` is a sealed interface** — it could never be implemented outside Relica (its method took an internal type); this is now explicit and documented. Use `NewExp` for custom SQL
+- **`LikeExp`, `CaseExp`, `CoalesceExp`, `NullIfExp`, `GreatestLeastExp`, `ConcatExp` are interfaces** — constructors return them instead of pointers to internal structs. Method chaining is unchanged; **a declaration such as `var c *relica.CaseExp` becomes `var c relica.CaseExp`**
+- **`Option` is an opaque struct** — build options only with the `With…` functions (the only possible way before as well: the old func type took an internal `*core.DB`). The zero `Option` is a no-op
+
+### Removed
+
+- **`DB.Unwrap()`, `Tx.Unwrap()`, `SelectQuery.Unwrap()`, `QueryBuilder.Unwrap()`** — they returned internal types and exposed the entire unversioned internal API. Use `DB.SqlDB()` for the underlying `*sql.DB`. No known consumer used them
+
+---
+
 ## [0.18.0] - 2026-10-11
 
 ### Fixed
