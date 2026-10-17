@@ -20,7 +20,7 @@
 - **Model() API** - ORM-style CRUD with auto-populated IDs (int + UUID via `autoincrement` tag), composite PKs
 - **AutoID** - Stripe-like prefixed IDs (`usr_`, `ord_`) with dual-key pattern, `FindByPublicID()`, prefix validation
 - **NullStringMap** - Dynamic scanning without predefined structs
-- **Named Placeholders** - `{:name}` syntax with `Bind(Params{})` for readable queries
+- **Named Placeholders** - `{:name}` syntax with `relica.Params` (`Where`, `Having`, `NewQuery(...).BindParams`) for readable queries
 - **Functional Expressions** - CASE, COALESCE, NULLIF, GREATEST, LEAST, CONCAT
 - **Transactional()** - Auto commit/rollback helper with panic recovery
 - **Dynamic WHERE** - `AndWhere()` / `OrWhere()` for conditional query building
