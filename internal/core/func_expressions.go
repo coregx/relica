@@ -5,7 +5,6 @@
 package core
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/coregx/relica/internal/dialects"
@@ -105,23 +104,29 @@ func (c *CaseExp) Build(dialect dialects.Dialect) (string, []any) {
 	for _, when := range c.whens {
 		sql.WriteString(" WHEN ")
 
-		if c.column != "" {
-			// Simple CASE: WHEN value
-			sql.WriteString("?")
-			args = append(args, when.condition)
+		var condSQL string
+		var condArgs []any
+		if raw, ok := when.condition.(string); ok && c.column == "" {
+			// Searched CASE: a string condition is raw SQL (documented on CaseWhen).
+			condSQL = raw
 		} else {
-			// Searched CASE: WHEN condition (raw SQL)
-			fmt.Fprint(&sql, when.condition)
+			condSQL, condArgs = buildCaseOperand(when.condition, dialect)
 		}
+		sql.WriteString(condSQL)
+		args = append(args, condArgs...)
 
-		sql.WriteString(" THEN ?")
-		args = append(args, when.result)
+		resSQL, resArgs := buildCaseOperand(when.result, dialect)
+		sql.WriteString(" THEN ")
+		sql.WriteString(resSQL)
+		args = append(args, resArgs...)
 	}
 
 	// ELSE clause
 	if c.elseValue != nil {
-		sql.WriteString(" ELSE ?")
-		args = append(args, c.elseValue)
+		elseSQL, elseArgs := buildCaseOperand(c.elseValue, dialect)
+		sql.WriteString(" ELSE ")
+		sql.WriteString(elseSQL)
+		args = append(args, elseArgs...)
 	}
 
 	sql.WriteString(" END")
@@ -133,6 +138,17 @@ func (c *CaseExp) Build(dialect dialects.Dialect) (string, []any) {
 	}
 
 	return sql.String(), args
+}
+
+// buildCaseOperand renders a CASE operand (WHEN value or condition, THEN result,
+// ELSE value). An Expression is built into SQL with its arguments; any other
+// value — strings included — is bound as a parameter. Unlike buildExprValue,
+// strings are never treated as column names: CASE results are data.
+func buildCaseOperand(v any, dialect dialects.Dialect) (string, []any) {
+	if expr, ok := v.(Expression); ok {
+		return expr.Build(dialect)
+	}
+	return "?", []any{v}
 }
 
 // =============================================================================

@@ -278,13 +278,7 @@ func (q *Query) One(dest any) error {
 		return err
 	}
 
-	// Scan into dest - detect NullStringMap for dynamic scanning
-	var scanErr error
-	if destMap, ok := dest.(*NullStringMap); ok {
-		scanErr = globalScanner.scanMapRow(rows, destMap)
-	} else {
-		scanErr = globalScanner.scanRow(rows, dest)
-	}
+	scanErr := scanOne(rows, dest)
 	if scanErr != nil {
 		elapsed := time.Since(start)
 		q.db.invokeHook(ctx, QueryEvent{
@@ -549,13 +543,7 @@ func (q *Query) All(dest any) error {
 	}
 	defer func() { _ = rows.Close() }()
 
-	// Scan all rows - detect []NullStringMap for dynamic scanning
-	var scanErr error
-	if destSlice, ok := dest.(*[]NullStringMap); ok {
-		scanErr = globalScanner.scanMapRows(rows, destSlice)
-	} else {
-		scanErr = globalScanner.scanRows(rows, dest)
-	}
+	scanErr := scanAll(rows, dest)
 	if scanErr != nil {
 		elapsed := time.Since(start)
 		q.db.invokeHook(ctx, QueryEvent{
