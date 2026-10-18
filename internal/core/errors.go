@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 )
 
 // Predefined errors returned by Relica database operations.
@@ -74,111 +73,31 @@ func (e *wrappedError) Unwrap() error {
 // Cross-database error classification helpers
 // ============================================================================
 //
-// These functions classify database errors by inspecting error message strings.
-// This approach is driver-agnostic and does not require importing any driver packages.
-//
-// Error messages are matched against known patterns from:
-//   - PostgreSQL (lib/pq, pgx)
-//   - MySQL / MariaDB (go-sql-driver/mysql)
-//   - SQLite (mattn/go-sqlite3, modernc.org/sqlite)
+// Each helper classifies err by the driver error code found in its error tree
+// (see errclass.go for the codes and drivers), and by message text only when
+// the tree holds no code. The public documentation is on the wrappers in
+// package relica.
 
-// IsUniqueViolation reports whether err represents a unique constraint violation.
-// Returns false for nil errors.
-//
-// Matches errors from:
-//   - PostgreSQL: "duplicate key value violates unique constraint"
-//   - MySQL: "Duplicate entry" or "Error 1062"
-//   - SQLite: "UNIQUE constraint failed"
-//
-// Example:
-//
-//	_, err := db.Model(&user).Insert()
-//	if relica.IsUniqueViolation(err) {
-//	    // handle duplicate key
-//	}
-func IsUniqueViolation(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "duplicate key value violates unique constraint") ||
-		strings.Contains(msg, "Duplicate entry") ||
-		strings.Contains(msg, "UNIQUE constraint failed") ||
-		strings.Contains(msg, "Error 1062")
-}
+// IsUniqueViolation reports whether err is a unique or primary key violation.
+func IsUniqueViolation(err error) bool { return classify(err, &uniqueViolation) }
 
-// IsForeignKeyViolation reports whether err represents a foreign key constraint violation.
-// Returns false for nil errors.
-//
-// Matches errors from:
-//   - PostgreSQL: "violates foreign key constraint"
-//   - MySQL: "a foreign key constraint fails" or "Error 1451"/"Error 1452"
-//   - SQLite: "FOREIGN KEY constraint failed"
-//
-// Example:
-//
-//	_, err := db.Model(&order).Insert()
-//	if relica.IsForeignKeyViolation(err) {
-//	    // handle missing referenced row
-//	}
-func IsForeignKeyViolation(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "violates foreign key constraint") ||
-		strings.Contains(msg, "a foreign key constraint fails") ||
-		strings.Contains(msg, "FOREIGN KEY constraint failed") ||
-		strings.Contains(msg, "Error 1451") ||
-		strings.Contains(msg, "Error 1452")
-}
+// IsForeignKeyViolation reports whether err is a foreign key violation.
+func IsForeignKeyViolation(err error) bool { return classify(err, &foreignKeyViolation) }
 
-// IsNotNullViolation reports whether err represents a NOT NULL constraint violation.
-// Returns false for nil errors.
-//
-// Matches errors from:
-//   - PostgreSQL: "violates not-null constraint"
-//   - MySQL: "cannot be null" or "Error 1048"
-//   - SQLite: "NOT NULL constraint failed"
-//
-// Example:
-//
-//	_, err := db.Model(&user).Insert()
-//	if relica.IsNotNullViolation(err) {
-//	    // handle missing required field
-//	}
-func IsNotNullViolation(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "violates not-null constraint") ||
-		strings.Contains(msg, "cannot be null") ||
-		strings.Contains(msg, "NOT NULL constraint failed") ||
-		strings.Contains(msg, "Error 1048")
-}
+// IsNotNullViolation reports whether err is a NOT NULL violation.
+func IsNotNullViolation(err error) bool { return classify(err, &notNullViolation) }
 
-// IsCheckViolation reports whether err represents a CHECK constraint violation.
-// Returns false for nil errors.
-//
-// Matches errors from:
-//   - PostgreSQL: "violates check constraint"
-//   - MySQL: "Check constraint" or "Error 3819" (MySQL 8.0.16+)
-//   - SQLite: "CHECK constraint failed"
-//
-// Example:
-//
-//	_, err := db.Model(&product).Insert()
-//	if relica.IsCheckViolation(err) {
-//	    // handle check constraint failure
-//	}
-func IsCheckViolation(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "violates check constraint") ||
-		strings.Contains(msg, "Check constraint") ||
-		strings.Contains(msg, "CHECK constraint failed") ||
-		strings.Contains(msg, "Error 3819")
-}
+// IsCheckViolation reports whether err is a CHECK constraint violation.
+func IsCheckViolation(err error) bool { return classify(err, &checkViolation) }
+
+// IsDeadlock reports whether err says the transaction was chosen as a
+// deadlock victim and rolled back.
+func IsDeadlock(err error) bool { return classify(err, &deadlock) }
+
+// IsSerializationFailure reports whether err is a serialization failure of a
+// transaction that must be retried from the start.
+func IsSerializationFailure(err error) bool { return classify(err, &serializationFailure) }
+
+// IsLockTimeout reports whether err says a lock could not be acquired in time
+// (lock timeout, NOWAIT, or SQLite busy timeout).
+func IsLockTimeout(err error) bool { return classify(err, &lockTimeout) }

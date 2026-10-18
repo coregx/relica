@@ -43,6 +43,40 @@
 //
 //	// DELETE
 //	db.Delete("users").Where(relica.Eq("id", 123)).Execute()
+//
+// # Classifying database errors
+//
+// [IsUniqueViolation], [IsForeignKeyViolation], [IsNotNullViolation],
+// [IsCheckViolation], [IsDeadlock], [IsSerializationFailure] and [IsLockTimeout]
+// classify an error by the code the driver attached to it, wherever it sits in
+// the error tree (fmt.Errorf %w chains and errors.Join included):
+//
+//   - PostgreSQL SQLSTATE — pgx v5 and lib/pq (every version);
+//   - MySQL/MariaDB error number — go-sql-driver/mysql;
+//   - SQLite extended result code — modernc.org/sqlite and mattn/go-sqlite3.
+//
+// The first error in the tree that carries a code decides; the message text is
+// consulted only when no code is present (other drivers). Codes do not depend
+// on the server language, so the result is the same with a localized
+// PostgreSQL (lc_messages) or a MariaDB server. Relica imports no driver: codes
+// are read through the SQLState() method or, for the driver types listed
+// above, by reflection.
+//
+// Retry the whole transaction, never a single statement, when IsDeadlock or
+// IsSerializationFailure is true — the server has already rolled it back:
+//
+//	for attempt := 1; ; attempt++ {
+//	    err := db.Transactional(ctx, transfer)
+//	    if err == nil || attempt == 3 ||
+//	        !(relica.IsDeadlock(err) || relica.IsSerializationFailure(err)) {
+//	        return err
+//	    }
+//	    select { // jittered backoff, so the competing transactions spread out
+//	    case <-time.After(time.Duration(10+rand.IntN(40*attempt)) * time.Millisecond):
+//	    case <-ctx.Done():
+//	        return ctx.Err()
+//	    }
+//	}
 package relica
 
 import (
@@ -2927,46 +2961,87 @@ func RegisterIDGenerator(name string, fn func() string) {
 	util.RegisterIDGenerator(name, fn)
 }
 
-// IsUniqueViolation reports whether err represents a unique constraint violation.
-// Works with PostgreSQL, MySQL, and SQLite. Returns false for nil errors.
+// IsUniqueViolation reports whether err is a unique or primary key violation:
+// PostgreSQL SQLSTATE 23505; MySQL/MariaDB 1062, 1022, 1169, 1586, 1859;
+// SQLite SQLITE_CONSTRAINT_UNIQUE, SQLITE_CONSTRAINT_PRIMARYKEY.
+// Returns false for nil. See "Classifying database errors" in the package doc.
 //
 // Example:
 //
-//	_, err := db.Model(&user).Insert()
+//	err := db.Model(&user).Insert()
 //	if relica.IsUniqueViolation(err) {
-//	    // handle duplicate key
+//	    return ErrEmailTaken
 //	}
 func IsUniqueViolation(err error) bool { return core.IsUniqueViolation(err) }
 
-// IsForeignKeyViolation reports whether err represents a foreign key constraint violation.
-// Works with PostgreSQL, MySQL, and SQLite. Returns false for nil errors.
+// IsForeignKeyViolation reports whether err is a foreign key violation:
+// PostgreSQL SQLSTATE 23503; MySQL/MariaDB 1216, 1217, 1451, 1452;
+// SQLite SQLITE_CONSTRAINT_FOREIGNKEY (needs PRAGMA foreign_keys = ON).
+// Returns false for nil.
 //
 // Example:
 //
-//	_, err := db.Model(&order).Insert()
+//	err := db.Model(&order).Insert()
 //	if relica.IsForeignKeyViolation(err) {
-//	    // handle missing referenced row
+//	    return ErrUnknownCustomer
 //	}
 func IsForeignKeyViolation(err error) bool { return core.IsForeignKeyViolation(err) }
 
-// IsNotNullViolation reports whether err represents a NOT NULL constraint violation.
-// Works with PostgreSQL, MySQL, and SQLite. Returns false for nil errors.
+// IsNotNullViolation reports whether err is a NOT NULL violation:
+// PostgreSQL SQLSTATE 23502; MySQL/MariaDB 1048, 1263, 1364 (strict mode);
+// SQLite SQLITE_CONSTRAINT_NOTNULL. Returns false for nil.
 //
 // Example:
 //
-//	_, err := db.Model(&user).Insert()
+//	err := db.Model(&user).Insert()
 //	if relica.IsNotNullViolation(err) {
-//	    // handle missing required field
+//	    return ErrMissingField
 //	}
 func IsNotNullViolation(err error) bool { return core.IsNotNullViolation(err) }
 
-// IsCheckViolation reports whether err represents a CHECK constraint violation.
-// Works with PostgreSQL, MySQL, and SQLite. Returns false for nil errors.
+// IsCheckViolation reports whether err is a CHECK constraint violation:
+// PostgreSQL SQLSTATE 23514; MySQL 3819 (8.0.16+); MariaDB 4025;
+// SQLite SQLITE_CONSTRAINT_CHECK. Returns false for nil.
 //
 // Example:
 //
-//	_, err := db.Model(&product).Insert()
+//	err := db.Model(&product).Insert()
 //	if relica.IsCheckViolation(err) {
-//	    // handle check constraint failure
+//	    return ErrInvalidPrice
 //	}
 func IsCheckViolation(err error) bool { return core.IsCheckViolation(err) }
+
+// IsDeadlock reports whether the server aborted the transaction as a deadlock
+// victim: PostgreSQL SQLSTATE 40P01; MySQL/MariaDB 1213 (InnoDB has no
+// separate serialization error; conflicts under SERIALIZABLE end here). The
+// transaction has been rolled back; retry it as a whole. SQLite has no
+// deadlock detection and never matches. Returns false for nil.
+//
+// Example:
+//
+//	err := db.Transactional(ctx, transfer)
+//	if relica.IsDeadlock(err) || relica.IsSerializationFailure(err) {
+//	    // retry the whole transaction with backoff
+//	}
+func IsDeadlock(err error) bool { return core.IsDeadlock(err) }
+
+// IsSerializationFailure reports whether a transaction failed because it
+// could not be serialized with concurrent ones: PostgreSQL SQLSTATE 40001
+// (REPEATABLE READ, SERIALIZABLE; also CockroachDB and YugabyteDB);
+// SQLite SQLITE_BUSY_SNAPSHOT (a WAL read transaction tried to write after
+// another connection committed). Retry the whole transaction. MySQL reports
+// such conflicts as deadlocks — see [IsDeadlock]. Returns false for nil.
+func IsSerializationFailure(err error) bool { return core.IsSerializationFailure(err) }
+
+// IsLockTimeout reports whether a lock could not be acquired in time:
+// PostgreSQL SQLSTATE 55P03 (lock_timeout, FOR UPDATE NOWAIT); MySQL/MariaDB
+// 1205 (innodb_lock_wait_timeout) and 3572 (NOWAIT); SQLite SQLITE_BUSY
+// (busy timeout expired; not SQLITE_BUSY_SNAPSHOT) and SQLITE_LOCKED.
+// PostgreSQL statement_timeout (57014) is not a lock timeout.
+//
+// Whether to retry is a policy decision: the lock holder may be a long job.
+// On MySQL a lock wait timeout rolls back only the statement unless
+// innodb_rollback_on_timeout is set; return the error from the function
+// passed to [DB.Transactional] and the whole transaction is rolled back.
+// Returns false for nil.
+func IsLockTimeout(err error) bool { return core.IsLockTimeout(err) }
