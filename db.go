@@ -896,9 +896,13 @@ func (d *DB) BeginTx(ctx context.Context, opts *TxOptions) (*Tx, error) {
 
 // Transactional executes f within a transaction with automatic commit/rollback.
 //
-// If f returns an error, the transaction is rolled back and the error is returned.
+// If f returns an error, the transaction is rolled back and the error is returned;
+// if the rollback itself fails, both errors are returned (errors.Is matches either).
 // If f panics, the transaction is rolled back and the panic is re-raised.
-// If f completes successfully, the transaction is committed.
+// If f completes successfully, the transaction is committed and a Commit error is returned.
+//
+// Transactional always begins a new transaction; it does not join one carried in ctx.
+// Do not call Commit or Rollback on tx inside f.
 //
 // This helper simplifies transaction management and ensures proper cleanup
 // in all code paths, including panics.
@@ -926,10 +930,8 @@ func (d *DB) Transactional(ctx context.Context, f func(*Tx) error) error {
 
 // TransactionalTx executes f within a transaction with custom options.
 //
-// Options can specify isolation level and read-only mode.
-// If f returns an error, the transaction is rolled back and the error is returned.
-// If f panics, the transaction is rolled back and the panic is re-raised.
-// If f completes successfully, the transaction is committed.
+// Options can specify isolation level and read-only mode. Errors, panics and
+// commit behave as in Transactional.
 //
 // Example:
 //
@@ -1202,11 +1204,16 @@ func (t *Tx) Commit() error {
 // Rollback rolls back the transaction.
 //
 // After calling Rollback, the transaction cannot be used for further queries.
-// It's safe to call Rollback even after Commit (it will be a no-op).
+// Rollback after Commit (or a second Rollback) does nothing and returns
+// sql.ErrTxDone, so a deferred Rollback is safe; ignore its error there.
 //
 // Example:
 //
-//	defer tx.Rollback() // Safe even after Commit
+//	tx, err := db.Begin(ctx)
+//	if err != nil {
+//	    return err // tx is nil: check before deferring
+//	}
+//	defer func() { _ = tx.Rollback() }() // sql.ErrTxDone after Commit
 func (t *Tx) Rollback() error {
 	return t.tx.Rollback()
 }
