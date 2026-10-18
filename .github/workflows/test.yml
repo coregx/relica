@@ -200,6 +200,17 @@ jobs:
       run: |
         go test -v -tags=integration ./... -run SQLite
 
+    # Separate module: lib/pq v1.2.0 (error code in a struct field) cannot share
+    # test/go.mod with lib/pq v1.10.9, and mattn/go-sqlite3 needs cgo.
+    - name: Driver compatibility (lib/pq v1.2.0, mattn/go-sqlite3)
+      working-directory: test/drivercompat
+      env:
+        CGO_ENABLED: '1'
+      run: |
+        go mod download
+        go mod verify
+        go test -v -count=1 ./...
+
   # Benchmarks
   benchmark:
     name: Benchmark
