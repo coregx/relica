@@ -517,16 +517,14 @@ type Order struct {
 #### Transactions
 
 ```go
-tx, err := db.Begin(ctx)
-defer tx.Rollback()
-
-user := User{Name: "Alice"}
-err = tx.Model(&user).Insert()
-
-if err == nil {
-    tx.Commit()
-}
+err := db.Transactional(ctx, func(tx *relica.Tx) error {
+    user := User{Name: "Alice"}
+    return tx.Model(&user).Insert() // error → rollback, nil → commit
+})
 ```
+
+Every statement of the transaction must go through `tx` (or a repository that receives it as a
+`relica.Executor`) — see [Transactions in AGENTS.md](AGENTS.md#transactions) for the rules.
 
 #### Advanced Usage
 
@@ -665,27 +663,35 @@ db.Select("category").From("products").Distinct().All(&categories)
 
 ### Row Locking (FOR UPDATE / FOR SHARE)
 
-**Pessimistic locking** for concurrent data access. Silently ignored for SQLite (database-level locking).
+**Pessimistic locking** for concurrent data access. A lock lives as long as its transaction, so
+lock **only through `tx`**: on `db` the SELECT autocommits and the lock is released at once.
+Omitted from the SQL on SQLite (database-level locking).
 
 ```go
-// Exclusive lock — block other transactions from reading/writing
-db.Select().From("accounts").
-    Where(relica.Eq("id", accountID)).
-    ForUpdate().
-    One(&account)
+err := db.Transactional(ctx, func(tx *relica.Tx) error {
+    // Exclusive lock — other transactions wait to update or lock these rows
+    if err := tx.Select().From("accounts").
+        Where(relica.Eq("id", accountID)).
+        ForUpdate().
+        One(&account); err != nil {
+        return err
+    }
 
-// Shared lock — allow concurrent reads, block writes
-db.Select().From("products").
-    Where(relica.Eq("id", productID)).
-    ForShare().
-    One(&product)
+    // Shared lock — others may read and share-lock, but not update
+    if err := tx.Select().From("products").
+        Where(relica.Eq("id", productID)).
+        ForShare().
+        One(&product); err != nil {
+        return err
+    }
 
-// Non-blocking lock — skip locked rows (job queue pattern)
-db.Select().From("tasks").
-    Where(relica.Eq("status", "pending")).
-    ForUpdateSkipLocked().
-    Limit(10).
-    All(&tasks)
+    // Non-blocking lock — skip rows locked by other workers (job queue pattern)
+    return tx.Select().From("tasks").
+        Where(relica.Eq("status", "pending")).
+        ForUpdateSkipLocked().
+        Limit(10).
+        All(&tasks)
+})
 ```
 
 ### Aggregate Functions
@@ -1116,9 +1122,10 @@ err = db.Select().
     WithContext(ctx).
     One(&user)
 
-// Transaction context auto-propagates
-tx, _ := db.BeginTx(ctx, nil)
-tx.Select().From("users").One(&user) // Uses ctx automatically
+// Transaction context auto-propagates: every query on tx runs under the ctx given to Begin
+err = db.Transactional(ctx, func(tx *relica.Tx) error {
+    return tx.Select().From("users").One(&user) // uses ctx automatically
+})
 ```
 
 ## 🏗️ Database Support

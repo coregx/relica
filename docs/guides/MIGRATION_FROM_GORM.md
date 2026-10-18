@@ -478,24 +478,22 @@ err := db.Transaction(func(tx *gorm.DB) error {
 
 **Relica:**
 ```go
-tx, err := db.Begin(ctx)
-if err != nil {
-    return err
-}
-defer tx.Rollback()  // Auto-rollback if not committed
-
-_, err = tx.Insert("users", userData).Execute()
-if err != nil {
-    return err
-}
-
-_, err = tx.Insert("posts", postData).Execute()
-if err != nil {
-    return err
-}
-
-return tx.Commit()
+err := db.Transactional(ctx, func(tx *relica.Tx) error {
+    if err := tx.Model(&user).Insert(); err != nil {
+        return err // Rollback
+    }
+    post.UserID = user.ID // set by Insert
+    if err := tx.Model(&post).Insert(); err != nil {
+        return err // Rollback
+    }
+    return nil // Commit
+})
 ```
+
+Same contract as GORM's `db.Transaction`: an error or a panic rolls back, nil commits. Unlike GORM,
+`Transactional` does not create savepoints for nested calls — it always begins a new transaction.
+Pass `tx` (it implements `relica.Executor`) to the code that must run inside it; see
+[AGENTS.md → Transactions](../../AGENTS.md#transactions).
 
 ---
 
@@ -710,16 +708,18 @@ batch.Execute()
 ### Tip 3: Use Transactions for Data Integrity
 
 ```go
-// Always wrap related operations in transactions
-tx, _ := db.Begin(ctx)
-defer tx.Rollback()
-
-// Multiple operations
-tx.Insert("users", userData).Execute()
-tx.Insert("profiles", profileData).Execute()
-
-tx.Commit()
+// Wrap related operations in one transaction — like GORM's db.Transaction(func(tx) error)
+err := db.Transactional(ctx, func(tx *relica.Tx) error {
+    if _, err := tx.Insert("users", userData).Execute(); err != nil {
+        return err // rollback: nothing is saved
+    }
+    _, err := tx.Insert("profiles", profileData).Execute()
+    return err // nil → commit
+})
 ```
+
+Check every error inside the transaction: if a failed statement is ignored and the function
+returns nil, the transaction commits whatever did succeed.
 
 ### Tip 4: Leverage Statement Cache
 

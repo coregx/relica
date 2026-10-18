@@ -214,17 +214,21 @@ db, err := relica.Open("postgres", dsn,
 Improper transaction handling can cause deadlocks:
 
 ```go
-// ⚠️ RISK - Long-running transaction
-tx, _ := db.BeginTx(ctx, nil)
-// ... many operations ...
-// ... sleep or external API call ...
-tx.Commit()  // May cause deadlocks
+// ⚠️ RISK - Long-running transaction: locks are held while waiting on the network
+err := db.Transactional(ctx, func(tx *relica.Tx) error {
+    // ... many operations ...
+    // ... sleep or external API call ...
+    return nil
+})
 
-// ✅ MITIGATION - Keep transactions short
-tx, _ := db.BeginTx(ctx, nil)
-defer tx.Rollback()
-// Only DB operations here
-tx.Commit()
+// ✅ MITIGATION - Keep transactions short: only DB operations inside, side effects after commit
+err := db.Transactional(ctx, func(tx *relica.Tx) error {
+    // only DB operations here
+    return nil
+})
+if err == nil {
+    // external API call, e-mail, event publishing
+}
 ```
 
 **Recommendation**: Keep transactions short and focused.

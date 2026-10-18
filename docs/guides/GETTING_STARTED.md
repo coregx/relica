@@ -555,36 +555,36 @@ func bulkInsertUsers(db *relica.DB, users []User) error {
 
 ### Basic Transaction
 
+`Transactional` commits when the function returns nil and rolls back when it returns an error
+or panics. Every statement goes through `tx`; arithmetic is done in SQL with `relica.NewExp`
+(a plain string value such as `"balance - ?"` would be stored as text, not evaluated).
+
 ```go
-func transferMoney(db *relica.DB, fromID, toID int, amount float64) error {
-    tx, err := db.Begin(context.Background())
-    if err != nil {
-        return err
-    }
-    defer tx.Rollback() // Auto-rollback if not committed
+func transferMoney(ctx context.Context, db *relica.DB, fromID, toID int, amount int64) error {
+    return db.Transactional(ctx, func(tx *relica.Tx) error {
+        // Deduct from sender
+        if _, err := tx.Update("accounts").
+            Set(map[string]any{"balance": relica.NewExp("balance - ?", amount)}).
+            Where(relica.Eq("id", fromID)).
+            Execute(); err != nil {
+            return err // rollback
+        }
 
-    // Deduct from sender
-    _, err = tx.Update("accounts").
-        Set(map[string]interface{}{"balance": "balance - ?"}).
-        Where("id = ?", fromID).
-        Execute()
-    if err != nil {
-        return err
-    }
+        // Add to receiver
+        if _, err := tx.Update("accounts").
+            Set(map[string]any{"balance": relica.NewExp("balance + ?", amount)}).
+            Where(relica.Eq("id", toID)).
+            Execute(); err != nil {
+            return err // rollback
+        }
 
-    // Add to receiver
-    _, err = tx.Update("accounts").
-        Set(map[string]interface{}{"balance": "balance + ?"}).
-        Where("id = ?", toID).
-        Execute()
-    if err != nil {
-        return err
-    }
-
-    // Commit transaction
-    return tx.Commit()
+        return nil // commit
+    })
 }
 ```
+
+To check the sender's balance first, lock the rows inside the transaction with `ForUpdate()` —
+see [Transactions in AGENTS.md](../../AGENTS.md#transactions) for a complete transfer and the rules.
 
 ### Transaction with Isolation Level
 

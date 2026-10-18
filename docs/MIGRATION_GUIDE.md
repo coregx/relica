@@ -51,9 +51,10 @@ defer db.Close()
 db.Select().From("users").All(&users)
 
 // ✅ Transactions
-tx, _ := db.Begin(ctx)
-tx.Insert("users", userData).Execute()
-tx.Commit()
+err = db.Transactional(ctx, func(tx *relica.Tx) error {
+    _, err := tx.Insert("users", userData).Execute()
+    return err
+})
 
 // ✅ WrapDB() - External connection integration
 sqlDB, _ := sql.Open("postgres", dsn)

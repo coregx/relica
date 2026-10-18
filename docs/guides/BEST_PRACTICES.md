@@ -2,7 +2,7 @@
 
 > **Production-Ready Patterns for Relica**
 >
-> **Last Updated**: 2026-08-07
+> **Last Updated**: 2026-10-18
 
 > **🤖 AI Agents**: See [AGENTS.md](../../AGENTS.md) for correct API patterns. Prefer `Model()` API over `map[string]interface{}`.
 
@@ -81,6 +81,51 @@ func NewDB(cfg Config) (*relica.DB, error) {
 }
 ```
 
+Create the `*relica.DB` **once** and share it: it owns the connection pool and the statement
+cache. Wrapping a `*sql.DB` with `relica.WrapDB` per request or per transaction creates a new,
+empty cache every time.
+
+### Transaction in Context (dbcontext)
+
+Repositories should not know whether they run inside a transaction. Keep the transaction in
+`context.Context` and let one small type hand out the right executor:
+
+**internal/database/dbcontext.go:**
+```go
+package database
+
+import (
+    "context"
+
+    "github.com/coregx/relica"
+)
+
+type txKey struct{}
+
+// DB hands out the active transaction or the request-scoped connection.
+type DB struct{ db *relica.DB }
+
+func NewDBContext(db *relica.DB) *DB { return &DB{db: db} }
+
+// With returns the transaction stored in ctx, otherwise the DB bound to ctx.
+func (d *DB) With(ctx context.Context) relica.Executor {
+    if tx, ok := ctx.Value(txKey{}).(*relica.Tx); ok {
+        return tx
+    }
+    return d.db.WithContext(ctx) // not bare d.db: request deadlines must reach SQL
+}
+
+// Transactional runs f in a transaction, or joins the one already in ctx.
+func (d *DB) Transactional(ctx context.Context, f func(ctx context.Context) error) error {
+    if _, ok := ctx.Value(txKey{}).(*relica.Tx); ok {
+        return f(ctx)
+    }
+    return d.db.Transactional(ctx, func(tx *relica.Tx) error {
+        return f(context.WithValue(ctx, txKey{}, tx))
+    })
+}
+```
+
 ---
 
 ## 🎯 Repository Pattern
@@ -115,43 +160,48 @@ package repository
 
 import (
     "context"
+    "errors"
     "fmt"
 
     "github.com/coregx/relica"
+    "myapp/internal/database"
     "myapp/internal/models"
 )
 
+var (
+    ErrUserNotFound = errors.New("user not found")
+    ErrEmailTaken   = errors.New("email already exists")
+)
+
 type UserRepository struct {
-    db *relica.DB
+    db *database.DB // dbcontext: joins the caller's transaction, if any
 }
 
-func NewUserRepository(db *relica.DB) *UserRepository {
+func NewUserRepository(db *database.DB) *UserRepository {
     return &UserRepository{db: db}
 }
 
 func (r *UserRepository) FindByID(ctx context.Context, id int) (*models.User, error) {
     var user models.User
-    err := r.db.Select().
+    err := r.db.With(ctx).
+        Select("id", "name", "email", "created_at", "updated_at"). // explicit columns in production code
         From("users").
         Where(relica.Eq("id", id)).
-        WithContext(ctx).
         One(&user)
-
     if errors.Is(err, relica.ErrNotFound) {
-        return nil, fmt.Errorf("user %d not found", id)
+        return nil, fmt.Errorf("user %d: %w", id, ErrUserNotFound)
     }
     if err != nil {
-        return nil, fmt.Errorf("find user: %w", err)
+        return nil, fmt.Errorf("find user %d: %w", id, err)
     }
-
     return &user, nil
 }
 
 func (r *UserRepository) Create(ctx context.Context, user *models.User) error {
     // Model API auto-populates user.ID after insert
-    if err := r.db.Model(user).Insert(); err != nil {
+    if err := r.db.With(ctx).Model(user).Insert(); err != nil {
         if relica.IsUniqueViolation(err) {
-            return fmt.Errorf("email already exists")
+            return ErrEmailTaken
         }
         return fmt.Errorf("create user: %w", err)
     }
@@ -159,87 +209,93 @@ func (r *UserRepository) Create(ctx context.Context, user *models.User) error {
 }
 
 func (r *UserRepository) Update(ctx context.Context, user *models.User) error {
-    return r.db.Model(user).Update()
+    return r.db.With(ctx).Model(user).Update()
 }
 
 func (r *UserRepository) Delete(ctx context.Context, id int) error {
-    user := &models.User{ID: id}
-    return r.db.Model(user).Delete()
+    return r.db.With(ctx).Model(&models.User{ID: id}).Delete()
 }
 ```
+
+Every method calls `r.db.With(ctx)`: outside a transaction it runs on the pool under the request
+context; inside `Transactional` it runs on the transaction.
 
 ---
 
 ## 🔒 Transaction Best Practices
 
-### Pattern 1: Defer Rollback
+The full rule set, the API choice table and the mistakes seen in real projects are in
+[AGENTS.md → Transactions](../../AGENTS.md#transactions). The patterns below are the ones to reach for.
 
-Always use `defer tx.Rollback()`:
+### Pattern 1: The Service Owns the Transaction
+
+The transaction boundary is one business operation, opened in the application service (or HTTP
+handler, CLI command, job). Repositories never begin or commit:
 
 ```go
-func transferMoney(db *relica.DB, fromID, toID int, amount float64) error {
-    tx, err := db.Begin(context.Background())
-    if err != nil {
-        return err
-    }
-    defer tx.Rollback() // Safe: Rollback after Commit is no-op
+type SignupService struct {
+    db       *database.DB
+    users    *repository.UserRepository
+    profiles *repository.ProfileRepository
+}
 
-    // Deduct from sender
-    _, err = tx.Update("accounts").
-        Set(map[string]interface{}{"balance": "balance - ?"}).
-        Where("id = ?", fromID).
-        Execute()
-    if err != nil {
-        return err // Auto-rollback via defer
-    }
-
-    // Add to receiver
-    _, err = tx.Update("accounts").
-        Set(map[string]interface{}{"balance": "balance + ?"}).
-        Where("id = ?", toID).
-        Execute()
-    if err != nil {
-        return err // Auto-rollback via defer
-    }
-
-    return tx.Commit() // Only commit if all operations succeed
+func (s *SignupService) Signup(ctx context.Context, user *models.User, profile *models.Profile) error {
+    return s.db.Transactional(ctx, func(ctx context.Context) error {
+        if err := s.users.Create(ctx, user); err != nil {
+            return err // rollback
+        }
+        profile.UserID = user.ID // set by Model().Insert()
+        return s.profiles.Create(ctx, profile)
+    })
+    // e-mails, events, HTTP calls: after Transactional returns nil, not inside it
 }
 ```
 
-### Pattern 2: Context Propagation
+### Pattern 2: Lock, Check, Write
 
-Pass context through transaction:
+Read-check-write on shared rows needs a row lock **inside** the transaction; arithmetic stays in SQL:
 
 ```go
-func createUserWithProfile(ctx context.Context, db *relica.DB, user User, profile Profile) error {
-    tx, err := db.BeginTx(ctx, nil) // Context auto-propagates
-    if err != nil {
+func (s *WalletService) Withdraw(ctx context.Context, accountID, amount int64) error {
+    return s.db.Transactional(ctx, func(ctx context.Context) error {
+        var acc models.Account
+        if err := s.db.With(ctx).Select("id", "balance").From("accounts").
+            Where(relica.Eq("id", accountID)).
+            ForUpdate(). // released at commit/rollback; useless outside a transaction
+            One(&acc); err != nil {
+            return err
+        }
+        if acc.Balance < amount {
+            return ErrInsufficientFunds
+        }
+        _, err := s.db.With(ctx).Update("accounts").
+            Set(map[string]any{"balance": relica.NewExp("balance - ?", amount)}).
+            Where(relica.Eq("id", accountID)).
+            Execute()
         return err
-    }
-    defer tx.Rollback()
-
-    // Create user
-    var userID int
-    err = tx.QueryRowContext(ctx, // Use same context
-        `INSERT INTO users (name, email) VALUES ($1, $2) RETURNING id`,
-        user.Name, user.Email,
-    ).Scan(&userID)
-    if err != nil {
-        return err
-    }
-
-    // Create profile
-    _, err = tx.Insert("profiles", map[string]interface{}{
-        "user_id": userID,
-        "bio":     profile.Bio,
-    }).Execute()
-    if err != nil {
-        return err
-    }
-
-    return tx.Commit()
+    })
 }
 ```
+
+`Set(map[string]any{"balance": "balance - ?"})` would store the text `balance - ?`; only
+`relica.NewExp` is evaluated by the database.
+
+### Pattern 3: Manual Begin (when the work is not one function)
+
+```go
+tx, err := db.BeginTx(ctx, &relica.TxOptions{Isolation: sql.LevelSerializable})
+if err != nil {
+    return err // tx is nil: check before deferring
+}
+defer func() { _ = tx.Rollback() }() // returns sql.ErrTxDone after Commit — expected
+
+// ... every statement through tx, every error checked ...
+
+return tx.Commit() // a failed Commit means nothing was saved
+```
+
+The transaction is bound to the context given to `Begin`/`BeginTx`/`Transactional`: when it is
+canceled, `database/sql` rolls the transaction back.
 
 ---
 

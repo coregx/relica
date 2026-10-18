@@ -606,10 +606,13 @@ func TestTransactionSecurity(t *testing.T) {
     ctx := security.WithUser(context.Background(), "attacker@example.com")
 
     // Start transaction
-    tx, _ := db.Begin(ctx)
+    tx, err := db.Begin(ctx)
+    if err != nil {
+        t.Fatal(err)
+    }
 
     // Attempt SQL injection in transaction
-    _, err := tx.ExecContext(ctx,
+    _, err = tx.ExecContext(ctx,
         "UPDATE accounts SET balance = balance - ?; DROP TABLE accounts",
         100,
     )
