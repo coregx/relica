@@ -234,6 +234,30 @@ func runPublicTypesTests(t *testing.T, ds *DatabaseSetup) {
 		assert.Equal(t, []string{"gamma", "beta", "alpha"}, got)
 	})
 
+	// ORDER BY items follow the call order: the CASE is the primary sort key.
+	t.Run("OrderBy_FollowsCallOrder", func(t *testing.T) {
+		seedPtItems(t, db)
+		var got []string
+		require.NoError(t, db.Select("name").From("pt_item").
+			OrderBySub(relica.CaseWhen().When(relica.Eq("name", "beta"), 0).Else(1)).
+			OrderBy("name DESC").
+			Column(&got))
+		assert.Equal(t, []string{"beta", "gamma", "alpha"}, got)
+	})
+
+	// GROUP BY comes before HAVING in the statement, so its parameter must be
+	// bound first although Having is called first. Swapped, the query would
+	// group on price > 2 and keep groups with at least 60 rows: no rows.
+	t.Run("GroupByExpr_ParamsBindBeforeHaving", func(t *testing.T) {
+		seedPtItems(t, db)
+		var counts []int64
+		require.NoError(t, db.Select("COUNT(*)").From("pt_item").
+			Having("COUNT(*) >= ?", 2).
+			GroupByExpr("CASE WHEN price > ? THEN 'high' ELSE 'low' END", 60).
+			Column(&counts))
+		assert.Equal(t, []int64{2}, counts)
+	})
+
 	t.Run("Case_ExpressionConditionInUpdateSet", func(t *testing.T) {
 		seedPtItems(t, db)
 		_, err := db.Update("pt_item").Set(map[string]any{

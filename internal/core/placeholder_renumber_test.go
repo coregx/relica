@@ -151,21 +151,27 @@ func TestOrderByExpr_PostgreSQL(t *testing.T) {
 	}
 }
 
-// TestGroupByExpr_OrderByExpr_Combined_PostgreSQL verifies that GroupByExpr
-// and OrderByExpr params are correctly numbered after WHERE and HAVING.
+// TestGroupByExpr_OrderByExpr_Combined_PostgreSQL verifies that params are
+// bound in statement order (WHERE, GROUP BY, HAVING, ORDER BY), not in the
+// order the builder methods were called.
 func TestGroupByExpr_OrderByExpr_Combined_PostgreSQL(t *testing.T) {
 	db := mockDB("postgres")
 	qb := &QueryBuilder{db: db}
 
 	sq := qb.Select("status", "COUNT(*)").From("users").
 		Where("active = ?", true).                                            // $1
-		Having("COUNT(*) > ?", 5).                                            // $2
-		GroupByExpr("CASE WHEN age > ? THEN 'senior' ELSE 'junior' END", 60). // $3
+		Having("COUNT(*) > ?", 5).                                            // $3
+		GroupByExpr("CASE WHEN age > ? THEN 'senior' ELSE 'junior' END", 60). // $2
 		OrderByExpr("CASE WHEN priority = ? THEN 0 ELSE 1 END", "high")       // $4
 
 	q := sq.Build()
 
 	verifyPlaceholderSequence(t, q.sql, 4)
+	for _, want := range []string{"age > $2", "COUNT(*) > $3", "priority = $4"} {
+		if !strings.Contains(q.sql, want) {
+			t.Errorf("SQL does not contain %q: %s", want, q.sql)
+		}
+	}
 
 	if len(q.params) != 4 {
 		t.Fatalf("expected 4 params, got %d: %v", len(q.params), q.params)
@@ -173,11 +179,11 @@ func TestGroupByExpr_OrderByExpr_Combined_PostgreSQL(t *testing.T) {
 	if q.params[0] != true {
 		t.Errorf("params[0]: got %v, want true", q.params[0])
 	}
-	if q.params[1] != 5 {
-		t.Errorf("params[1]: got %v, want 5", q.params[1])
+	if q.params[1] != 60 {
+		t.Errorf("params[1]: got %v, want 60", q.params[1])
 	}
-	if q.params[2] != 60 {
-		t.Errorf("params[2]: got %v, want 60", q.params[2])
+	if q.params[2] != 5 {
+		t.Errorf("params[2]: got %v, want 5", q.params[2])
 	}
 	if q.params[3] != "high" {
 		t.Errorf("params[3]: got %v, want \"high\"", q.params[3])
