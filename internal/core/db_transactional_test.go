@@ -353,11 +353,19 @@ func TestTransactional_BeginError(t *testing.T) {
 	}
 }
 
-// TestTransactional_CommitError tests error handling when Commit fails.
+// TestTransactional_CommitError tests error handling when Commit fails: the
+// work succeeded, so the only error is the commit's and it must be returned
+// (PostgreSQL reports serialization failures at COMMIT).
 func TestTransactional_CommitError(t *testing.T) {
-	// This test is database-specific and may not be portable.
-	// Skipping for now as it requires specific setup to force commit failure.
-	t.Skip("Commit error testing requires specific database state manipulation")
+	db := openFailTxDB(t, "commit-fails")
+	err := db.Transactional(context.Background(), func(*Tx) error { return nil })
+	if !errors.Is(err, errFailCommit) {
+		t.Errorf("err = %v, want the commit error", err)
+	}
+	err = db.TransactionalTx(context.Background(), &TxOptions{}, func(*Tx) error { return nil })
+	if !errors.Is(err, errFailCommit) {
+		t.Errorf("TransactionalTx err = %v, want the commit error", err)
+	}
 }
 
 // setupReplicaDB creates a Relica DB instance for testing using the in-memory test driver.

@@ -5,6 +5,8 @@ package core
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -400,32 +402,17 @@ func (tx *Tx) NewQuery(query string) *Query {
 // If f returns an error, the transaction is rolled back and the error is returned.
 // If f panics, the transaction is rolled back and the panic is re-raised.
 // If f completes successfully, the transaction is committed.
-func (db *DB) Transactional(ctx context.Context, f func(*Tx) error) (err error) {
-	tx, err := db.Begin(ctx)
-	if err != nil {
-		return err
-	}
-
-	defer func() {
-		if p := recover(); p != nil {
-			tx.Rollback() //nolint:errcheck,gosec
-			panic(p)      // Re-panic after rollback
-		} else if err != nil {
-			tx.Rollback() //nolint:errcheck,gosec
-		} else {
-			err = tx.Commit()
-		}
-	}()
-
-	err = f(tx)
-	return err
+func (db *DB) Transactional(ctx context.Context, f func(*Tx) error) error {
+	return db.TransactionalTx(ctx, nil, f)
 }
 
 // TransactionalTx executes f within a transaction with custom options.
 // Options can specify isolation level and read-only mode.
-// If f returns an error, the transaction is rolled back and the error is returned.
-// If f panics, the transaction is rolled back and the panic is re-raised.
-// If f completes successfully, the transaction is committed.
+// If f returns an error, the transaction is rolled back and the error is
+// returned; if the rollback itself fails, both errors are returned (errors.Is
+// matches either). If f panics, the transaction is rolled back and the panic
+// is re-raised. If f completes successfully, the transaction is committed and
+// the Commit error, if any, is returned.
 func (db *DB) TransactionalTx(ctx context.Context, opts *TxOptions, f func(*Tx) error) (err error) {
 	tx, err := db.BeginTx(ctx, opts)
 	if err != nil {
@@ -434,10 +421,14 @@ func (db *DB) TransactionalTx(ctx context.Context, opts *TxOptions, f func(*Tx) 
 
 	defer func() {
 		if p := recover(); p != nil {
-			tx.Rollback() //nolint:errcheck,gosec
-			panic(p)      // Re-panic after rollback
+			_ = tx.Rollback() // the panic is what the caller sees
+			panic(p)          // Re-panic after rollback
 		} else if err != nil {
-			tx.Rollback() //nolint:errcheck,gosec
+			// sql.ErrTxDone: f (or a canceled context) already ended the
+			// transaction — nothing was left to roll back.
+			if rbErr := tx.Rollback(); rbErr != nil && !errors.Is(rbErr, sql.ErrTxDone) {
+				err = errors.Join(err, fmt.Errorf("relica: rollback: %w", rbErr))
+			}
 		} else {
 			err = tx.Commit()
 		}
