@@ -678,8 +678,27 @@ db.Select().From("users").Where(relica.HashExp{"id": ids}).All(&users)  // → W
 
 | Function | SQL | Example |
 |----------|-----|---------|
-| `Like(col, pattern)` | `col LIKE '%pattern%'` | `Like("name", "john")` |
+| `Like(col, patterns...)` | `col LIKE ?` (several values: AND) | `Like("name", "john")` → `'%john%'` |
+| `NotLike(col, patterns...)` | `col NOT LIKE ?` (AND) | `NotLike("email", "test")` |
 | `OrLike(col, patterns...)` | `col LIKE ? OR col LIKE ?` | `OrLike("email", "gmail", "yahoo")` |
+| `OrNotLike(col, patterns...)` | `col NOT LIKE ? OR ...` | `OrNotLike("tag", "a", "b")` |
+| `ILike`, `NotILike`, `OrILike`, `OrNotILike` | case-insensitive versions (v0.19.1+) | `ILike("cpu_model", "xeon")` |
+
+All of them escape `%`, `_` and `\` in the values and wrap them in `%`; `.Match(left, right)`
+controls the wildcards: `Match(false, true)` → `'value%'` (prefix), `Match(true, false)` → `'%value'` (suffix).
+
+**Case sensitivity.** `Like` is as case-sensitive as the database makes it: PostgreSQL — always;
+MySQL — depends on the column collation (`*_ci` no, `*_bin` yes); SQLite — ASCII letters fold.
+Use `ILike` when the match must ignore case on every database:
+
+| Database | `ILike("name", "al")` renders | Notes |
+|---|---|---|
+| PostgreSQL | `"name" ILIKE ?` | non-ASCII folding follows the database locale (`LC_CTYPE`) |
+| MySQL | ``LOWER(`name`) LIKE LOWER(?)`` | works for any non-binary character set and collation |
+| SQLite | `LOWER("name") LIKE LOWER(?) ESCAPE '\'` | `LOWER` folds ASCII only (no ICU extension) |
+
+`LOWER(col)` cannot use a plain index on `col`. For prefix search on a large MySQL table whose
+column is already `*_ci`, plain `Like(...).Match(false, true)` is case-insensitive and can use the index.
 
 ### Logical Operators
 
