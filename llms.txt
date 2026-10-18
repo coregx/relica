@@ -35,8 +35,28 @@ db.Select().From("users").
 // Repositories take relica.Executor — implemented by *DB and *Tx —
 // so the same code runs inside or outside a transaction.
 
+// TRANSACTION - error/panic → rollback, nil → commit
+err := db.Transactional(ctx, func(tx *relica.Tx) error {
+    _, err := tx.Update("account").
+        Set(map[string]any{"balance": relica.NewExp("balance - ?", amount)}). // never the string "balance - ?"
+        Where(relica.Eq("id", id)).
+        Execute()
+    return err
+})
+
+// Case-insensitive search on every database (v0.19.1+)
+db.Select().From("users").Where(relica.ILike("name", "john")).All(&users)
+
 // DO NOT use map[string]interface{} for CRUD!
 ```
+
+## Transactions: rules that prevent data loss
+
+Read AGENTS.md "Transactions" before writing code that changes more than one row. In short:
+every statement of a transaction goes through `tx` (or a `relica.Executor` that is the tx);
+a dbcontext `With(ctx)` must return the `*relica.Tx` stored in ctx; `ForUpdate()` only inside a
+transaction; never open a transaction inside a transaction; pass the request ctx to
+`Begin`/`Transactional`; create one `*relica.DB` per process.
 
 ## Links
 

@@ -347,7 +347,7 @@ if err != nil {
     return err
 }
 
-_, err = tx.Exec("UPDATE accounts SET balance = balance - $1", 100)
+_, err = tx.Exec("UPDATE accounts SET balance = balance - $1 WHERE id = $2", 100, accountID)
 if err != nil {
     return err
 }
@@ -357,31 +357,34 @@ return tx.Commit()
 
 **Relica:**
 ```go
+err := db.Transactional(ctx, func(tx *relica.Tx) error {
+    if _, err := tx.Insert("users", map[string]any{"name": "Alice"}).Execute(); err != nil {
+        return err // rollback
+    }
+    _, err := tx.Update("accounts").
+        Set(map[string]any{"balance": relica.NewExp("balance - ?", 100)}).
+        Where(relica.Eq("id", accountID)).
+        Execute()
+    return err // nil → commit
+})
+```
+
+Manual control works the same way as in sqlx:
+
+```go
 tx, err := db.Begin(ctx)
 if err != nil {
     return err
 }
-defer tx.Rollback()
-
-_, err = tx.Insert("users", map[string]interface{}{"name": "Alice"}).Execute()
-if err != nil {
-    return err
-}
-
-_, err = tx.Update("accounts").
-    Set(map[string]interface{}{"balance": "balance - ?"}).
-    Execute()
-if err != nil {
-    return err
-}
-
+defer func() { _ = tx.Rollback() }() // sql.ErrTxDone after Commit — expected
+// ... statements on tx ...
 return tx.Commit()
 ```
 
 **Migration:**
-- `db.Beginx()` → `db.Begin(ctx)`
-- Transaction API nearly identical
-- Use builder methods on `tx` instead of raw SQL
+- `db.Beginx()` → `db.Begin(ctx)`, or `db.Transactional(ctx, f)` (commit/rollback/panic handled)
+- Arithmetic in `SET`: `relica.NewExp("balance - ?", amount)` — a plain string value is stored as text
+- Use builder methods on `tx` instead of raw SQL; every statement of the transaction goes through `tx`
 
 ---
 

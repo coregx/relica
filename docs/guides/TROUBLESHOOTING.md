@@ -148,28 +148,44 @@ defer cancel()
 
 ## Transaction Issues
 
-### Error: "transaction has already been committed or rolled back"
-**Cause**: Double commit or rollback
+### Error: "sql: transaction has already been committed or rolled back"
+**Cause**: the transaction was used after it ended — a second `Commit`, a query after `Commit`/`Rollback`,
+`Commit`/`Rollback` called inside `Transactional`, or its context was canceled (`database/sql` then
+rolls it back).
 
 **Solutions:**
 ```go
-// ✅ CORRECT: Use defer Rollback
-tx, _ := db.Begin(ctx)
-defer tx.Rollback() // Safe: no-op after Commit
+// ✅ Let Transactional end the transaction
+err := db.Transactional(ctx, func(tx *relica.Tx) error {
+    // work on tx; do not call tx.Commit() or tx.Rollback() here
+    return nil
+})
 
-// Do work...
-
-return tx.Commit() // Only commit once
+// ✅ Manual: check Begin's error, then defer Rollback
+tx, err := db.Begin(ctx)
+if err != nil {
+    return err
+}
+defer func() { _ = tx.Rollback() }() // sql.ErrTxDone after Commit — expected here only
+// work on tx...
+return tx.Commit()
 ```
 
+### Writes survive a rollback
+**Cause**: some statements did not run on the transaction — they went through `*relica.DB` (for example
+a dbcontext `With(ctx)` that ignores the transaction in the context). Such statements autocommit.
+**Solution**: every statement goes through `tx` or a `relica.Executor` that is the transaction; see
+[AGENTS.md → Transactions](../../AGENTS.md#transactions).
+
 ### Deadlocks
-**Symptoms**: Timeout errors, hung transactions
+**Symptoms**: deadlock errors, or transactions that wait until their lock timeout
 
 **Solutions:**
-- Always acquire locks in same order
-- Keep transactions short
-- Use appropriate isolation level
-- Add retry logic for deadlock errors
+- Lock rows in the same order everywhere (for example ascending id)
+- Keep transactions short: no network calls or waiting inside
+- Never open a second transaction inside the first (it waits for a connection or a lock held by the first)
+- Use an isolation level only as high as needed
+- Retry the whole transaction on deadlock and serialization errors
 
 ---
 

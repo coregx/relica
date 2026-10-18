@@ -1240,16 +1240,10 @@ func (t *Tx) QueryRowContext(ctx context.Context, query string, args ...any) *sq
 //
 // Example:
 //
-//	tx, _ := db.Begin(ctx)
-//	defer tx.Rollback()
-//
-//	user := User{Name: "Alice"}
-//	err := tx.Model(&user).Insert()
-//	if err != nil {
-//	    return err
-//	}
-//
-//	return tx.Commit()
+//	err := db.Transactional(ctx, func(tx *relica.Tx) error {
+//	    user := User{Name: "Alice"}
+//	    return tx.Model(&user).Insert()
+//	})
 func (t *Tx) Model(model any) *ModelQuery {
 	return &ModelQuery{mq: t.tx.Model(model)}
 }

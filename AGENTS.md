@@ -319,34 +319,119 @@ All batch operations work on both `DB` and `Tx`.
 
 ## Transactions
 
+Read this section before writing code that changes more than one row. In projects that use
+Relica, the data-integrity bugs were here, not in query building: writes that survived a
+rollback, row locks that protected nothing, request deadlines that never reached SQL.
+
+### Rules
+
+1. **One business operation, one transaction, opened at the top** — HTTP handler,
+   application service, CLI command or job. Repositories never begin, commit or roll back.
+2. **Inside a transaction every statement goes through it**: `tx.Select(...)`, or a
+   repository that receives a `relica.Executor` (or calls a dbcontext `With(ctx)`, below).
+   A statement sent through `*relica.DB` runs on another pool connection in autocommit
+   mode: it is not rolled back and does not see the transaction's uncommitted rows.
+3. **Prefer `Transactional` / `TransactionalTx`.** They commit when the function returns
+   nil, roll back when it returns an error, and roll back and re-panic on a panic. Use
+   manual `Begin` only when the work cannot be written as one function.
+4. **Row locks only inside a transaction.** `ForUpdate`, `ForShare` and
+   `ForUpdateSkipLocked` on `*relica.DB` autocommit: the lock is released as soon as the
+   SELECT finishes, and the read-then-write race it was meant to stop is still there.
+5. **Never open a second transaction inside the first.** `DB.Transactional` always begins a
+   new transaction; it does not look for one in the context. A nested `Begin` takes a
+   second connection, and with a small pool it waits for itself until the context
+   deadline. Join the outer transaction instead (dbcontext pattern below).
+6. **Pass the request context to `Begin`/`Transactional`.** The transaction is bound to it:
+   when the context is canceled, `database/sql` rolls the transaction back and `Commit`
+   returns `context.Canceled`. Do not use `context.Background()` for request work.
+7. **Keep transactions short.** No HTTP/RPC calls, e-mails, message publishing or waiting
+   for a user inside. Do side effects after the commit, or write them to an outbox table in
+   the same transaction.
+8. **Compute in SQL with expressions.** `Set(map[string]any{"balance": relica.NewExp("balance - ?", amount)})`.
+   A plain string value is data: `Set(map[string]any{"balance": "balance - ?"})` binds the
+   text `"balance - ?"` as the new value (SQLite stores it even in an INTEGER column).
+9. **Check every error, including `Commit`.** With manual `Begin`, check `Begin`'s error
+   before `defer tx.Rollback()` — on failure `tx` is nil and the deferred call panics.
+   `Rollback` after `Commit` returns `sql.ErrTxDone`; ignoring it is fine only in that
+   deferred call.
+10. **Lock rows in a fixed order** (for example ascending id) when one transaction locks
+    several rows. Two transactions locking the same rows in opposite order deadlock.
+11. **Test that a rollback really discards writes** made through your data layer
+    (see "Testing transactions").
+
+### Which API
+
+| Situation | Use |
+|---|---|
+| The whole operation fits in one function | `db.Transactional(ctx, func(tx *relica.Tx) error { ... })` |
+| Needs an isolation level or read-only | `db.TransactionalTx(ctx, &relica.TxOptions{Isolation: sql.LevelSerializable}, f)` |
+| Repository used both inside and outside transactions | parameter of type `relica.Executor` |
+| Application keeps the transaction in `context.Context` (go-rest-api style) | dbcontext: `With(ctx) relica.Executor` + `Transactional` that joins |
+| Transaction begun by another library (migration tool, sqlc) | `db.WrapTx(ctx, sqlTx)` |
+| Work cannot be one function | `db.Begin(ctx)` / `db.BeginTx(ctx, opts)` + `defer tx.Rollback()` + `tx.Commit()` |
+
+### Transactional — the default
+
+A money transfer: both rows locked in id order, balance checked, arithmetic done in SQL.
+
 ```go
-// Transactional() — auto commit/rollback with panic recovery
-err := db.Transactional(ctx, func(tx *relica.Tx) error {
-    user := User{Name: "Alice"}
-    if err := tx.Model(&user).Insert(); err != nil {
-        return err // auto-rollback
-    }
+func Transfer(ctx context.Context, db *relica.DB, fromID, toID int64, amount int64) error {
+    return db.Transactional(ctx, func(tx *relica.Tx) error {
+        var accounts []Account
+        if err := tx.Select("id", "balance").From("account").
+            Where(relica.In("id", fromID, toID)).
+            OrderBy("id"). // lock order: ascending id
+            ForUpdate().
+            All(&accounts); err != nil {
+            return fmt.Errorf("lock accounts: %w", err)
+        }
+        if len(accounts) != 2 {
+            return ErrAccountNotFound
+        }
+        for _, a := range accounts {
+            if a.ID == fromID && a.Balance < amount {
+                return ErrInsufficientFunds // rollback
+            }
+        }
 
-    order := Order{UserID: user.ID, Total: 99.99}
-    if err := tx.Model(&order).Insert(); err != nil {
-        return err // auto-rollback
-    }
-
-    return nil // auto-commit
-})
-
-// Manual transaction control
-tx, err := db.Begin(ctx)
-defer tx.Rollback() // safe: no-op after Commit
-
-err = tx.Model(&user).Insert()
-if err != nil {
-    return err // auto-rollback via defer
+        if _, err := tx.Update("account").
+            Set(map[string]any{"balance": relica.NewExp("balance - ?", amount)}).
+            Where(relica.Eq("id", fromID)).
+            Execute(); err != nil {
+            return fmt.Errorf("debit: %w", err)
+        }
+        if _, err := tx.Update("account").
+            Set(map[string]any{"balance": relica.NewExp("balance + ?", amount)}).
+            Where(relica.Eq("id", toID)).
+            Execute(); err != nil {
+            return fmt.Errorf("credit: %w", err)
+        }
+        return nil // commit; a Commit error is returned by Transactional
+    })
 }
-return tx.Commit()
 ```
 
-**All methods available on Tx**: Select, Insert, Update, Delete, Model, BatchInsert, BatchUpdate, Upsert, InsertStruct, BatchInsertStruct, NewQuery, ExecContext, QueryContext, QueryRowContext.
+### Manual Begin
+
+```go
+tx, err := db.Begin(ctx)
+if err != nil {
+    return fmt.Errorf("begin: %w", err) // tx is nil here
+}
+defer func() { _ = tx.Rollback() }() // sql.ErrTxDone after Commit — expected
+
+if err := tx.Model(&user).Insert(); err != nil {
+    return err // deferred Rollback discards the transaction
+}
+if err := tx.Model(&order).Insert(); err != nil {
+    return err
+}
+return tx.Commit() // the Commit error matters: nothing is saved if it fails
+```
+
+**Methods on `*relica.Tx`**: Select, Insert, InsertStruct, BatchInsertStruct, Update,
+UpdateStruct, Delete, Upsert, BatchInsert, BatchUpdate, Model, NewQuery, ExecContext,
+QueryContext, QueryRowContext, Commit, Rollback.
 
 ```go
 // Raw SQL within transaction (for migrations, DDL, etc.)
@@ -410,6 +495,37 @@ func (d *DB) With(ctx context.Context) *relica.DB {
 }
 ```
 
+How the pieces fit — `*relica.DB` opened once at startup, repositories only call `With(ctx)`,
+the transaction boundary lives in the application service:
+
+```go
+// main.go — one *relica.DB for the whole process (it owns the pool and the statement cache).
+rdb, err := relica.Open("postgres", dsn)
+dbc := dbcontext.New(rdb)
+
+// repository — never begins or commits; works inside and outside a transaction.
+func (r *AccountRepo) Debit(ctx context.Context, id, amount int64) error {
+    _, err := r.db.With(ctx).Update("account").
+        Set(map[string]any{"balance": relica.NewExp("balance - ?", amount)}).
+        Where(relica.Eq("id", id)).
+        Execute()
+    return err
+}
+
+// application service — owns the transaction boundary.
+func (s *PaymentService) Pay(ctx context.Context, from, to, amount int64) error {
+    return s.db.Transactional(ctx, func(ctx context.Context) error {
+        if err := s.accounts.Debit(ctx, from, amount); err != nil {
+            return err // rollback
+        }
+        return s.accounts.Credit(ctx, to, amount)
+    })
+}
+```
+
+Do not wrap `*sql.DB` with `relica.WrapDB` per request or per transaction: each call creates a new
+statement cache, so nothing is ever reused. Wrap once at startup.
+
 Executor deliberately excludes `Begin`, `Commit`, `Rollback`, `Transactional`,
 `Builder()` and `WithContext()`. Its method set is frozen — new `*DB`/`*Tx`
 methods are not added to it, so test doubles keep compiling.
@@ -437,14 +553,88 @@ A canceled context fails with `context.Canceled` — it is never reported as `Er
 In the dbcontext pattern this is why `With(ctx)` must return `d.db.WithContext(ctx)` on the
 non-transactional path and not the bare `d.db`: otherwise request deadlines never reach SQL.
 
+Inside a transaction the context passed to `Begin`/`Transactional` governs everything: when it is
+canceled, `database/sql` rolls the transaction back and `Commit` returns `context.Canceled`.
+
+### Isolation levels
+
+The default is the database's (READ COMMITTED on PostgreSQL, REPEATABLE READ on MySQL InnoDB,
+SERIALIZABLE on SQLite). Raise it only for a reason, and per transaction:
+
+```go
+err := db.TransactionalTx(ctx, &relica.TxOptions{Isolation: sql.LevelSerializable}, func(tx *relica.Tx) error {
+    // read, decide, write — the database aborts the transaction on a conflicting write
+    return nil
+})
+
+// Reports: a read-only transaction (writes fail on PostgreSQL and MySQL).
+err = db.TransactionalTx(ctx, &relica.TxOptions{ReadOnly: true}, func(tx *relica.Tx) error { ... })
+```
+
+At SERIALIZABLE (and REPEATABLE READ on PostgreSQL) the database may abort a transaction with a
+serialization failure, and any level can end in a deadlock. Such a transaction must be retried as a
+whole — the error can come from any statement or from `Commit`.
+
+### SQLite
+
+- One writer at a time for the whole database. `ForUpdate`/`ForShare`/`ForUpdateSkipLocked` are left
+  out of the SQL on SQLite: there are no row locks to take.
+- A transaction that reads and then writes starts as a reader (`BEGIN DEFERRED`) and can fail with
+  `database is locked` (SQLITE_BUSY) when it upgrades to a writer. With modernc.org/sqlite, add
+  `_txlock=immediate` to the DSN so every transaction takes the write lock at `BEGIN`.
+- `:memory:` gives every pool connection its own empty database; tests that use more than one
+  connection need a file (for example in `t.TempDir()`).
+
+### Testing transactions
+
+Unit tests with mocks cannot show that a rollback discards writes. Test it on a real database
+through your own data layer — this test fails for every `With(ctx)` that ignores the transaction:
+
+```go
+func TestTransactional_RollbackDiscardsWrites(t *testing.T) {
+    ctx := context.Background()
+    errStop := errors.New("stop")
+
+    err := dbc.Transactional(ctx, func(ctx context.Context) error {
+        if err := repo.Create(ctx, &Account{ID: 1, Balance: 100}); err != nil {
+            return err
+        }
+        return errStop // force a rollback
+    })
+    require.ErrorIs(t, err, errStop)
+
+    n, err := rdb.Select().From("account").Where(relica.Eq("id", 1)).Count()
+    require.NoError(t, err)
+    require.Zero(t, n, "write made through With(ctx) survived the rollback")
+}
+```
+
+Add a nested case as well: an inner `Transactional` must see the outer transaction's rows, and the
+outer rollback must remove the inner writes too.
+
+### Mistakes found in real projects
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Writes survive a rollback; "transaction" does nothing | `With(ctx)` returns `*relica.DB` and ignores the tx in ctx | return the `*relica.Tx` from ctx (dbcontext above) |
+| Double spending / lost updates despite `ForUpdate()` | the locking SELECT ran on `*relica.DB`, outside the transaction | run it on `tx` (or `With(ctx)` inside `Transactional`) |
+| Request timeouts do not stop SQL | non-tx path returns bare `d.db`, or `context.Background()` is used | `d.db.WithContext(ctx)`; pass the request ctx to `Begin`/`Transactional` |
+| Hangs until the deadline under load | a second transaction opened inside the first (nested `Begin`/`Transactional`) | join the outer transaction; never nest |
+| Statement cache never hits; high prepare count | `relica.WrapDB(sqlDB, ...)` per request or per transaction | create the `*relica.DB` once at startup |
+| Column contains the text `balance - ?` | string value in `Set` | `relica.NewExp("balance - ?", amount)` |
+| nil-pointer panic when the database is down | `defer tx.Rollback()` before checking `Begin`'s error | check the error first |
+| Half of the changes saved | errors of `Execute` ignored, then `Commit` | check every error; prefer `Transactional` |
+
 ---
 
 ## Row Locking (FOR UPDATE / FOR SHARE)
 
-**Pessimistic locking for concurrent access. Silently ignored for SQLite.**
+**Pessimistic locking for concurrent access — only inside a transaction.** On `*relica.DB` the
+statement autocommits and the lock is released immediately. Omitted from the SQL on SQLite (no row locks).
 
 ```go
-// Exclusive lock (block reads and writes by other transactions)
+// Exclusive lock: other transactions wait to update, delete or lock these rows
+// (plain SELECTs are not blocked on PostgreSQL / MySQL InnoDB)
 tx.Select().From("accounts").
     Where(relica.Eq("id", accountID)).
     ForUpdate().
