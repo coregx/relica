@@ -1,7 +1,7 @@
 # Relica Roadmap
 
-> **Current Version**: v0.19.0 (October 2026)
-> **Previous Release**: v0.18.0 (Released: October 11, 2026)
+> **Current Version**: v0.19.1 (October 2026)
+> **Previous Release**: v0.19.0 (Released: October 18, 2026)
 > **Production Ready**: v1.0.0 (Target: Q4 2026)
 
 ---
@@ -14,9 +14,16 @@
 
 ---
 
-## 📍 Current State (v0.19.0)
+## 📍 Current State (v0.19.1)
 
-### ✅ What's New in v0.19.0
+### ✅ What's New in v0.19.1
+
+- **Case-insensitive LIKE on every database** (v0.19.1): `ILike`, `NotILike`, `OrILike`, `OrNotILike` — `ILIKE` on PostgreSQL, `LOWER(col) LIKE LOWER(?)` on MySQL and SQLite
+- **Error classification by driver code** (v0.19.1): the `Is*Violation` helpers read SQLSTATE / MySQL error number / SQLite extended code instead of message text (works on localized servers and MariaDB); new `IsDeadlock`, `IsSerializationFailure`, `IsLockTimeout`
+- **Query-building fixes** (v0.19.1): schema-qualified tables in DML, typed `CASE` results on PostgreSQL, ORDER BY / GROUP BY in call order, GROUP BY parameters bound before HAVING's; `Transactional` reports a failed rollback
+- **CI runs the whole integration suite per database** (v0.19.1): previously name filters skipped 16 PostgreSQL tests and every multi-database test
+
+### ✅ Shipped in v0.19.0
 
 - **No internal types in the public API** (v0.19.0): all 20 types that were aliases to internal packages are declared in `relica` with full docs on pkg.go.dev; `Expression` is a sealed interface, `LikeExp`/`CaseExp`/`CoalesceExp`/`NullIfExp`/`GreatestLeastExp`/`ConcatExp` are interfaces, `Option` is opaque; `Unwrap()` removed; a test guards the whole class
 - **Invalid expressions fail instead of dropping the filter** (v0.19.0): an invalid `Like(...).EscapeChars` no longer turns a `DELETE`/`UPDATE` into an unconditional one
@@ -226,6 +233,7 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 - **v0.17.3** (2026-10-03) - Docs: successor to ozzo-dbx, One()/AsExpression docstrings
 - **v0.18.0** (2026-10-11) - relica.Executor, DB.WithContext fix, Query.WithContext, DB.WrapTx, integration suite on real databases
 - **v0.19.0** (2026-10-18) - No internal types in the public API (20 aliases → real types, Unwrap removed), invalid-expression filter drop fixed, CASE/SQLite LIKE/HAVING fixes, MySQL Explain/ExplainAnalyze fixed
+- **v0.19.1** (2026-10-18) - ILike family, error classification by driver code (+ IsDeadlock/IsSerializationFailure/IsLockTimeout), schema-qualified DML, PostgreSQL CASE typing, ORDER BY/GROUP BY call order, Transactional rollback error, full integration suite in CI
 - **v1.0.0** (Target: Q4 2026) - Production stable release
 
 ---
