@@ -28,22 +28,27 @@ type TestUser struct {
 }
 
 func TestExpressionAPI_PostgreSQL(t *testing.T) {
+	requireDB(t, "postgres")
 	ctx := context.Background()
 
 	// Start PostgreSQL in Docker
-	pgContainer, err := postgres.Run(
-		ctx,
-		"postgres:15-alpine",
-		postgres.WithDatabase("testdb"),
-		postgres.WithUsername("user"),
-		postgres.WithPassword("password"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(30*time.Second),
-		),
-	)
-	require.NoError(t, err)
+	pgContainer, err := startContainer(func() (*postgres.PostgresContainer, error) {
+		return postgres.Run(
+			ctx,
+			"postgres:15-alpine",
+			postgres.WithDatabase("testdb"),
+			postgres.WithUsername("user"),
+			postgres.WithPassword("password"),
+			testcontainers.WithWaitStrategy(
+				wait.ForLog("database system is ready to accept connections").
+					WithOccurrence(2).
+					WithStartupTimeout(30*time.Second),
+			),
+		)
+	})
+	if err != nil {
+		containerUnavailable(t, "postgres", err)
+	}
 	defer pgContainer.Terminate(ctx) //nolint:errcheck // Test cleanup
 
 	// Get connection string (DSN)

@@ -161,17 +161,16 @@ jobs:
         go mod download
         go mod verify
 
-    - name: Run PostgreSQL integration tests
-      if: matrix.database == 'postgres'
+    # Every test runs; RELICA_TEST_DB makes the Setup helpers skip the other
+    # databases and turns a container that fails to start into a test failure.
+    # (A -run name filter missed tests named *_PostgreSQL and every
+    # multi-database test, whose databases are subtests.)
+    - name: Run ${{ matrix.database }} integration tests
       working-directory: test
+      env:
+        RELICA_TEST_DB: ${{ matrix.database }}
       run: |
-        go test -v -tags=integration ./... -run Postgres
-
-    - name: Run MySQL integration tests
-      if: matrix.database == 'mysql'
-      working-directory: test
-      run: |
-        go test -v -tags=integration ./... -run MySQL
+        go test -v -count=1 -tags=integration ./...
 
   # Integration tests - SQLite (embedded, no container needed)
   integration-tests-sqlite:
@@ -197,8 +196,10 @@ jobs:
 
     - name: Run SQLite integration tests
       working-directory: test
+      env:
+        RELICA_TEST_DB: sqlite
       run: |
-        go test -v -tags=integration ./... -run SQLite
+        go test -v -count=1 -tags=integration ./...
 
     # Separate module: lib/pq v1.2.0 (error code in a struct field) cannot share
     # test/go.mod with lib/pq v1.10.9, and mattn/go-sqlite3 needs cgo.

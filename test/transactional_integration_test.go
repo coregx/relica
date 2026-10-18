@@ -100,7 +100,7 @@ func runTransactionalTests(t *testing.T, db *relica.DB) {
 }
 
 // ---------------------------------------------------------------------------
-// Entry points — names must contain PostgreSQL / MySQL / SQLite for CI filters.
+// Entry points — one per database; CI selects the database with RELICA_TEST_DB.
 // ---------------------------------------------------------------------------
 
 func TestTransactionalErrors_PostgreSQL(t *testing.T) {
@@ -116,6 +116,7 @@ func TestTransactionalErrors_MySQL(t *testing.T) {
 }
 
 func TestTransactionalErrors_SQLite(t *testing.T) {
+	requireDB(t, "sqlite")
 	db, err := relica.NewDB("sqlite", filepath.Join(t.TempDir(), "tx.db"))
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()

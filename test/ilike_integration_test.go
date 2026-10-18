@@ -143,7 +143,7 @@ func runILikeTests(t *testing.T, db *relica.DB, dialect string) {
 }
 
 // ---------------------------------------------------------------------------
-// Entry points — names must contain PostgreSQL / MySQL / SQLite for CI filters.
+// Entry points — one per database; CI selects the database with RELICA_TEST_DB.
 // ---------------------------------------------------------------------------
 
 func TestILike_PostgreSQL(t *testing.T) {
@@ -159,6 +159,7 @@ func TestILike_MySQL(t *testing.T) {
 }
 
 func TestILike_SQLite(t *testing.T) {
+	requireDB(t, "sqlite")
 	db, err := relica.NewDB("sqlite", filepath.Join(t.TempDir(), "ilike.db"))
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()

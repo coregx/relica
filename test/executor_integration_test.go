@@ -482,8 +482,7 @@ func runExecutorTests(t *testing.T, ds *DatabaseSetup) {
 }
 
 // ---------------------------------------------------------------------------
-// Entry points — names must contain Postgres / MySQL / SQLite for the CI
-// -run filters.
+// Entry points — one per database; CI selects the database with RELICA_TEST_DB.
 // ---------------------------------------------------------------------------
 
 func TestExecutor_PostgreSQL(t *testing.T) {
@@ -503,6 +502,7 @@ func TestExecutor_MySQL(t *testing.T) {
 // the cross-connection scenarios (isolation, pool exhaustion, the autocommit
 // leak) could not run. A file in t.TempDir() behaves like production SQLite.
 func TestExecutor_SQLite(t *testing.T) {
+	requireDB(t, "sqlite")
 	db, err := relica.NewDB("sqlite", filepath.Join(t.TempDir(), "executor.db"))
 	require.NoError(t, err)
 	ds := &DatabaseSetup{DB: db, Dialect: "sqlite"}

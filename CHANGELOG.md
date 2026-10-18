@@ -27,6 +27,7 @@ those gaps; nothing stops compiling.
 ### Internal
 
 - Timer-dependent unit tests use `testing/synctest` and no longer depend on scheduler timing (a flaky `TestWithTimeout` failed CI on macOS)
+- **CI ran only part of the integration suite** — jobs selected tests with `-run Postgres` / `-run MySQL` / `-run SQLite`, which is case-sensitive and matches top-level names only: 16 `*_PostgreSQL` tests and every multi-database test (`*_AllDatabases`, IrisMX, WrapDB) never ran. Jobs now run the whole suite with `RELICA_TEST_DB=postgres|mysql|sqlite`; the other databases are skipped, and a container that does not start fails the job instead of skipping silently
 
 ---
 
