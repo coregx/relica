@@ -1780,7 +1780,7 @@ func (qb *QueryBuilder) Insert(table string, values map[string]any) *Query {
 		quotedKeys[i] = qb.db.dialect.QuoteIdentifier(k)
 	}
 
-	query := `INSERT INTO ` + qb.db.dialect.QuoteIdentifier(table) +
+	query := `INSERT INTO ` + quoteTableName(table, qb.db.dialect) +
 		` (` + strings.Join(quotedKeys, ", ") + `) ` +
 		`VALUES (` + strings.Join(placeholders, ", ") + `)`
 
@@ -1872,7 +1872,7 @@ func (uq *UpsertQuery) Build() *Query {
 	}
 
 	// Build base INSERT statement
-	query := `INSERT INTO ` + uq.builder.db.dialect.QuoteIdentifier(uq.table) +
+	query := `INSERT INTO ` + quoteTableName(uq.table, uq.builder.db.dialect) +
 		` (` + strings.Join(quotedKeys, ", ") + `) ` +
 		`VALUES (` + strings.Join(placeholders, ", ") + `)`
 
@@ -2144,7 +2144,7 @@ func (uq *UpdateQuery) Build() *Query {
 	}
 
 	// Construct raw SQL with ? placeholders
-	rawSQL := "UPDATE " + uq.builder.db.dialect.QuoteIdentifier(uq.table) +
+	rawSQL := "UPDATE " + quoteTableName(uq.table, uq.builder.db.dialect) +
 		" SET " + strings.Join(setClauses, ", ") + whereClause
 
 	// Single-pass renumbering for PostgreSQL
@@ -2353,7 +2353,7 @@ func (dq *DeleteQuery) Build() *Query {
 	}
 
 	// Construct raw SQL and single-pass renumber
-	rawSQL := "DELETE FROM " + dq.builder.db.dialect.QuoteIdentifier(dq.table) + whereClause
+	rawSQL := "DELETE FROM " + quoteTableName(dq.table, dq.builder.db.dialect) + whereClause
 	query, count := replacePlaceholders(rawSQL, 1, dq.builder.db.dialect)
 	if count != len(whereParams) {
 		return &Query{
@@ -2524,7 +2524,7 @@ func (biq *BatchInsertQuery) Build() *Query {
 		valueClauses[i] = "(" + strings.Join(placeholders, ", ") + ")"
 	}
 
-	query := "INSERT INTO " + biq.builder.db.dialect.QuoteIdentifier(biq.table) +
+	query := "INSERT INTO " + quoteTableName(biq.table, biq.builder.db.dialect) +
 		" (" + strings.Join(quotedColumns, ", ") + ") VALUES " +
 		strings.Join(valueClauses, ", ")
 
@@ -2707,7 +2707,7 @@ func (buq *BatchUpdateQuery) Build() *Query {
 		paramIndex++
 	}
 
-	query := "UPDATE " + buq.builder.db.dialect.QuoteIdentifier(buq.table) +
+	query := "UPDATE " + quoteTableName(buq.table, buq.builder.db.dialect) +
 		" SET " + strings.Join(setClauses, ", ") +
 		" WHERE " + buq.builder.db.dialect.QuoteIdentifier(buq.keyColumn) +
 		" IN (" + strings.Join(whereInPlaceholders, ", ") + ")"

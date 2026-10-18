@@ -3,6 +3,8 @@ package core
 import (
 	"reflect"
 	"strings"
+
+	"github.com/coregx/relica/internal/dialects"
 )
 
 // DefaultFieldMapFunc converts Go struct field names to snake_case database column names.
@@ -46,9 +48,21 @@ func QuoteIdentifier(s string) string {
 }
 
 // QuoteTableName quotes a table name using the dialect's identifier quoting style.
-// For PostgreSQL: double-quotes. For MySQL: backticks.
+// A schema-qualified name is quoted per part: "app.users" → "app"."users"
+// (PostgreSQL) / `app`.`users` (MySQL).
 func (db *DB) QuoteTableName(s string) string {
-	return db.dialect.QuoteIdentifier(s)
+	return quoteTableName(s, db.dialect)
+}
+
+// quoteTableName quotes every dot-separated part of a table name. Unlike
+// quoteColumn it passes nothing through unquoted (no function calls, no "*"):
+// a table name is always an identifier.
+func quoteTableName(name string, dialect dialects.Dialect) string {
+	parts := strings.Split(name, ".")
+	for i, p := range parts {
+		parts[i] = dialect.QuoteIdentifier(p)
+	}
+	return strings.Join(parts, ".")
 }
 
 // QuoteColumnName quotes a column name using the dialect's identifier quoting style.
