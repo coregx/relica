@@ -18,6 +18,9 @@ those gaps; nothing stops compiling.
 - **`Transactional` / `TransactionalTx` dropped a failed rollback** — when `f` returned an error and the rollback failed too (for example the connection was lost), the rollback error was discarded. It is now returned as `errors.Join(err, rollbackErr)`; `sql.ErrTxDone` (the transaction already ended, for example by context cancellation) is not reported
 - **Wrong transaction and error-handling examples in the documentation** — `Set(map[string]any{"balance": "balance - ?"})` (binds the text as the value; now `relica.NewExp`), `ForUpdate()` on `*relica.DB` outside a transaction, `defer tx.Rollback()` before checking `Begin`'s error, ignored `Execute`/`Commit` errors, repositories that bypassed the caller's transaction, `_, err := db.Model(&x).Insert()` (it returns only `error`), a retry example calling an undefined `isDeadlock`, and the claim that `Rollback` after `Commit` is a no-op (it returns `sql.ErrTxDone`). Every changed example was compiled and run against SQLite
 
+- **Schema-qualified tables in INSERT, UPDATE, DELETE, upsert and batch statements** — `db.Insert("app.users", ...)` quoted the name as one identifier (`"app.users"`, PostgreSQL: `relation "app.users" does not exist`); SELECT already quoted it per part. All statements now produce `"app"."users"` / `` `app`.`users` ``, as does `DB.QuoteTableName`
+- **`CASE` with number or bool results on PostgreSQL** — PostgreSQL types a `CASE` whose results are all untyped parameters as text, so `Update("t").Set(map[string]any{"n": relica.CaseWhen().When(cond, 9).Else(0)})` failed on an integer column (`column "n" is of type integer but expression is of type text`) and `OrderBySub(relica.CaseWhen()...)` sorted `10` before `2`. When every result is a Go number (or every one a bool), Relica now casts the parameters to the type a literal would have (`CAST($2 AS INTEGER)`, `BIGINT`, `NUMERIC`, `BOOLEAN`). Results that are Expressions or strings are unchanged
+
 ### Added
 
 - **`relica.IsDeadlock`, `relica.IsSerializationFailure`, `relica.IsLockTimeout`** — classify PostgreSQL 40P01 / 40001 / 55P03, MySQL 1213 / 1205, 3572 and SQLite `SQLITE_BUSY_SNAPSHOT` / `SQLITE_BUSY`, `SQLITE_LOCKED`, for deciding whether to retry a transaction
@@ -27,7 +30,7 @@ those gaps; nothing stops compiling.
 ### Internal
 
 - Timer-dependent unit tests use `testing/synctest` and no longer depend on scheduler timing (a flaky `TestWithTimeout` failed CI on macOS)
-- **CI ran only part of the integration suite** — jobs selected tests with `-run Postgres` / `-run MySQL` / `-run SQLite`, which is case-sensitive and matches top-level names only: 16 `*_PostgreSQL` tests and every multi-database test (`*_AllDatabases`, IrisMX, WrapDB) never ran. Jobs now run the whole suite with `RELICA_TEST_DB=postgres|mysql|sqlite`; the other databases are skipped, and a container that does not start fails the job instead of skipping silently
+- **CI ran only part of the integration suite** — jobs selected tests with `-run Postgres` / `-run MySQL` / `-run SQLite`, which is case-sensitive and matches top-level names only: 16 `*_PostgreSQL` tests and every multi-database test (`*_AllDatabases`, IrisMX, WrapDB) never ran. Jobs now run the whole suite with `RELICA_TEST_DB=postgres|mysql|sqlite`; the other databases are skipped, and a container that does not start fails the job instead of skipping silently. The database matrix no longer cancels the other jobs when one fails. The first full run found the two library bugs above and two broken tests (concurrent queries on SQLite `:memory:`, a string written to an integer column)
 
 ---
 

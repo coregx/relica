@@ -633,6 +633,8 @@ Patch release: nothing stops compiling. Fixes and additions:
 | `relica.ILike`, `NotILike`, `OrILike`, `OrNotILike` | Case-insensitive LIKE on every database (replaces `exp.Like = "ILIKE"`, which v0.19.0 removed) |
 | Error helpers read driver error codes | `IsUniqueViolation`, `IsForeignKeyViolation`, `IsNotNullViolation`, `IsCheckViolation` now also match on a localized PostgreSQL, on MariaDB CHECK errors (4025) and on MySQL 1263/1364 (NOT NULL in strict mode). The message is no longer consulted when the error carries a code |
 | `relica.IsDeadlock`, `IsSerializationFailure`, `IsLockTimeout` | New helpers for retry decisions — see [AGENTS.md](../AGENTS.md#retrying-deadlocks-and-serialization-failures) |
+| Schema-qualified table names in INSERT/UPDATE/DELETE/upsert/batch | `"app.users"` is quoted as `"app"."users"`, as SELECT always did. If you worked around the bug with `NewQuery`, the builder works now |
+| `CASE` results on PostgreSQL | All-number (or all-bool) results are sent as `CAST($n AS INTEGER/BIGINT/NUMERIC/BOOLEAN)`; such a `CASE` now has a numeric type instead of text (it can be assigned to integer columns and sorts numerically). Scanning it into a `string` still works |
 | `Transactional` / `TransactionalTx` report a failed rollback | When `f` returns an error and the rollback also fails, the result is `errors.Join(err, rollbackErr)`; `errors.Is`/`errors.As` on `err` keep working |
 
 If you matched `err.Error()` text yourself, switch to the helpers: the text depends on the server
