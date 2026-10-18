@@ -396,12 +396,9 @@ func TestOrderBySub_CombinedWithOrderBy(t *testing.T) {
 	if q == nil {
 		t.Fatal("expected non-nil")
 	}
-	// Regular OrderBy comes first, then Sub expressions
-	if !strings.Contains(q.sql, `"t"."created_at" DESC`) {
-		t.Errorf("%q does not contain %q", q.sql, `"t"."created_at" DESC`)
-	}
-	if !strings.Contains(q.sql, "CASE") {
-		t.Errorf("%q does not contain %q", q.sql, "CASE")
+	// Items render in call order: the CASE first, then the column
+	if !strings.Contains(q.sql, `ORDER BY CASE WHEN t.status = 'urgent' THEN CAST($1 AS INTEGER) ELSE CAST($2 AS INTEGER) END, "t"."created_at" DESC`) {
+		t.Errorf("%q: ORDER BY not in call order", q.sql)
 	}
 }
 

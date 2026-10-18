@@ -418,21 +418,7 @@ func TestSelectQuery_Count_IgnoresOriginalColumns(t *testing.T) {
 		t.Errorf("got %v, want %v", sq.columns, want)
 	}
 
-	// Build the count query that Count() would construct — same as internal logic
-	countQuery := &SelectQuery{
-		builder:       sq.builder,
-		columns:       []string{"COUNT(*)"},
-		fromSrc:       sq.fromSrc,
-		table:         sq.table,
-		joins:         sq.joins,
-		where:         sq.where,
-		params:        sq.params,
-		groupBy:       sq.groupBy,
-		havingClauses: sq.havingClauses,
-		ctx:           sq.ctx,
-	}
-
-	sql, _ := countQuery.buildSQL(db.dialect)
+	sql, _ := sq.countQuery().buildSQL(db.dialect)
 	if !strings.Contains(sql, "SELECT COUNT(*)") {
 		t.Errorf("%q does not contain %q", sql, "SELECT COUNT(*)")
 	}
@@ -449,15 +435,7 @@ func TestSelectQuery_Count_SQL_WithGroupBy(t *testing.T) {
 	db := mockDB("postgres")
 	qb := &QueryBuilder{db: db}
 
-	countQuery := &SelectQuery{
-		builder: qb,
-		columns: []string{"COUNT(*)"},
-		fromSrc: &fromSource{isSubquery: false, table: "orders"},
-		table:   "orders",
-		groupBy: []string{"user_id"},
-	}
-
-	sql, _ := countQuery.buildSQL(db.dialect)
+	sql, _ := qb.Select("user_id").From("orders").GroupBy("user_id").countQuery().buildSQL(db.dialect)
 	if !strings.Contains(sql, "SELECT COUNT(*)") {
 		t.Errorf("%q does not contain %q", sql, "SELECT COUNT(*)")
 	}

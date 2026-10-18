@@ -732,16 +732,19 @@ db.DriverName() // "postgres", "mysql", "sqlite3"
 ## Ordering with Expressions
 
 ```go
-// OrderBySub — type-safe expression in ORDER BY
+// OrderBySub — type-safe expression in ORDER BY.
+// OrderBy, OrderByExpr and OrderBySub render in call order (since v0.19.1):
+// here the CASE is the primary key and due_date breaks ties.
 db.Select().From("tasks t").
     OrderBySub(relica.CaseWhen().
         When("t.due_date < CURRENT_DATE", 0).
         When("t.due_date IS NULL", 3).
         Else(1)).
+    OrderBy("t.due_date").
     All(&tasks)
 
-// GroupBySub — type-safe expression in GROUP BY
-db.Select("category", "COUNT(*)").
+// GroupBySub — type-safe expression in GROUP BY (one row per price tier)
+db.Select("COUNT(*) AS n").
     From("products").
     GroupBySub(relica.CaseWhen().
         When("price < 10", "budget").

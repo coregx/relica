@@ -1981,7 +1981,8 @@ func (sq *SelectQuery) CrossJoin(table string) *SelectQuery {
 
 // OrderBy adds ORDER BY clause with optional direction (ASC/DESC).
 //
-// Supports multiple columns. Multiple OrderBy() calls are additive.
+// Supports multiple columns. OrderBy, OrderByExpr and OrderBySub add to the
+// same clause, in the order they are called.
 //
 // Example:
 //
@@ -2043,7 +2044,8 @@ func (sq *SelectQuery) Offset(offset int64) *SelectQuery {
 
 // GroupBy adds GROUP BY clause.
 //
-// Multiple columns supported. Multiple GroupBy() calls are additive.
+// Multiple columns supported. GroupBy, GroupByExpr and GroupBySub add to the
+// same clause, in the order they are called.
 //
 // Example:
 //
