@@ -21,8 +21,10 @@ func TestCase_Simple(t *testing.T) {
 
 	sql, args := expr.Build(dialect)
 
-	if sql != `CASE "status" WHEN ? THEN ? WHEN ? THEN ? ELSE ? END AS "status_code"` {
-		t.Errorf("got %v, want %v", sql, `CASE "status" WHEN ? THEN ? WHEN ? THEN ? ELSE ? END AS "status_code"`)
+	// PostgreSQL: integer results are cast so the CASE is not typed text.
+	wantSQL := `CASE "status" WHEN ? THEN CAST(? AS INTEGER) WHEN ? THEN CAST(? AS INTEGER) ELSE CAST(? AS INTEGER) END AS "status_code"`
+	if sql != wantSQL {
+		t.Errorf("got %v, want %v", sql, wantSQL)
 	}
 	want := []interface{}{"active", 1, "inactive", 0, -1}
 	if len(args) != len(want) {
@@ -426,7 +428,7 @@ func TestCase_MultipleDialects(t *testing.T) {
 		dialect string
 		want    string
 	}{
-		{"postgres", "postgres", `CASE "status" WHEN ? THEN ? END`},
+		{"postgres", "postgres", `CASE "status" WHEN ? THEN CAST(? AS INTEGER) END`},
 		{"mysql", "mysql", "CASE `status` WHEN ? THEN ? END"},
 		{"sqlite", "sqlite", `CASE "status" WHEN ? THEN ? END`},
 	}
@@ -456,7 +458,7 @@ func TestCase_TableAlias(t *testing.T) {
 			"postgres table.column",
 			"postgres",
 			"u.status",
-			`CASE "u"."status" WHEN ? THEN ? WHEN ? THEN ? END`,
+			`CASE "u"."status" WHEN ? THEN CAST(? AS INTEGER) WHEN ? THEN CAST(? AS INTEGER) END`,
 		},
 		{
 			"mysql table.column",

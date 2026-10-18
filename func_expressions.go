@@ -19,6 +19,12 @@ import "github.com/coregx/relica/internal/core"
 //
 // In the searched form a condition is an Expression (recommended) or a raw
 // SQL string. Results may be Expressions, e.g. When(1, relica.Coalesce(...)).
+//
+// Values are bound as parameters. On PostgreSQL, when every result is a Go
+// number (or every one a bool), each is cast to the type a literal would have
+// — CAST($2 AS INTEGER), BIGINT, NUMERIC, BOOLEAN — because PostgreSQL types a
+// CASE of untyped parameters as text: without the cast, assigning it to an
+// integer column fails and ORDER BY sorts it as text.
 type CaseExp interface {
 	Expression
 
