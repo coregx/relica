@@ -204,6 +204,9 @@ a dbcontext `With(ctx)` that ignores the transaction in the context). Such state
   helper in [AGENTS.md](../../AGENTS.md#retrying-deadlocks-and-serialization-failures)
 - Lock timeouts: find the long lock holder; report "busy, try again" instead of waiting longer
 - SQLite: `_txlock=immediate` in the DSN and a `busy_timeout` pragma
+- SQLite readers that hit `database is locked`: open them with a `file:…?mode=ro` URI and without
+  `_txlock` — on a plain path `?mode=ro` is ignored and the reader is a writer
+  ([AGENTS.md › SQLite](../../AGENTS.md#sqlite))
 
 ---
 

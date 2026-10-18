@@ -630,6 +630,14 @@ func RetryTx(ctx context.Context, db *relica.DB, opts *relica.TxOptions, f func(
 - A transaction that reads and then writes starts as a reader (`BEGIN DEFERRED`) and can fail with
   `database is locked` (SQLITE_BUSY) when it upgrades to a writer. With modernc.org/sqlite, add
   `_txlock=immediate` to the DSN so every transaction takes the write lock at `BEGIN`.
+- A read-only connection (a second pool for readers, a hook, a reporting tool) needs a `file:` URI:
+  `file:/data/app.db?mode=ro` (Windows: `file:C:/data/app.db?mode=ro`). Both modernc.org/sqlite and
+  mattn/go-sqlite3 cut the query off a plain path, so `/data/app.db?mode=ro` opens the database
+  **read-write** (and creates it when the file is missing). Such a connection with `_txlock=immediate`
+  starts every transaction with `BEGIN IMMEDIATE`, waits behind the writer and fails with
+  `database is locked`. Leave `_txlock` out of reader DSNs. On a real `mode=ro` connection SQLite
+  starts `BEGIN IMMEDIATE` as a read transaction, and modernc.org/sqlite uses a plain `BEGIN` for
+  `TxOptions{ReadOnly: true}` (mattn/go-sqlite3 does not).
 - `:memory:` gives every pool connection its own empty database; tests that use more than one
   connection need a file (for example in `t.TempDir()`).
 
@@ -959,6 +967,8 @@ db.Select().From("users").Where(relica.HashExp{"id": ids}).All(&users)  // → W
 
 All of them escape `%`, `_` and `\` in the values and wrap them in `%`; `.Match(left, right)`
 controls the wildcards: `Match(false, true)` → `'value%'` (prefix), `Match(true, false)` → `'%value'` (suffix).
+`.EscapeChars()` with no arguments turns the escaping off: `%` and `_` in the value act as
+wildcards. Use it only for a pattern your code builds, never for user input.
 
 **Case sensitivity.** `Like` is as case-sensitive as the database makes it: PostgreSQL — always;
 MySQL — depends on the column collation (`*_ci` no, `*_bin` yes); SQLite — ASCII letters fold.
