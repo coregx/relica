@@ -440,11 +440,13 @@ func (e *BetweenExp) Build(dialect dialects.Dialect) (string, []any) {
 	return sql, []any{e.From, e.To}
 }
 
-// LikeExp represents a LIKE, NOT LIKE, or ILIKE expression with automatic escaping.
+// LikeExp represents a LIKE or NOT LIKE expression with automatic escaping,
+// optionally case-insensitive (ILike family).
 type LikeExp struct {
 	Col         string
 	Values      []string
-	Like        string   // "LIKE", "NOT LIKE", or "ILIKE"
+	Like        string   // "LIKE" or "NOT LIKE"
+	Fold        bool     // case-insensitive: ILIKE on PostgreSQL, LOWER() on both sides elsewhere
 	Or          bool     // true = OR, false = AND
 	Left, Right bool     // Wildcard matching on left/right
 	Escape      []string // Escape character pairs
@@ -497,6 +499,38 @@ func OrNotLike(col string, values ...string) *LikeExp {
 	return exp
 }
 
+// ILike generates a case-insensitive LIKE expression.
+// PostgreSQL: "name" ILIKE ?. MySQL and SQLite have no ILIKE, and their LIKE
+// depends on the column collation (MySQL *_bin is case-sensitive) or folds
+// ASCII only (SQLite), so both sides are folded by the server instead:
+// LOWER("name") LIKE LOWER(?).
+func ILike(col string, values ...string) *LikeExp {
+	exp := Like(col, values...)
+	exp.Fold = true
+	return exp
+}
+
+// NotILike generates a case-insensitive NOT LIKE expression.
+func NotILike(col string, values ...string) *LikeExp {
+	exp := NotLike(col, values...)
+	exp.Fold = true
+	return exp
+}
+
+// OrILike generates a case-insensitive LIKE expression with OR logic.
+func OrILike(col string, values ...string) *LikeExp {
+	exp := OrLike(col, values...)
+	exp.Fold = true
+	return exp
+}
+
+// OrNotILike generates a case-insensitive NOT LIKE expression with OR logic.
+func OrNotILike(col string, values ...string) *LikeExp {
+	exp := OrNotLike(col, values...)
+	exp.Fold = true
+	return exp
+}
+
 // Match sets wildcard matching on the left and/or right of the values.
 // By default, both are true (e.g., "%value%").
 // Call Match(false, true) to generate "value%" (suffix matching only).
@@ -524,6 +558,35 @@ func (e *LikeExp) Err() error {
 	return e.err
 }
 
+// conditionFormat returns the SQL for one value of the expression, e.g.
+// `"name" LIKE ?`, for the given dialect.
+func (e *LikeExp) conditionFormat(dialect dialects.Dialect) string {
+	col := quoteColumn(e.Col, dialect)
+	_, isPostgres := dialect.(*dialects.PostgresDialect)
+	_, isSQLite := dialect.(*dialects.SQLiteDialect)
+
+	// Case-insensitive match: PostgreSQL has ILIKE; elsewhere fold both sides.
+	left, op, placeholder := col, e.Like, "?"
+	if e.Fold {
+		if isPostgres {
+			op = strings.Replace(e.Like, "LIKE", "ILIKE", 1)
+		} else {
+			left, placeholder = "LOWER("+col+")", "LOWER(?)"
+		}
+	}
+
+	// SQLite LIKE has no default escape character; PostgreSQL and MySQL use
+	// backslash. Declare it for SQLite so escaped wildcards (\% \_) behave the
+	// same on all dialects. (MySQL must not get it: '\' is not a complete
+	// string literal there.)
+	escapeClause := ""
+	if isSQLite {
+		escapeClause = ` ESCAPE '\'`
+	}
+
+	return left + " " + op + " " + placeholder + escapeClause
+}
+
 // Build converts a LIKE expression into a SQL fragment.
 // Returns empty SQL and nil args if a programming error was stored by EscapeChars.
 func (e *LikeExp) Build(dialect dialects.Dialect) (string, []any) {
@@ -537,18 +600,9 @@ func (e *LikeExp) Build(dialect dialects.Dialect) (string, []any) {
 		return "", nil
 	}
 
-	col := quoteColumn(e.Col, dialect)
+	condition := e.conditionFormat(dialect)
 	parts := make([]string, 0, len(e.Values))
 	args := make([]any, 0, len(e.Values))
-
-	// SQLite LIKE has no default escape character; PostgreSQL and MySQL use
-	// backslash. Declare it for SQLite so escaped wildcards (\% \_) behave the
-	// same on all dialects. (MySQL must not get it: '\' is not a complete
-	// string literal there.)
-	escapeClause := ""
-	if _, ok := dialect.(*dialects.SQLiteDialect); ok {
-		escapeClause = ` ESCAPE '\'`
-	}
 
 	for _, val := range e.Values {
 		// Escape special characters
@@ -564,7 +618,7 @@ func (e *LikeExp) Build(dialect dialects.Dialect) (string, []any) {
 			val += "%"
 		}
 
-		parts = append(parts, fmt.Sprintf("%s %s ?%s", col, e.Like, escapeClause))
+		parts = append(parts, condition)
 		args = append(args, val)
 	}
 

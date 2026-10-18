@@ -322,15 +322,24 @@ db.Select().From("articles").
     Where(relica.Like("title", "go", "database")).  // title LIKE '%go%' AND title LIKE '%database%'
     All(&articles)
 
-// Custom matching (prefix/suffix)
+// Custom matching: Match(left, right) sets the % on each side
 db.Select().From("files").
-    Where(relica.Like("filename", ".txt").Match(false, true)).  // filename LIKE '%.txt'
+    Where(relica.Like("filename", ".txt").Match(true, false)).  // filename LIKE '%.txt' (suffix)
+    All(&files)
+db.Select().From("files").
+    Where(relica.Like("filename", "report").Match(false, true)).  // filename LIKE 'report%' (prefix)
     All(&files)
 
 // OR logic
 db.Select().From("users").
     Where(relica.OrLike("email", "gmail", "yahoo")).  // email LIKE '%gmail%' OR email LIKE '%yahoo%'
     All(&users)
+
+// Case-insensitive on every database (v0.19.1+): ILIKE on PostgreSQL,
+// LOWER(col) LIKE LOWER(?) on MySQL and SQLite. Also NotILike, OrILike, OrNotILike.
+db.Select().From("hosts").
+    Where(relica.ILike("cpu_model", "xeon")).
+    All(&hosts)
 ```
 
 #### Logical Combinators

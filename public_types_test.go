@@ -512,6 +512,48 @@ func TestLikeExp_Builders(t *testing.T) {
 	}
 }
 
+// ILike family: case-insensitive LIKE, lost in v0.19.0 when LikeExp stopped
+// exposing its Like field (v0.18 callers wrote exp.Like = "ILIKE").
+func TestILike_Builders(t *testing.T) {
+	pg, _ := newCaptureDB(t, "postgres", nil)
+	my, _ := newCaptureDB(t, "mysql", nil)
+	lite, _ := newCaptureDB(t, "sqlite", nil)
+
+	var l relica.LikeExp = relica.ILike("h.cpu_model", "Xeon 50%").Match(true, false)
+	sqlStr, args := pg.Select("h.id").From("host h").Where(l).ToSQL()
+	requireSQL(t, sqlStr, `SELECT "h"."id" FROM "host" AS "h" WHERE "h"."cpu_model" ILIKE $1`)
+	requireArgs(t, args, `%Xeon 50\%`)
+
+	sqlStr, _ = my.Select("h.id").From("host h").Where(relica.ILike("h.cpu_model", "xeon")).ToSQL()
+	requireSQL(t, sqlStr, "SELECT `h`.`id` FROM `host` AS `h` WHERE LOWER(`h`.`cpu_model`) LIKE LOWER(?)")
+
+	sqlStr, _ = lite.Select("id").From("host").Where(relica.NotILike("cpu_model", "xeon")).ToSQL()
+	requireSQL(t, sqlStr, `SELECT "id" FROM "host" WHERE LOWER("cpu_model") NOT LIKE LOWER(?) ESCAPE '\'`)
+
+	for name, tc := range map[string]struct {
+		exp  relica.LikeExp
+		want string
+	}{
+		"NotILike":   {relica.NotILike("n", "a"), `SELECT * FROM "t" WHERE "n" NOT ILIKE $1`},
+		"OrILike":    {relica.OrILike("n", "a", "b"), `SELECT * FROM "t" WHERE "n" ILIKE $1 OR "n" ILIKE $2`},
+		"OrNotILike": {relica.OrNotILike("n", "a", "b"), `SELECT * FROM "t" WHERE "n" NOT ILIKE $1 OR "n" NOT ILIKE $2`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			sqlStr, _ := pg.Select().From("t").Where(tc.exp).ToSQL()
+			requireSQL(t, sqlStr, tc.want)
+		})
+	}
+
+	// Negative: an invalid ILike is a query error, never a dropped filter.
+	bad := relica.ILike("name", "x").EscapeChars("!")
+	if bad.Err() == nil {
+		t.Fatal("odd EscapeChars must set Err()")
+	}
+	if _, err := pg.Delete("t").Where(bad).Execute(); err == nil {
+		t.Error("Delete with an invalid ILike must fail instead of deleting every row")
+	}
+}
+
 // ─── QueryHook / QueryEvent ──────────────────────────────────────────────────
 
 func TestQueryHook_ReceivesQueryEvent(t *testing.T) {

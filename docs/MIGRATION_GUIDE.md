@@ -600,6 +600,7 @@ pkg.go.dev and IDEs showed no fields, methods or docs for them. They are now dec
 | `cannot use relica.Case(...) (value of interface type relica.CaseExp) as *relica.CaseExp value` | Drop the `*`: `var c relica.CaseExp`. Same for `LikeExp`, `CoalesceExp`, `NullIfExp`, `GreatestLeastExp`, `ConcatExp` |
 | `db.Unwrap undefined` (also `Tx`, `SelectQuery`, `QueryBuilder`) | Use the public API; for the raw connection use `db.SqlDB()` |
 | `invalid operation: opt == nil (mismatched types relica.Option and untyped nil)` | Options are values now; drop the nil check. The zero `Option` is a no-op |
+| `ilike.Like undefined (type relica.LikeExp has no field or method Like)` (code that did `exp.Like = "ILIKE"`) | Use `relica.ILike(col, values...)` (also `NotILike`, `OrILike`, `OrNotILike`), added in **v0.19.1**. v0.19.0 has no replacement: this case was missed in v0.19.0 — upgrade to v0.19.1 directly |
 
 ## Behavior Fixes You May Notice
 

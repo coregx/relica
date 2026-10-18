@@ -129,7 +129,8 @@ func (h HashExp) coreExpression() core.Expression { return core.HashExp(h) }
 // ============================================================================
 
 // LikeExp is a LIKE or NOT LIKE condition created by Like, NotLike, OrLike or
-// OrNotLike. Values are escaped (%, _ and \ by default) and wrapped in % on
+// OrNotLike, or a case-insensitive one created by ILike, NotILike, OrILike or
+// OrNotILike. Values are escaped (%, _ and \ by default) and wrapped in % on
 // both sides unless Match says otherwise:
 //
 //	relica.Like("name", "50%")                 // "name" LIKE '%50\%%'
@@ -272,6 +273,31 @@ func OrLike(col string, values ...string) LikeExp { return likeExp{core.OrLike(c
 // OrNotLike creates a NOT LIKE expression combined with OR.
 func OrNotLike(col string, values ...string) LikeExp {
 	return likeExp{core.OrNotLike(col, values...)}
+}
+
+// ILike creates a case-insensitive LIKE expression; several values are
+// combined with AND. Escaping and Match work as for Like.
+//
+// PostgreSQL renders "col" ILIKE ?. MySQL and SQLite have no ILIKE, and their
+// LIKE is not reliably case-insensitive (MySQL follows the column collation,
+// *_bin is case-sensitive; SQLite folds ASCII only and honors
+// PRAGMA case_sensitive_like), so both sides are folded by the server:
+// LOWER(col) LIKE LOWER(?). LOWER(col) cannot use a plain index on col.
+func ILike(col string, values ...string) LikeExp { return likeExp{core.ILike(col, values...)} }
+
+// NotILike creates a case-insensitive NOT LIKE expression; several values are
+// combined with AND.
+func NotILike(col string, values ...string) LikeExp {
+	return likeExp{core.NotILike(col, values...)}
+}
+
+// OrILike creates a case-insensitive LIKE expression matching any of the
+// values (OR).
+func OrILike(col string, values ...string) LikeExp { return likeExp{core.OrILike(col, values...)} }
+
+// OrNotILike creates a case-insensitive NOT LIKE expression combined with OR.
+func OrNotILike(col string, values ...string) LikeExp {
+	return likeExp{core.OrNotILike(col, values...)}
 }
 
 // And combines expressions with AND, each in parentheses. Nil and empty
