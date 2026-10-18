@@ -5,6 +5,8 @@
 package core
 
 import (
+	"math"
+	"reflect"
 	"strings"
 
 	"github.com/coregx/relica/internal/dialects"
@@ -39,7 +41,8 @@ type whenClause struct {
 //	    Else(-1).
 //	    As("status_code")
 //
-// Generates: CASE "status" WHEN 'active' THEN 1 WHEN 'inactive' THEN 0 ELSE -1 END AS "status_code"
+// Generates (PostgreSQL): CASE "status" WHEN $1 THEN CAST($2 AS INTEGER) WHEN $3 THEN CAST($4 AS INTEGER)
+// ELSE CAST($5 AS INTEGER) END AS "status_code" — values are parameters (see resultCasts).
 func Case(column string) *CaseExp {
 	return &CaseExp{column: column}
 }
@@ -57,7 +60,7 @@ func Case(column string) *CaseExp {
 //	    Else("senior").
 //	    As("age_group")
 //
-// Generates: CASE WHEN age < 18 THEN 'minor' WHEN age >= 18 AND age < 65 THEN 'adult' ELSE 'senior' END
+// Generates: CASE WHEN age < 18 THEN $1 WHEN age >= 18 AND age < 65 THEN $2 ELSE $3 END
 func CaseWhen() *CaseExp {
 	return &CaseExp{}
 }
@@ -100,8 +103,10 @@ func (c *CaseExp) Build(dialect dialects.Dialect) (string, []any) {
 		sql.WriteString("CASE")
 	}
 
+	casts := c.resultCasts(dialect)
+
 	// WHEN clauses
-	for _, when := range c.whens {
+	for i, when := range c.whens {
 		sql.WriteString(" WHEN ")
 
 		var condSQL string
@@ -117,7 +122,7 @@ func (c *CaseExp) Build(dialect dialects.Dialect) (string, []any) {
 
 		resSQL, resArgs := buildCaseOperand(when.result, dialect)
 		sql.WriteString(" THEN ")
-		sql.WriteString(resSQL)
+		sql.WriteString(withCast(resSQL, casts, i))
 		args = append(args, resArgs...)
 	}
 
@@ -125,7 +130,7 @@ func (c *CaseExp) Build(dialect dialects.Dialect) (string, []any) {
 	if c.elseValue != nil {
 		elseSQL, elseArgs := buildCaseOperand(c.elseValue, dialect)
 		sql.WriteString(" ELSE ")
-		sql.WriteString(elseSQL)
+		sql.WriteString(withCast(elseSQL, casts, len(c.whens)))
 		args = append(args, elseArgs...)
 	}
 
@@ -149,6 +154,94 @@ func buildCaseOperand(v any, dialect dialects.Dialect) (string, []any) {
 		return expr.Build(dialect)
 	}
 	return "?", []any{v}
+}
+
+// resultCasts returns the SQL type each result operand (THEN values in order,
+// then ELSE) is cast to, or nil for no casts.
+//
+// PostgreSQL resolves a CASE whose results are all untyped parameters to text,
+// so `SET n = CASE ... THEN $1 ELSE $2 END` fails on an integer column, while
+// the same CASE with literals works. When every non-NULL result is a Go
+// number, or every one is a bool, each is cast to the type a literal would
+// have. Otherwise nothing is cast: an Expression result already types the CASE
+// (a cast could then conflict with it), and strings stay untyped like string
+// literals. MySQL and SQLite type parameters from the bound values.
+func (c *CaseExp) resultCasts(dialect dialects.Dialect) []string {
+	if _, ok := dialect.(*dialects.PostgresDialect); !ok {
+		return nil
+	}
+	results := make([]any, 0, len(c.whens)+1)
+	for _, w := range c.whens {
+		results = append(results, w.result)
+	}
+	if c.elseValue != nil {
+		results = append(results, c.elseValue)
+	}
+
+	casts := make([]string, len(results))
+	family := ""
+	for i, r := range results {
+		if r == nil {
+			continue
+		}
+		typ, fam := pgLiteralType(r)
+		if fam == "" || (family != "" && fam != family) {
+			return nil
+		}
+		family = fam
+		casts[i] = typ
+	}
+	if family == "" {
+		return nil // only NULLs
+	}
+	return casts
+}
+
+// Value families for resultCasts: results of one family are cast together.
+const (
+	familyNumber = "number"
+	familyBool   = "bool"
+)
+
+// pgLiteralType returns the PostgreSQL type of a literal with the value of v
+// and its family ("number", "bool"), or "" for values that are not cast.
+func pgLiteralType(v any) (typ, family string) {
+	if _, ok := v.(Expression); ok {
+		return "", ""
+	}
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Bool:
+		return "BOOLEAN", familyBool
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return pgIntegerType(rv.Int() >= math.MinInt32 && rv.Int() <= math.MaxInt32, true), familyNumber
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return pgIntegerType(rv.Uint() <= math.MaxInt32, rv.Uint() <= math.MaxInt64), familyNumber
+	case reflect.Float32, reflect.Float64:
+		return "NUMERIC", familyNumber // 1.5 is a numeric literal in PostgreSQL
+	default:
+		return "", ""
+	}
+}
+
+// pgIntegerType follows PostgreSQL's typing of integer literals.
+func pgIntegerType(fitsInt32, fitsInt64 bool) string {
+	switch {
+	case fitsInt32:
+		return "INTEGER"
+	case fitsInt64:
+		return "BIGINT"
+	default:
+		return "NUMERIC"
+	}
+}
+
+// withCast wraps a placeholder in CAST when casts has a type at index i.
+func withCast(sql string, casts []string, i int) string {
+	if i >= len(casts) || casts[i] == "" || sql != "?" {
+		return sql
+	}
+	return "CAST(? AS " + casts[i] + ")"
 }
 
 // =============================================================================

@@ -221,6 +221,19 @@ func runPublicTypesTests(t *testing.T, ds *DatabaseSetup) {
 		}, rows)
 	})
 
+	// Integer CASE results must sort as numbers: as text, 10 sorts before 2.
+	t.Run("Case_IntegerResultsSortAsNumbers", func(t *testing.T) {
+		seedPtItems(t, db)
+		var got []string
+		require.NoError(t, db.Select("name").From("pt_item").
+			OrderBySub(relica.CaseWhen().
+				When(relica.Eq("name", "alpha"), 10).
+				When(relica.Eq("name", "beta"), 2).
+				Else(1)).
+			Column(&got))
+		assert.Equal(t, []string{"gamma", "beta", "alpha"}, got)
+	})
+
 	t.Run("Case_ExpressionConditionInUpdateSet", func(t *testing.T) {
 		seedPtItems(t, db)
 		_, err := db.Update("pt_item").Set(map[string]any{

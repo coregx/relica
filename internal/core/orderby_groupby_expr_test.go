@@ -331,15 +331,16 @@ func TestOrderBySub_CaseWhen(t *testing.T) {
 	if q == nil {
 		t.Fatal("expected non-nil")
 	}
-	// PostgreSQL: CaseWhen THEN results must be renumbered $1, $2, $3, $4 — no raw ?
+	// PostgreSQL: CaseWhen THEN results must be renumbered $1, $2, $3, $4 — no raw ?.
+	// Integer results are cast, so the CASE sorts as integer, not text ("10" < "2").
 	if strings.Contains(q.sql, "?") {
 		t.Errorf("raw ? remaining in PostgreSQL SQL: %s", q.sql)
 	}
-	if !strings.Contains(q.sql, "CASE WHEN t.due_date < CURRENT_DATE THEN $1") {
-		t.Errorf("%q does not contain %q", q.sql, "CASE WHEN t.due_date < CURRENT_DATE THEN $1")
+	if !strings.Contains(q.sql, "CASE WHEN t.due_date < CURRENT_DATE THEN CAST($1 AS INTEGER)") {
+		t.Errorf("%q does not contain %q", q.sql, "CASE WHEN t.due_date < CURRENT_DATE THEN CAST($1 AS INTEGER)")
 	}
-	if !strings.Contains(q.sql, "WHEN t.due_date IS NULL THEN $3") {
-		t.Errorf("%q does not contain %q", q.sql, "WHEN t.due_date IS NULL THEN $3")
+	if !strings.Contains(q.sql, "WHEN t.due_date IS NULL THEN CAST($3 AS INTEGER)") {
+		t.Errorf("%q does not contain %q", q.sql, "WHEN t.due_date IS NULL THEN CAST($3 AS INTEGER)")
 	}
 	if !strings.Contains(q.sql, `"t"."due_date" ASC`) {
 		t.Errorf("%q does not contain %q", q.sql, `"t"."due_date" ASC`)
