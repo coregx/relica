@@ -358,6 +358,10 @@ rollback, row locks that protected nothing, request deadlines that never reached
     several rows. Two transactions locking the same rows in opposite order deadlock.
 11. **Test that a rollback really discards writes** made through your data layer
     (see "Testing transactions").
+12. **Retry the whole transaction, never one statement**, and only when
+    `relica.IsDeadlock(err) || relica.IsSerializationFailure(err)` — the database has already
+    rolled it back. Retry at the outermost transaction boundary, with backoff, a bounded number
+    of attempts and the request context (see "Retrying deadlocks and serialization failures").
 
 ### Which API
 
@@ -575,6 +579,50 @@ At SERIALIZABLE (and REPEATABLE READ on PostgreSQL) the database may abort a tra
 serialization failure, and any level can end in a deadlock. Such a transaction must be retried as a
 whole — the error can come from any statement or from `Commit`.
 
+### Retrying deadlocks and serialization failures
+
+```go
+// RetryTx runs f in a transaction and runs the whole transaction again when the
+// database aborted it as a deadlock victim or for a serialization failure.
+// f may run several times: it must not have side effects outside the database.
+func RetryTx(ctx context.Context, db *relica.DB, opts *relica.TxOptions, f func(*relica.Tx) error) error {
+    const maxAttempts = 5
+    backoff := 20 * time.Millisecond
+    for attempt := 1; ; attempt++ {
+        err := db.TransactionalTx(ctx, opts, f)
+        if err == nil || attempt == maxAttempts ||
+            !(relica.IsDeadlock(err) || relica.IsSerializationFailure(err)) {
+            return err
+        }
+        select { // full jitter: wait a random time up to the current backoff
+        case <-time.After(rand.N(backoff)): // math/rand/v2
+        case <-ctx.Done():
+            return errors.Join(err, ctx.Err())
+        }
+        backoff = min(2*backoff, time.Second)
+    }
+}
+```
+
+- **Retry only at the outermost boundary** — the service method or handler that owns the
+  transaction. Inside a joined (dbcontext) transaction the outer transaction is already aborted;
+  return the error and let the owner retry.
+- **f must be repeatable**: rebuild its in-memory state on every call; no e-mails, HTTP calls or
+  message publishing inside (rule 7) — they would happen once per attempt.
+- **What to retry**:
+
+| Error | Retry the transaction? |
+|---|---|
+| `IsDeadlock` — PostgreSQL 40P01, MySQL 1213 | yes |
+| `IsSerializationFailure` — PostgreSQL 40001 (also from `Commit`), SQLite `SQLITE_BUSY_SNAPSHOT` | yes |
+| `IsLockTimeout` — PostgreSQL 55P03, MySQL 1205/3572, SQLite `SQLITE_BUSY` | policy: usually report "busy, try again" (HTTP 409/503); the lock holder may be a long job |
+| `IsUniqueViolation`, `IsForeignKeyViolation`, `IsNotNullViolation`, `IsCheckViolation` | no — map to a domain error |
+| `context.Canceled`, `context.DeadlineExceeded` | no |
+
+- MySQL: a deadlock rolls back the whole transaction; a lock wait timeout (1205) only the
+  statement — returning the error from f rolls back the rest.
+- SQLite: prefer `_txlock=immediate` (no BUSY_SNAPSHOT at all) to retrying.
+
 ### SQLite
 
 - One writer at a time for the whole database. `ForUpdate`/`ForShare`/`ForUpdateSkipLocked` are left
@@ -624,6 +672,9 @@ outer rollback must remove the inner writes too.
 | Column contains the text `balance - ?` | string value in `Set` | `relica.NewExp("balance - ?", amount)` |
 | nil-pointer panic when the database is down | `defer tx.Rollback()` before checking `Begin`'s error | check the error first |
 | Half of the changes saved | errors of `Execute` ignored, then `Commit` | check every error; prefer `Transactional` |
+| Sporadic "deadlock detected" / "could not serialize access" errors reach users under load | no retry | retry the whole transaction (`RetryTx` above) |
+| Duplicate e-mails or charges after a retry | side effects inside the retried function | do them after the commit, or through an outbox table |
+| Duplicate-key handling silently stopped working on a non-English PostgreSQL / MariaDB | own `strings.Contains(err.Error(), ...)` checks | `relica.IsUniqueViolation(err)` and friends — they read the error code |
 
 ---
 
@@ -800,12 +851,41 @@ sql, params := db.Select().From("users").Where(relica.Eq("id", 1)).ToSQL()
 err := db.Select().From("users").Where(relica.Eq("id", 999)).One(&user)
 if errors.Is(err, relica.ErrNotFound) { /* not found */ }
 
-// Error classification — works with PostgreSQL, MySQL, SQLite
-if relica.IsUniqueViolation(err) { /* duplicate key */ }
-if relica.IsForeignKeyViolation(err) { /* FK violation */ }
-if relica.IsNotNullViolation(err) { /* NOT NULL violation */ }
-if relica.IsCheckViolation(err) { /* CHECK violation */ }
+// Constraint violations — map them to domain errors
+err = db.Model(&user).Insert()
+switch {
+case relica.IsUniqueViolation(err):     // duplicate key or primary key
+    return ErrEmailTaken
+case relica.IsForeignKeyViolation(err): // referenced row missing / still referenced
+    return ErrUnknownTeam
+case relica.IsNotNullViolation(err), relica.IsCheckViolation(err):
+    return ErrInvalidInput
+case err != nil:
+    return fmt.Errorf("create user: %w", err)
+}
+
+// Concurrency — see "Retrying deadlocks and serialization failures"
+relica.IsDeadlock(err)             // retry the whole transaction
+relica.IsSerializationFailure(err) // retry the whole transaction
+relica.IsLockTimeout(err)          // lock not acquired in time: policy decision
 ```
+
+The helpers read the **error code** the driver attached, anywhere in the error tree (`%w`,
+`errors.Join`), so they work with a localized PostgreSQL (`lc_messages`), MariaDB, and errors your
+code has wrapped. Never match `err.Error()` text yourself.
+
+| Helper | PostgreSQL SQLSTATE | MySQL / MariaDB | SQLite |
+|---|---|---|---|
+| `IsUniqueViolation` | 23505 | 1062, 1022, 1169, 1586, 1859 | CONSTRAINT_UNIQUE, CONSTRAINT_PRIMARYKEY |
+| `IsForeignKeyViolation` | 23503 | 1216, 1217, 1451, 1452 | CONSTRAINT_FOREIGNKEY (`PRAGMA foreign_keys = ON`) |
+| `IsNotNullViolation` | 23502 | 1048, 1263, 1364 | CONSTRAINT_NOTNULL |
+| `IsCheckViolation` | 23514 | 3819; MariaDB 4025 | CONSTRAINT_CHECK |
+| `IsDeadlock` | 40P01 | 1213 | — (no deadlock detection) |
+| `IsSerializationFailure` | 40001 | — (reported as 1213) | BUSY_SNAPSHOT |
+| `IsLockTimeout` | 55P03 | 1205, 3572 | BUSY, LOCKED |
+
+Drivers: pgx v5 and lib/pq (every version), go-sql-driver/mysql, modernc.org/sqlite,
+mattn/go-sqlite3. With other drivers the helpers fall back to matching the English message.
 
 ---
 

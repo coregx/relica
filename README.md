@@ -799,10 +799,12 @@ Note: `All()` returns empty slice for no results, not an error.
 
 #### Error Classification
 
-Database-agnostic error helpers — work with PostgreSQL, MySQL, and SQLite:
+Error helpers read the driver's **error code** (PostgreSQL SQLSTATE, MySQL/MariaDB error number,
+SQLite extended result code) anywhere in the error tree, so they work with pgx and lib/pq,
+go-sql-driver/mysql, modernc.org/sqlite and mattn/go-sqlite3 — also on a non-English server:
 
 ```go
-_, err := db.Model(&user).Insert()
+err := db.Model(&user).Insert()
 
 if relica.IsUniqueViolation(err) {
     // duplicate key (e.g., email already exists)
@@ -816,7 +818,13 @@ if relica.IsNotNullViolation(err) {
 if relica.IsCheckViolation(err) {
     // CHECK constraint failed
 }
+
+// Concurrency (v0.19.1+): the database rolled the transaction back — run it again as a whole
+if relica.IsDeadlock(err) || relica.IsSerializationFailure(err) { /* retry with backoff */ }
+if relica.IsLockTimeout(err) { /* lock not acquired in time (lock_timeout, NOWAIT, SQLite busy) */ }
 ```
+
+A complete retry helper is in [AGENTS.md](AGENTS.md#retrying-deadlocks-and-serialization-failures).
 
 ### Advanced SQL Features
 

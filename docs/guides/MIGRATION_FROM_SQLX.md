@@ -288,7 +288,9 @@ if relica.IsForeignKeyViolation(err) {
 }
 ```
 
-Works across PostgreSQL, MySQL, and SQLite.
+The helpers read the driver's error code (PostgreSQL SQLSTATE from pgx or lib/pq, MySQL/MariaDB
+error number, SQLite extended code), so they also work on a non-English server; v0.19.1 adds
+`IsDeadlock`, `IsSerializationFailure` and `IsLockTimeout` for retry decisions.
 
 ---
 

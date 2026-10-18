@@ -376,10 +376,9 @@ db, err := relica.Open("postgres", dsn,
 ```go
 func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*User, error) {
     var user User
-    err := r.db.Select().
+    err := r.db.With(ctx).Select().
         From("users").
         Where(relica.Eq("email", email)).
-        WithContext(ctx).
         One(&user)
 
     if errors.Is(err, relica.ErrNotFound) {
@@ -405,10 +404,9 @@ import (
 
 func (r *UserRepository) FindByID(ctx context.Context, id int) (*User, error) {
     var user User
-    err := r.db.Select().
+    err := r.db.With(ctx).Select().
         From("users").
         Where(relica.Eq("id", id)).
-        WithContext(ctx).
         One(&user)
 
     if errors.Is(err, relica.ErrNotFound) {
@@ -429,7 +427,7 @@ Use error classification functions to return meaningful errors without exposing 
 
 ```go
 func (r *UserRepository) Create(ctx context.Context, user *models.User) error {
-    if err := r.db.Model(user).Insert(); err != nil {
+    if err := r.db.With(ctx).Model(user).Insert(); err != nil {
         switch {
         case relica.IsUniqueViolation(err):
             return ErrEmailAlreadyExists
@@ -447,7 +445,10 @@ func (r *UserRepository) Create(ctx context.Context, user *models.User) error {
 }
 ```
 
-Error classification works across PostgreSQL, MySQL, and SQLite.
+The helpers read the driver's error code (SQLSTATE, MySQL/MariaDB error number, SQLite extended
+code), so they keep working on a non-English server and through any `%w` wrapping. For deadlocks and
+serialization failures use `relica.IsDeadlock` / `relica.IsSerializationFailure` and retry the whole
+transaction — see `RetryTx` in [AGENTS.md](../../AGENTS.md#retrying-deadlocks-and-serialization-failures).
 
 ### Pattern 4: Existence Check Without Loading Data
 
@@ -455,15 +456,14 @@ Prefer `Exists()` over loading a full row when you only need a boolean:
 
 ```go
 func (r *UserRepository) EmailTaken(ctx context.Context, email string) (bool, error) {
-    return r.db.Select().From("users").
+    return r.db.With(ctx).Select().From("users").
         Where(relica.Eq("email", email)).
-        WithContext(ctx).
         Exists()
 }
 
 // Prefer Exists() over Count() > 0 for existence checks
 // Prefer Count() when you need the actual number
-count, err := r.db.Select().From("users").
+count, err := r.db.With(ctx).Select().From("users").
     Where(relica.Eq("status", "active")).
     Count()
 ```
@@ -594,7 +594,7 @@ When updating a record, use `UpdateChanged` to generate a minimal UPDATE stateme
 ```go
 func (r *UserRepository) UpdateProfile(ctx context.Context, id int, req UpdateRequest) error {
     var user models.User
-    if err := r.db.Select().From("users").
+    if err := r.db.With(ctx).Select().From("users").
         Where(relica.Eq("id", id)).One(&user); err != nil {
         return err
     }
@@ -605,18 +605,20 @@ func (r *UserRepository) UpdateProfile(ctx context.Context, id int, req UpdateRe
     user.Email = req.Email
 
     // UPDATE users SET name=? WHERE id=? — only changed fields
-    return r.db.Model(&user).UpdateChanged(&original)
+    return r.db.With(ctx).Model(&user).UpdateChanged(&original)
 }
 ```
 
-This avoids unnecessary column writes and helps prevent lost-update races in high-concurrency scenarios.
+This avoids unnecessary column writes, and columns this request did not change are not overwritten
+with stale values. It is not optimistic locking: two requests changing the same column still race —
+read with `ForUpdate()` inside a transaction (Pattern 2 above) or compare a version column.
 
 ### Upsert — Insert or Update on Conflict
 
 ```go
 func (r *UserRepository) SaveSettings(ctx context.Context, settings *UserSettings) error {
     // Insert or update name/value if email conflicts
-    return r.db.Model(settings).Upsert("name", "value")
+    return r.db.With(ctx).Model(settings).Upsert("name", "value")
     // All non-PK fields: db.Model(settings).Upsert()
 }
 ```

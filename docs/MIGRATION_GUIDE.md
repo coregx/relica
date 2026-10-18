@@ -1,4 +1,5 @@
 > Upgrading to **v0.19.0**? Jump to [v0.18.x → v0.19.0](#migration-guide-v018x--v0190).
+> Then [v0.19.0 → v0.19.1](#migration-guide-v0190--v0191) (no code changes needed).
 
 # Migration Guide: v0.3.0-beta → v0.4.0-beta
 
@@ -620,3 +621,19 @@ pkg.go.dev and IDEs showed no fields, methods or docs for them. They are now dec
 Struct literals (`relica.TxOptions{...}`), map literals (`relica.HashExp{...}`, `relica.Params{...}`),
 `NullStringMap` methods, `QueryHook` functions, custom `Logger` implementations and
 `BeforeInserter` models compile and behave as before.
+
+---
+
+# Migration Guide: v0.19.0 → v0.19.1
+
+Patch release: nothing stops compiling. Fixes and additions:
+
+| Change | What you may notice |
+|---|---|
+| `relica.ILike`, `NotILike`, `OrILike`, `OrNotILike` | Case-insensitive LIKE on every database (replaces `exp.Like = "ILIKE"`, which v0.19.0 removed) |
+| Error helpers read driver error codes | `IsUniqueViolation`, `IsForeignKeyViolation`, `IsNotNullViolation`, `IsCheckViolation` now also match on a localized PostgreSQL, on MariaDB CHECK errors (4025) and on MySQL 1263/1364 (NOT NULL in strict mode). The message is no longer consulted when the error carries a code |
+| `relica.IsDeadlock`, `IsSerializationFailure`, `IsLockTimeout` | New helpers for retry decisions — see [AGENTS.md](../AGENTS.md#retrying-deadlocks-and-serialization-failures) |
+| `Transactional` / `TransactionalTx` report a failed rollback | When `f` returns an error and the rollback also fails, the result is `errors.Join(err, rollbackErr)`; `errors.Is`/`errors.As` on `err` keep working |
+
+If you matched `err.Error()` text yourself, switch to the helpers: the text depends on the server
+language and version, the code does not.
