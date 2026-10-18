@@ -637,7 +637,7 @@ Patch release: nothing stops compiling. Fixes and additions:
 | `CASE` results on PostgreSQL | All-number (or all-bool) results are sent as `CAST($n AS INTEGER/BIGINT/NUMERIC/BOOLEAN)`; such a `CASE` now has a numeric type instead of text (it can be assigned to integer columns and sorts numerically). Scanning it into a `string` still works |
 | ORDER BY / GROUP BY follow the call order | `OrderBy`, `OrderByExpr` and `OrderBySub` (and the `GroupBy` family) render in the order you call them. Before, plain columns always came first. If you called `OrderBySub(...)` / `OrderByExpr(...)` before `OrderBy(...)`, your query now sorts the way it reads; if you relied on the old order, move the `OrderBy(...)` call first |
 | `GroupByExpr` / `GroupBySub` parameters with `Having` | Their parameters were bound after `Having`'s, so a query with parameters in both clauses returned wrong rows. They are now bound in statement order. No code change needed |
-| `Transactional` / `TransactionalTx` report a failed rollback | When `f` returns an error and the rollback also fails, the result is `errors.Join(err, rollbackErr)`; `errors.Is`/`errors.As` on `err` keep working |
+| `Transactional` / `TransactionalTx` report a failed rollback | When `f` returns an error and the rollback also fails, the result is `errors.Join(err, rollbackErr)`; `errors.Is`/`errors.As` on `err` keep working, a direct `err == errX` comparison no longer matches in that case — use `errors.Is` |
 
 If you matched `err.Error()` text yourself, switch to the helpers: the text depends on the server
 language and version, the code does not.

@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Documentation
+
+- **SQLite read-only connections** (AGENTS.md › SQLite, TROUBLESHOOTING) — `?mode=ro` works only in a `file:` URI; both modernc.org/sqlite and mattn/go-sqlite3 drop the query of a plain path, so the "reader" opens read-write and, with `_txlock=immediate`, waits behind the writer with `database is locked`
+- **`LikeExp.EscapeChars()` with no arguments** turns escaping off (AGENTS.md › String Operators) — only for patterns the code builds, never for user input
+- **MIGRATION_GUIDE v0.19.1**: after a failed rollback `Transactional` returns `errors.Join(err, rollbackErr)`, so compare with `errors.Is`, not `==`
 
 ## [0.19.1] - 2026-10-18
 
