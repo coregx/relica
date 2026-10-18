@@ -231,7 +231,9 @@ if err == nil {
 }
 ```
 
-**Recommendation**: Keep transactions short and focused.
+**Recommendation**: Keep transactions short and focused, lock rows in a fixed order, and retry a
+transaction the database aborted (`relica.IsDeadlock(err) || relica.IsSerializationFailure(err)`) a
+bounded number of times with backoff — unbounded immediate retries turn contention into load.
 
 ### 4. Denial of Service via Large Queries
 

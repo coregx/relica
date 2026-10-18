@@ -80,6 +80,17 @@ if err := db.Model(&user).Insert(); err != nil {
 }
 ```
 
+### Constraint check stopped matching (localized server, MariaDB, new driver)
+
+**Symptom**: code that compares `err.Error()` with "duplicate key ..." works in development and
+silently fails in production.
+**Cause**: server messages depend on the server language (PostgreSQL `lc_messages`) and change
+between MySQL, MariaDB and driver versions.
+**Solution**: use `relica.IsUniqueViolation(err)` and the other helpers. Since v0.19.1 they read the
+error code (SQLSTATE / MySQL error number / SQLite extended code) from pgx, lib/pq,
+go-sql-driver/mysql, modernc.org/sqlite and mattn/go-sqlite3, wherever the error is wrapped. Only
+other drivers still fall back to English message text.
+
 ---
 
 ## Query Errors
@@ -177,15 +188,22 @@ a dbcontext `With(ctx)` that ignores the transaction in the context). Such state
 **Solution**: every statement goes through `tx` or a `relica.Executor` that is the transaction; see
 [AGENTS.md → Transactions](../../AGENTS.md#transactions).
 
-### Deadlocks
-**Symptoms**: deadlock errors, or transactions that wait until their lock timeout
+### Deadlocks, serialization failures, lock timeouts
+**Symptoms**: `deadlock detected` (PostgreSQL 40P01) / `Deadlock found` (MySQL 1213),
+`could not serialize access` (40001), lock wait timeouts (55P03, MySQL 1205), SQLite
+`database is locked`
+
+**Detect**: `relica.IsDeadlock(err)`, `relica.IsSerializationFailure(err)`, `relica.IsLockTimeout(err)`.
 
 **Solutions:**
 - Lock rows in the same order everywhere (for example ascending id)
 - Keep transactions short: no network calls or waiting inside
 - Never open a second transaction inside the first (it waits for a connection or a lock held by the first)
 - Use an isolation level only as high as needed
-- Retry the whole transaction on deadlock and serialization errors
+- Retry the whole transaction when `IsDeadlock || IsSerializationFailure` — see the `RetryTx`
+  helper in [AGENTS.md](../../AGENTS.md#retrying-deadlocks-and-serialization-failures)
+- Lock timeouts: find the long lock holder; report "busy, try again" instead of waiting longer
+- SQLite: `_txlock=immediate` in the DSN and a `busy_timeout` pragma
 
 ---
 

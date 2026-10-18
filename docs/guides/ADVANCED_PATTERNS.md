@@ -224,32 +224,44 @@ Prefer `Exists()` over `Count() > 0` — the database can stop at the first matc
 
 ## Transaction with Retry
 
+A deadlock victim or a serialization failure has already been rolled back by the database; the
+only correct reaction is to run the **whole** transaction again (since v0.19.1 the error helpers
+read driver codes, so this works on localized servers too):
+
 ```go
-func executeWithRetry(db *relica.DB, fn func(*relica.Tx) error) error {
-    maxRetries := 3
-
-    for attempt := 0; attempt < maxRetries; attempt++ {
-        tx, err := db.Begin(context.Background())
-        if err != nil {
+// RetryTx runs f in a transaction and runs the whole transaction again when the
+// database aborted it as a deadlock victim or for a serialization failure.
+// f may run several times: it must not have side effects outside the database.
+func RetryTx(ctx context.Context, db *relica.DB, opts *relica.TxOptions, f func(*relica.Tx) error) error {
+    const maxAttempts = 5
+    backoff := 20 * time.Millisecond
+    for attempt := 1; ; attempt++ {
+        err := db.TransactionalTx(ctx, opts, f)
+        if err == nil || attempt == maxAttempts ||
+            !(relica.IsDeadlock(err) || relica.IsSerializationFailure(err)) {
             return err
         }
-
-        if err = fn(tx); err == nil {
-            return tx.Commit()
+        select { // full jitter: wait a random time up to the current backoff
+        case <-time.After(rand.N(backoff)): // math/rand/v2
+        case <-ctx.Done():
+            return errors.Join(err, ctx.Err())
         }
-
-        tx.Rollback()
-
-        if !isDeadlock(err) {
-            return err
-        }
-
-        time.Sleep(time.Millisecond * time.Duration(100*(attempt+1)))
+        backoff = min(2*backoff, time.Second)
     }
-
-    return fmt.Errorf("failed after %d retries", maxRetries)
 }
+
+// Usage: a SERIALIZABLE transfer, retried on conflicts.
+err := RetryTx(ctx, db, &relica.TxOptions{Isolation: sql.LevelSerializable}, func(tx *relica.Tx) error {
+    return transfer(tx, fromID, toID, amount)
+})
 ```
+
+- `TransactionalTx` returns the `Commit` error too, so a serialization failure reported at
+  commit (PostgreSQL SERIALIZABLE) is retried like any other.
+- Retry at the outermost transaction boundary only; inside a joined transaction return the error.
+- `IsLockTimeout` is not retried here: a lock held for longer than the timeout is usually a long
+  job, and the caller should get "busy, try again" instead of more waiting.
+- Each attempt is a fresh transaction: values read in a failed attempt must not be reused.
 
 ---
 

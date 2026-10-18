@@ -257,22 +257,30 @@ if errors.Is(err, relica.ErrNotFound) {
 
 #### Constraint Errors
 
-**GORM:**
+**GORM** (with `gorm.Config{TranslateError: true}`; the dialector replaces the driver error with a
+sentinel):
 ```go
 if err := db.Create(&user).Error; err != nil {
-    // manually parse error string
-}
-```
-
-**Relica (v0.11.0+):**
-```go
-if err := db.Model(&user).Insert(); err != nil {
-    if relica.IsUniqueViolation(err) {
+    if errors.Is(err, gorm.ErrDuplicatedKey) { // also ErrForeignKeyViolated, ErrCheckConstraintViolated
         return ErrEmailTaken
     }
     return err
 }
 ```
+
+**Relica:**
+```go
+if err := db.Model(&user).Insert(); err != nil {
+    if relica.IsUniqueViolation(err) { // also IsForeignKeyViolation, IsNotNullViolation, IsCheckViolation
+        return ErrEmailTaken
+    }
+    return err
+}
+```
+
+No configuration is needed, the driver error stays in the chain (`errors.As` to `*pgconn.PgError`
+still works), and there are helpers for retry decisions that GORM does not have:
+`relica.IsDeadlock`, `relica.IsSerializationFailure`, `relica.IsLockTimeout` (v0.19.1+).
 
 #### Existence Check
 

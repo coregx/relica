@@ -47,6 +47,10 @@ err := db.Transactional(ctx, func(tx *relica.Tx) error {
 // Case-insensitive search on every database (v0.19.1+)
 db.Select().From("users").Where(relica.ILike("name", "john")).All(&users)
 
+// Errors are classified by driver error code, not message text (v0.19.1+)
+if relica.IsUniqueViolation(err) { /* duplicate key */ }
+if relica.IsDeadlock(err) || relica.IsSerializationFailure(err) { /* retry the whole transaction */ }
+
 // DO NOT use map[string]interface{} for CRUD!
 ```
 

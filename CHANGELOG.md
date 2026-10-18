@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.19.1] - 2026-10-18
+
+Patch release: fixes for gaps in v0.19.0 and in the error helpers. The new functions below close
+those gaps; nothing stops compiling.
+
+### Fixed
+
+- **Case-insensitive `LIKE` was lost in v0.19.0** — code that set `exp.Like = "ILIKE"` on the value returned by `relica.Like` no longer compiled (ADR-016 made `LikeExp` an interface), and no replacement existed. New `relica.ILike`, `NotILike`, `OrILike`, `OrNotILike` work on every database: `ILIKE` on PostgreSQL, `LOWER(col) LIKE LOWER(?)` on MySQL and SQLite (wildcard escaping as in `Like`; on SQLite `LOWER` folds only ASCII letters)
+- **Error helpers classified by message text** — `IsUniqueViolation`, `IsForeignKeyViolation`, `IsNotNullViolation` and `IsCheckViolation` matched substrings of `err.Error()`, so they returned false on a PostgreSQL server with non-English `lc_messages`, missed MariaDB CHECK errors and MySQL NOT NULL errors 1263/1364. They now read the driver's error code anywhere in the error tree (`%w` chains, `errors.Join`): PostgreSQL SQLSTATE (pgx v5 and lib/pq, every version), MySQL/MariaDB error number (go-sql-driver/mysql), SQLite extended result code (modernc.org/sqlite, mattn/go-sqlite3). No driver is imported. The message is used only when the error carries no code (other drivers) (ADR-017)
+- **`Transactional` / `TransactionalTx` dropped a failed rollback** — when `f` returned an error and the rollback failed too (for example the connection was lost), the rollback error was discarded. It is now returned as `errors.Join(err, rollbackErr)`; `sql.ErrTxDone` (the transaction already ended, for example by context cancellation) is not reported
+- **Wrong transaction and error-handling examples in the documentation** — `Set(map[string]any{"balance": "balance - ?"})` (binds the text as the value; now `relica.NewExp`), `ForUpdate()` on `*relica.DB` outside a transaction, `defer tx.Rollback()` before checking `Begin`'s error, ignored `Execute`/`Commit` errors, repositories that bypassed the caller's transaction, `_, err := db.Model(&x).Insert()` (it returns only `error`), a retry example calling an undefined `isDeadlock`, and the claim that `Rollback` after `Commit` is a no-op (it returns `sql.ErrTxDone`). Every changed example was compiled and run against SQLite
+
+### Added
+
+- **`relica.IsDeadlock`, `relica.IsSerializationFailure`, `relica.IsLockTimeout`** — classify PostgreSQL 40P01 / 40001 / 55P03, MySQL 1213 / 1205, 3572 and SQLite `SQLITE_BUSY_SNAPSHOT` / `SQLITE_BUSY`, `SQLITE_LOCKED`, for deciding whether to retry a transaction
+- **Transaction guide for people and agents** — AGENTS.md "Transactions": rules, which API to use when, the dbcontext pattern end to end, context and isolation behaviour, SQLite specifics, a test that proves rollbacks discard writes, a `RetryTx` helper, and a table of mistakes found in real projects
+- **Real-database tests** — error classification on PostgreSQL (through lib/pq and pgx), MySQL and SQLite, each class provoked for real (deadlock, serialization failure, lock timeout, NOWAIT); lib/pq v1.2.0 and mattn/go-sqlite3 in a separate CI module; `ILike` on case-sensitive collations; `Transactional` error paths
+
+### Internal
+
+- Timer-dependent unit tests use `testing/synctest` and no longer depend on scheduler timing (a flaky `TestWithTimeout` failed CI on macOS)
+
+---
+
 ## [0.19.0] - 2026-10-18
 
 ### Fixed
