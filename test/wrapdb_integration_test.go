@@ -6,14 +6,13 @@ package test
 import (
 	"context"
 	"database/sql"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/coregx/relica"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go/modules/mysql"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
 // TestWrapDB_IrisMXUseCase validates WrapDB for IrisMX production scenario:
@@ -311,29 +310,19 @@ func TestWrapDB_ConnectionPoolSettings(t *testing.T) {
 
 // Helper functions
 
+// getDSN returns a DSN for a second, external connection pool to the test
+// database. SQLite gets a file: with ":memory:" every pool connection would
+// open its own empty database, and concurrent queries would not see the table.
+// busy_timeout makes concurrent writers wait for SQLite's single write lock
+// instead of failing with SQLITE_BUSY.
 func getDSN(t *testing.T, ds *DatabaseSetup, dialect string) string {
 	t.Helper()
-	ctx := context.Background()
-
 	switch dialect {
 	case "SQLite":
-		return ":memory:"
-	case "PostgreSQL":
-		if ds.Container != nil {
-			dsn, err := ds.Container.(*postgres.PostgresContainer).ConnectionString(ctx, "sslmode=disable")
-			require.NoError(t, err)
-			return dsn
-		}
-		// Fallback for manual DSN
-		return "postgres://user:password@localhost/testdb?sslmode=disable"
-	case "MySQL":
-		if ds.Container != nil {
-			dsn, err := ds.Container.(*mysql.MySQLContainer).ConnectionString(ctx)
-			require.NoError(t, err)
-			return dsn + "?parseTime=true"
-		}
-		// Fallback for manual DSN
-		return "user:password@tcp(localhost:3306)/testdb?parseTime=true"
+		return filepath.Join(t.TempDir(), "wrapdb.db") + "?_pragma=busy_timeout(5000)"
+	case "PostgreSQL", "MySQL":
+		require.NotEmpty(t, ds.DSN, "Setup must record the DSN")
+		return ds.DSN
 	default:
 		t.Fatalf("Unknown dialect: %s", dialect)
 		return ""

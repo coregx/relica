@@ -318,13 +318,13 @@ func runPostgresErrClassTests(t *testing.T, db *relica.DB) {
 }
 
 // ---------------------------------------------------------------------------
-// Entry points — names must contain Postgres / MySQL / SQLite for CI filters.
+// Entry points — one per database; CI selects the database with RELICA_TEST_DB.
 // ---------------------------------------------------------------------------
 
-// TestErrorClassification_DriverTypes_PostgresMySQL pins the binding to the
+// TestErrorClassification_DriverTypes pins the binding to the
 // real driver types without a server. Messages are "x", so only the code can
-// match. Runs in both the PostgreSQL and the MySQL CI job.
-func TestErrorClassification_DriverTypes_PostgresMySQL(t *testing.T) {
+// match. Needs no database, so it runs in every job.
+func TestErrorClassification_DriverTypes(t *testing.T) {
 	sqlState := func(s string) [5]byte {
 		var b [5]byte
 		copy(b[:], s)
@@ -380,6 +380,7 @@ func TestErrorClassification_MySQL(t *testing.T) {
 }
 
 func TestErrorClassification_SQLite(t *testing.T) {
+	requireDB(t, "sqlite")
 	// A file database in WAL mode: the lock scenarios need two connections.
 	dsn := filepath.Join(t.TempDir(), "errclass.db") +
 		"?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(200)"

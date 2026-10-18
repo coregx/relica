@@ -23,6 +23,50 @@ import (
 	_ "modernc.org/sqlite" // Pure Go SQLite driver (no CGO required)
 )
 
+// selectedDB is the database a run is limited to: RELICA_TEST_DB=postgres,
+// mysql or sqlite (one CI job per database). Empty runs every database.
+//
+// Jobs select databases this way, not with -run name filters: a filter on
+// test names misses tests whose names do not spell the database the same way
+// and every multi-database test (databases are subtests there).
+var selectedDB = os.Getenv("RELICA_TEST_DB")
+
+// requireDB skips the test unless dialect ("postgres", "mysql", "sqlite") is
+// selected for this run.
+func requireDB(t *testing.T, dialect string) {
+	t.Helper()
+	switch selectedDB {
+	case "", dialect:
+	case "postgres", "mysql", "sqlite":
+		t.Skipf("RELICA_TEST_DB=%s", selectedDB)
+	default:
+		t.Fatalf("RELICA_TEST_DB=%q: want postgres, mysql or sqlite", selectedDB)
+	}
+}
+
+// containerUnavailable skips the test when a database container cannot start
+// locally (no Docker), but fails it when the run is selected for that
+// database: in CI a silent skip would report untested code as passing.
+func containerUnavailable(t *testing.T, dialect string, err error) {
+	t.Helper()
+	if selectedDB == dialect {
+		t.Fatalf("RELICA_TEST_DB=%s but the %s container did not start: %v", dialect, dialect, err)
+	}
+	t.Skipf("Docker not available for %s integration tests: %v", dialect, err)
+}
+
+// startContainer runs start and turns a panic into an error: testcontainers
+// panics instead of returning an error when it finds no usable Docker host
+// (for example "rootless Docker is not supported on Windows").
+func startContainer[C any](start func() (C, error)) (c C, err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("testcontainers: %v", p)
+		}
+	}()
+	return start()
+}
+
 // DatabaseSetup encapsulates database connection and cleanup.
 type DatabaseSetup struct {
 	DB        *relica.DB
@@ -46,6 +90,7 @@ func (ds *DatabaseSetup) Close() {
 // SetupPostgreSQLTestDB creates a PostgreSQL test database.
 // Uses testcontainers if available, falls back to env DSN.
 func SetupPostgreSQLTestDB(t *testing.T) *DatabaseSetup {
+	requireDB(t, "postgres")
 	ctx := context.Background()
 
 	// Check for manual DSN first (allows testing without Docker)
@@ -56,20 +101,22 @@ func SetupPostgreSQLTestDB(t *testing.T) *DatabaseSetup {
 	}
 
 	// Start PostgreSQL in Docker via testcontainers
-	pgContainer, err := postgres.Run(
-		ctx,
-		"postgres:15-alpine",
-		postgres.WithDatabase("testdb"),
-		postgres.WithUsername("user"),
-		postgres.WithPassword("password"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(30*time.Second),
-		),
-	)
+	pgContainer, err := startContainer(func() (*postgres.PostgresContainer, error) {
+		return postgres.Run(
+			ctx,
+			"postgres:15-alpine",
+			postgres.WithDatabase("testdb"),
+			postgres.WithUsername("user"),
+			postgres.WithPassword("password"),
+			testcontainers.WithWaitStrategy(
+				wait.ForLog("database system is ready to accept connections").
+					WithOccurrence(2).
+					WithStartupTimeout(30*time.Second),
+			),
+		)
+	})
 	if err != nil {
-		t.Skip("Docker not available for PostgreSQL integration tests: " + err.Error())
+		containerUnavailable(t, "postgres", err)
 	}
 
 	dsn, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
@@ -89,6 +136,7 @@ func SetupPostgreSQLTestDB(t *testing.T) *DatabaseSetup {
 // SetupMySQLTestDB creates a MySQL test database.
 // Uses testcontainers if available, falls back to env DSN.
 func SetupMySQLTestDB(t *testing.T) *DatabaseSetup {
+	requireDB(t, "mysql")
 	ctx := context.Background()
 
 	// Check for manual DSN first
@@ -107,19 +155,21 @@ func SetupMySQLTestDB(t *testing.T) *DatabaseSetup {
 	}
 
 	// Start MySQL in Docker via testcontainers
-	mysqlContainer, err := mysql.Run(
-		ctx,
-		"mysql:8.0",
-		mysql.WithDatabase("testdb"),
-		mysql.WithUsername("user"),
-		mysql.WithPassword("password"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("port: 3306  MySQL Community Server").
-				WithStartupTimeout(60*time.Second),
-		),
-	)
+	mysqlContainer, err := startContainer(func() (*mysql.MySQLContainer, error) {
+		return mysql.Run(
+			ctx,
+			"mysql:8.0",
+			mysql.WithDatabase("testdb"),
+			mysql.WithUsername("user"),
+			mysql.WithPassword("password"),
+			testcontainers.WithWaitStrategy(
+				wait.ForLog("port: 3306  MySQL Community Server").
+					WithStartupTimeout(60*time.Second),
+			),
+		)
+	})
 	if err != nil {
-		t.Skip("Docker not available for MySQL integration tests: " + err.Error())
+		containerUnavailable(t, "mysql", err)
 	}
 
 	dsn, err := mysqlContainer.ConnectionString(ctx)
@@ -144,6 +194,7 @@ func SetupMySQLTestDB(t *testing.T) *DatabaseSetup {
 // SetupSQLiteTestDB creates an in-memory SQLite database.
 // Always works, no external dependencies.
 func SetupSQLiteTestDB(t *testing.T) *DatabaseSetup {
+	requireDB(t, "sqlite")
 	db, err := relica.NewDB("sqlite", ":memory:")
 	require.NoError(t, err)
 

@@ -441,7 +441,7 @@ func (h *hookedItem) BeforeInsert() error {
 }
 
 // ---------------------------------------------------------------------------
-// Entry points — names must contain PostgreSQL / MySQL / SQLite for CI filters.
+// Entry points — one per database; CI selects the database with RELICA_TEST_DB.
 // ---------------------------------------------------------------------------
 
 func TestPublicTypes_PostgreSQL(t *testing.T) {
@@ -459,6 +459,7 @@ func TestPublicTypes_MySQL(t *testing.T) {
 // TestPublicTypes_SQLite uses a file so the suite can reopen the same database
 // with options (hooks, logger).
 func TestPublicTypes_SQLite(t *testing.T) {
+	requireDB(t, "sqlite")
 	path := filepath.Join(t.TempDir(), "public_types.db")
 	db, err := relica.NewDB("sqlite", path)
 	require.NoError(t, err)
