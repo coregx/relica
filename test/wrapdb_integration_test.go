@@ -118,7 +118,7 @@ func TestWrapDB_IrisMXUseCase(t *testing.T) {
 						"mailbox_id": 1,
 						"user_id":    1,
 						"uid":        messageCount + 1,
-						"status":     "unread",
+						"status":     1, // INT column (CreateMessagesTable)
 						"size":       1024,
 						"subject":    "Transaction Test",
 						"created_at": time.Now(),
@@ -178,9 +178,9 @@ func TestWrapDB_IrisMXUseCase(t *testing.T) {
 					BatchInsert("messages", []string{
 						"mailbox_id", "user_id", "uid", "status", "size", "subject", "created_at",
 					}).
-					Values(1, 1, messageCount+1, "unread", 512, "Batch 1", time.Now()).
-					Values(1, 1, messageCount+2, "unread", 512, "Batch 2", time.Now()).
-					Values(1, 1, messageCount+3, "unread", 512, "Batch 3", time.Now()).
+					Values(1, 1, messageCount+1, 1, 512, "Batch 1", time.Now()).
+					Values(1, 1, messageCount+2, 1, 512, "Batch 2", time.Now()).
+					Values(1, 1, messageCount+3, 1, 512, "Batch 3", time.Now()).
 					Execute()
 
 				require.NoError(t, err, "Failed to batch insert")

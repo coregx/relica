@@ -78,6 +78,7 @@ jobs:
     name: Unit Tests - ${{ matrix.os }} - Go ${{ matrix.go-version }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false # see integration-tests
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         go-version: ['1.25']  # Match go.mod requirement
@@ -136,6 +137,9 @@ jobs:
     name: Integration Tests - ${{ matrix.database }}
     runs-on: ubuntu-latest
     strategy:
+      # Each database reports on its own: a PostgreSQL failure must not cancel
+      # the MySQL job and hide its result.
+      fail-fast: false
       matrix:
         database: [postgres, mysql]
 
