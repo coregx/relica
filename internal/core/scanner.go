@@ -100,18 +100,55 @@ func scanInto(rows *sql.Rows, v reflect.Value, plan []*modelField) error {
 	return nil
 }
 
-// scanRow scans a single SQL row into dest struct.
-func (s scanSettings) scanRow(rows *sql.Rows, dest any) error {
+// checkRowType rejects a single-value type (time.Time, sql.Scanner,
+// driver.Valuer) as a row: walked as a struct it matched no column and came
+// back zero with no error.
+func checkRowType(t reflect.Type) error {
+	if isValueRow(t) {
+		return fmt.Errorf("relica: %s is a single value, not a row: use Row(&v) or Column(&[]v)", t)
+	}
+	return nil
+}
+
+// rowDest validates a One destination and returns the struct it points to.
+func rowDest(dest any) (reflect.Value, error) {
 	destValue := reflect.ValueOf(dest)
 	if destValue.Kind() != reflect.Pointer {
-		return fmt.Errorf("scanner: dest must be pointer to struct, got %T", dest)
+		return reflect.Value{}, fmt.Errorf("scanner: dest must be pointer to struct, got %T", dest)
 	}
 	if destValue.IsNil() {
-		return fmt.Errorf("scanner: dest is a nil pointer, pass a non-nil *%s", destValue.Type().Elem())
+		return reflect.Value{}, fmt.Errorf("scanner: dest is a nil pointer, pass a non-nil *%s", destValue.Type().Elem())
 	}
 	destValue = destValue.Elem()
 	if destValue.Kind() != reflect.Struct {
-		return fmt.Errorf("scanner: dest must be pointer to struct, got pointer to %s", destValue.Kind())
+		return reflect.Value{}, fmt.Errorf("scanner: dest must be pointer to struct, got pointer to %s", destValue.Kind())
+	}
+	if err := checkRowType(destValue.Type()); err != nil {
+		return reflect.Value{}, err
+	}
+	return destValue, nil
+}
+
+// checkOneDest validates a One destination before the query runs, so a wrong
+// destination is reported even when the result is empty (it was reported as
+// ErrNotFound then, and only showed once a row existed).
+func (s scanSettings) checkOneDest(dest any) error {
+	if _, ok := nullStringMapTarget(dest); ok {
+		return nil
+	}
+	v, err := rowDest(dest)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.modelInfoOf(v.Type())
+	return err
+}
+
+// scanRow scans a single SQL row into dest struct.
+func (s scanSettings) scanRow(rows *sql.Rows, dest any) error {
+	destValue, err := rowDest(dest)
+	if err != nil {
+		return err
 	}
 
 	columns, err := rows.Columns()
@@ -143,6 +180,9 @@ func (s scanSettings) scanRows(rows *sql.Rows, dest any) error {
 	}
 	if elemType.Kind() != reflect.Struct {
 		return fmt.Errorf("scanner: slice element must be struct or *struct, got %s", elemType.Kind())
+	}
+	if err := checkRowType(elemType); err != nil {
+		return err
 	}
 
 	columns, err := rows.Columns()

@@ -135,6 +135,24 @@ func runEmbeddedValueTests(t *testing.T, db *relica.DB, dialect string) {
 		assert.True(t, got.Time.Equal(at))
 		assert.Equal(t, orig.Meta, got.Meta)
 	})
+
+	t.Run("SingleValueIsNotARow", func(t *testing.T) {
+		const hint = " is a single value, not a row: use Row(&v) or Column(&[]v)"
+		_, err := relica.One[time.Time](db.Select("at").From("f3_note").Where(relica.Eq("id", 1)))
+		assert.EqualError(t, err, "relica: time.Time"+hint)
+		_, err = relica.All[sql.NullString](db.Select("note").From("f3_note"))
+		assert.EqualError(t, err, "relica: sql.NullString"+hint)
+		var none sql.NullString
+		err = db.Select("note").From("f3_note").Where(relica.Eq("id", 99)).One(&none)
+		assert.EqualError(t, err, "relica: sql.NullString"+hint, "reported before the query, not as ErrNotFound")
+
+		var got time.Time
+		require.NoError(t, db.Select("at").From("f3_note").Where(relica.Eq("id", 1)).Row(&got))
+		assert.True(t, got.Equal(at))
+		var notes []sql.NullString
+		require.NoError(t, db.Select("note").From("f3_note").OrderBy("id").Column(&notes))
+		assert.Equal(t, []sql.NullString{{String: "bye", Valid: true}, {}}, notes)
+	})
 }
 
 func TestEmbeddedValues_PostgreSQL(t *testing.T) {
