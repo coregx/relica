@@ -507,8 +507,9 @@ func runSelectFeatureTests(t *testing.T, db *relica.DB, dialect string) {
 	// -----------------------------------------------------------------------
 	// Union / UnionAll / Intersect / Except
 	//
-	// ORDER BY on a compound query would bind to its first branch, so the
-	// results are read through FromSelect with an outer ORDER BY.
+	// Most results are read through FromSelect with an outer ORDER BY (the
+	// way to sort by an expression); OrderBy after Union sorts the combined
+	// result directly (SetOperations_CombinedOrderLimit).
 	// -----------------------------------------------------------------------
 
 	lowIDs := func() *relica.SelectQuery { // {1, 2}
@@ -593,6 +594,53 @@ func runSelectFeatureTests(t *testing.T, db *relica.DB, dialect string) {
 		// the grouping it would be (A EXCEPT B) UNION C = {1,4}.
 		four := db.Select("id").From("sf_emp").Where(relica.Eq("id", 4))
 		assert.Equal(t, []int{1}, sfOrderedIDs(t, ordered(lowIDs().Except(midIDs().Union(four)))))
+	})
+
+	t.Run("SetOperations_CombinedOrderLimit", func(t *testing.T) {
+		// OrderBy/Limit/Offset after Union apply to the combined result {1,2,3}.
+		assert.Equal(t, []int{3, 2}, sfOrderedIDs(t, lowIDs().Union(midIDs()).OrderBy("id DESC").Limit(2)))
+		assert.Equal(t, []int{2}, sfOrderedIDs(t, lowIDs().Union(midIDs()).OrderBy("id").Limit(1).Offset(1)))
+		// Before Union they choose the first branch's rows ({4}), after it sort the whole.
+		last1 := db.Select("id").From("sf_emp").OrderBy("id DESC").Limit(1)
+		assert.Equal(t, []int{1, 2, 4}, sfOrderedIDs(t, last1.Union(lowIDs()).OrderBy("id")))
+		// Sorting by an expression goes through FromSelect: PostgreSQL takes only
+		// output column names or numbers in a compound's ORDER BY.
+		assert.Equal(t, []int{2, 1, 3}, sfOrderedIDs(t,
+			db.Select("id").FromSelect(lowIDs().Union(midIDs()), "u").OrderByExpr("id % 2, id")))
+	})
+
+	t.Run("SetOperations_CountIgnoresCombinedPaging", func(t *testing.T) {
+		paged := lowIDs().Union(midIDs()).OrderBy("id").Limit(1)
+		n, err := paged.Count()
+		require.NoError(t, err)
+		assert.Equal(t, int64(3), n, "a paged union reports its total")
+		ok, err := paged.Exists()
+		require.NoError(t, err)
+		assert.True(t, ok)
+		// The first branch's LIMIT changes the set, so it counts: {4} ∪ {1,2}.
+		n, err = db.Select("id").From("sf_emp").OrderBy("id DESC").Limit(1).Union(lowIDs()).Limit(1).Count()
+		require.NoError(t, err)
+		assert.Equal(t, int64(3), n)
+	})
+
+	t.Run("SetOperations_IntersectAfterUnion_LeftToRight", func(t *testing.T) {
+		// ({1,2} ∪ {4}) ∩ {2,3} = {2} on every database. Sent flat, PostgreSQL
+		// and MySQL bind INTERSECT first: {1,2} ∪ ({4} ∩ {2,3}) = {1,2}.
+		four := db.Select("id").From("sf_emp").Where(relica.Eq("id", 4))
+		assert.Equal(t, []int{2}, sfOrderedIDs(t, lowIDs().Union(four).Intersect(midIDs()).OrderBy("id")))
+		// The other grouping is written as a nested branch.
+		assert.Equal(t, []int{1, 2}, sfOrderedIDs(t, lowIDs().Union(four.Intersect(midIDs())).OrderBy("id")))
+	})
+
+	t.Run("SetOperations_AmbiguousOrder_Errors", func(t *testing.T) {
+		var ids []int
+		err := db.Select("id").From("sf_emp").OrderBy("id").Union(midIDs()).Column(&ids)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "has no effect")
+		err = lowIDs().Union(midIDs()).OrderBy("id").Union(lowIDs()).Column(&ids)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "combined result")
+		assert.Empty(t, ids)
 	})
 
 	t.Run("SetOperations_ColumnCountMismatch_ServerError", func(t *testing.T) {

@@ -1928,6 +1928,10 @@ func (sq *SelectQuery) CrossJoin(table string) *SelectQuery {
 // arithmetic, NULLS FIRST/LAST, COLLATE, "a, b" — is an error returned when
 // the query runs: use OrderByExpr.
 //
+// After Union/UnionAll/Intersect/Except, OrderBy (like OrderByExpr,
+// OrderBySub, Limit and Offset) sorts the combined result; before it, the
+// first branch (see Union).
+//
 // Example:
 //
 //	OrderBy("age DESC", "name ASC")
@@ -1967,7 +1971,8 @@ func (sq *SelectQuery) OrderBySub(exp Expression) *SelectQuery {
 	return sq
 }
 
-// Limit sets the LIMIT clause.
+// Limit sets the LIMIT clause. After a set operation it limits the combined
+// result; before it, the first branch (see Union).
 //
 // Example:
 //
@@ -1977,7 +1982,8 @@ func (sq *SelectQuery) Limit(limit int64) *SelectQuery {
 	return sq
 }
 
-// Offset sets the OFFSET clause.
+// Offset sets the OFFSET clause. After a set operation it applies to the
+// combined result; before it, to the first branch (see Union).
 //
 // Example:
 //
@@ -2074,50 +2080,68 @@ func (sq *SelectQuery) ForUpdateSkipLocked() *SelectQuery {
 
 // Union combines this query with another using UNION (removes duplicates).
 //
+// Set operations (Union, UnionAll, Intersect, Except) read left to right:
+//   - OrderBy, OrderByExpr, OrderBySub, Limit and Offset called after the
+//     first set operation apply to the combined result; called before it,
+//     to the first branch (SQL reads the same way).
+//   - Each operation applies to everything before it: a.Union(b).Intersect(c)
+//     is (a ∪ b) ∩ c on every database (PostgreSQL and MySQL would bind
+//     INTERSECT first; Relica groups the left side). Write a.Union(b.Intersect(c))
+//     for the other grouping.
+//   - ORDER BY in a branch without Limit/Offset orders nothing, so it is an
+//     error; so is a set operation added after the combined result's
+//     OrderBy/Limit/Offset (pass that compound as a query instead).
+//   - To sort by an expression or a qualified name, wrap the compound:
+//     db.Select().FromSelect(compound, "u").OrderByExpr(...) — PostgreSQL
+//     takes only output column names or numbers in a compound's ORDER BY.
+//
 // Example:
 //
-//	q1 := db.Builder().Select("name").From("users")
-//	q2 := db.Builder().Select("name").From("archived_users")
-//	q1.Union(q2).All(&names)
+//	q1 := db.Select("name").From("users")
+//	q2 := db.Select("name").From("archived_users")
+//	q1.Union(q2).OrderBy("name").Limit(20).All(&names) // first 20 of the union
 func (sq *SelectQuery) Union(other *SelectQuery) *SelectQuery {
 	sq.sq.Union(other.core())
 	return sq
 }
 
-// UnionAll combines this query with another using UNION ALL (keeps duplicates).
+// UnionAll combines this query with another using UNION ALL (keeps
+// duplicates). The rules of Union apply.
 //
 // Example:
 //
-//	q1 := db.Builder().Select("id").From("orders_2023")
-//	q2 := db.Builder().Select("id").From("orders_2024")
+//	q1 := db.Select("id").From("orders_2023")
+//	q2 := db.Select("id").From("orders_2024")
 //	q1.UnionAll(q2).All(&orderIDs)
 func (sq *SelectQuery) UnionAll(other *SelectQuery) *SelectQuery {
 	sq.sq.UnionAll(other.core())
 	return sq
 }
 
-// Intersect combines queries using INTERSECT (rows in both).
+// Intersect combines queries using INTERSECT (rows in both). The rules of
+// Union apply; INTERSECT after a UNION or EXCEPT applies to their result.
 //
 // Database support: PostgreSQL 9.1+, MySQL 8.0.31+, SQLite 3.25+
 //
 // Example:
 //
-//	q1 := db.Builder().Select("id").From("users")
-//	q2 := db.Builder().Select("user_id").From("orders")
+//	q1 := db.Select("id").From("users")
+//	q2 := db.Select("user_id").From("orders")
 //	q1.Intersect(q2).All(&ids)  // Users who have placed orders
 func (sq *SelectQuery) Intersect(other *SelectQuery) *SelectQuery {
 	sq.sq.Intersect(other.core())
 	return sq
 }
 
-// Except combines queries using EXCEPT (rows in first but not second).
+// Except combines queries using EXCEPT (rows in first but not second). The
+// rules of Union apply.
 //
 // Database support: PostgreSQL 9.1+, MySQL 8.0.31+, SQLite 3.25+
 //
 // Example:
 //
-//	q1 := db.Builder().Select("id").From("all_users")
-//	q2 := db.Builder().Select("user_id").From("banned_users")
+//	q1 := db.Select("id").From("all_users")
+//	q2 := db.Select("user_id").From("banned_users")
 //	q1.Except(q2).All(&activeUsers)
 func (sq *SelectQuery) Except(other *SelectQuery) *SelectQuery {
 	sq.sq.Except(other.core())
@@ -2238,8 +2262,9 @@ func (sq *SelectQuery) Column(slice any) error {
 // Count returns the number of rows All would return: with GroupBy the number
 // of groups, and a select list that aggregates without GroupBy counts 1;
 // Having, Distinct, set operations and CTEs apply. OrderBy, Limit and Offset
-// are ignored, so a paginated query reports its total — except in a set
-// operation, where they belong to the first branch and are kept.
+// of the result are ignored, so a paginated query reports its total; in a set
+// operation that means those called after Union, while the first branch's
+// (called before Union) choose its rows and are kept.
 //
 // Example:
 //
@@ -2249,8 +2274,8 @@ func (sq *SelectQuery) Count() (int64, error) {
 }
 
 // Exists reports whether the query returns at least one row, by the same rule
-// as Count (GroupBy, Having, Distinct, set operations and CTEs apply; OrderBy,
-// Limit and Offset are ignored except in the first branch of a set operation).
+// as Count (GroupBy, Having, Distinct, set operations and CTEs apply; the
+// result's OrderBy, Limit and Offset are ignored, a first branch's are kept).
 // The query is sent inside SELECT EXISTS(...).
 //
 // Example:

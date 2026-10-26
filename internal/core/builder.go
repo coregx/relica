@@ -265,15 +265,22 @@ type SelectQuery struct {
 		condition string
 		args      []any
 	} // HAVING clauses (WHERE for aggregates)
-	orderBy     []clauseItem    // ORDER BY items in call order (OrderBy, OrderByExpr, OrderBySub)
-	limitValue  *int64          // LIMIT value (nil = not set)
-	offsetValue *int64          // OFFSET value (nil = not set)
-	unions      []unionInfo     // Set operations: UNION, INTERSECT, EXCEPT
-	ctes        []cteInfo       // Common Table Expressions (CTEs)
-	distinct    bool            // SELECT DISTINCT flag
-	lockClause  string          // FOR UPDATE, FOR SHARE, etc. (empty = no lock)
-	ctx         context.Context // context for this specific query
-	buildErr    error           // stored programming error (replaces panic in fluent chain)
+	orderBy     []clauseItem // ORDER BY items in call order (OrderBy, OrderByExpr, OrderBySub)
+	limitValue  *int64       // LIMIT value (nil = not set)
+	offsetValue *int64       // OFFSET value (nil = not set)
+	unions      []unionInfo  // Set operations: UNION, INTERSECT, EXCEPT
+	// ORDER BY, LIMIT and OFFSET of the combined result: those called after the
+	// first set operation (orderBy/limitValue/offsetValue are the first
+	// branch's). SQL reads the same way: a trailing ORDER BY/LIMIT applies to
+	// the whole compound, a branch's needs its own scope.
+	setOrderBy []clauseItem
+	setLimit   *int64
+	setOffset  *int64
+	ctes       []cteInfo       // Common Table Expressions (CTEs)
+	distinct   bool            // SELECT DISTINCT flag
+	lockClause string          // FOR UPDATE, FOR SHARE, etc. (empty = no lock)
+	ctx        context.Context // context for this specific query
+	buildErr   error           // stored programming error (replaces panic in fluent chain)
 }
 
 // clauseItem is one ORDER BY or GROUP BY entry. The column, raw and
@@ -631,6 +638,10 @@ func (sq *SelectQuery) CrossJoin(table string) *SelectQuery {
 // (a function call) is used as is. Anything else — arithmetic, NULLS
 // FIRST/LAST, COLLATE, several columns in one string — is a build error: use
 // OrderByExpr, or one argument per column.
+//
+// In a set operation, OrderBy, OrderByExpr, OrderBySub, Limit and Offset
+// called after Union/UnionAll/Intersect/Except apply to the combined result;
+// called before it, to the first branch (see addOrder).
 func (sq *SelectQuery) OrderBy(columns ...string) *SelectQuery {
 	for _, col := range columns {
 		item, err := orderByItem(col)
@@ -640,9 +651,19 @@ func (sq *SelectQuery) OrderBy(columns ...string) *SelectQuery {
 			}
 			continue
 		}
-		sq.orderBy = append(sq.orderBy, item)
+		sq.addOrder(item)
 	}
 	return sq
+}
+
+// addOrder appends an ORDER BY item to the first branch, or to the combined
+// result once a set operation was added: the Go chain reads in SQL order.
+func (sq *SelectQuery) addOrder(item clauseItem) {
+	if len(sq.unions) > 0 {
+		sq.setOrderBy = append(sq.setOrderBy, item)
+		return
+	}
+	sq.orderBy = append(sq.orderBy, item)
 }
 
 // orderByItem parses one OrderBy argument. The parser it replaces kept the
@@ -677,7 +698,7 @@ func orderByItem(col string) (clauseItem, error) {
 //	OrderByExpr("CASE WHEN status = ? THEN 0 ELSE 1 END", "active")
 //	OrderByExpr("FIELD(id, ?, ?, ?)", 3, 1, 2)
 func (sq *SelectQuery) OrderByExpr(expr string, args ...any) *SelectQuery {
-	sq.orderBy = append(sq.orderBy, clauseItem{raw: &RawExp{SQL: expr, Args: args}})
+	sq.addOrder(clauseItem{raw: &RawExp{SQL: expr, Args: args}})
 	return sq
 }
 
@@ -695,29 +716,39 @@ func (sq *SelectQuery) OrderBySub(exp Expression) *SelectQuery {
 		sq.buildErr = err
 		return sq
 	}
-	sq.orderBy = append(sq.orderBy, clauseItem{exp: exp})
+	sq.addOrder(clauseItem{exp: exp})
 	return sq
 }
 
 // Limit sets the LIMIT clause for the query.
-// Limits the number of rows returned by the query.
+// Limits the number of rows returned by the query. After a set operation it
+// limits the combined result; before it, the first branch.
 //
 // Example:
 //
 //	Limit(100)  // Return at most 100 rows
 func (sq *SelectQuery) Limit(limit int64) *SelectQuery {
-	sq.limitValue = &limit
+	if len(sq.unions) > 0 {
+		sq.setLimit = &limit
+	} else {
+		sq.limitValue = &limit
+	}
 	return sq
 }
 
 // Offset sets the OFFSET clause for the query.
-// Skips the specified number of rows before returning results.
+// Skips the specified number of rows before returning results. After a set
+// operation it applies to the combined result; before it, to the first branch.
 //
 // Example:
 //
 //	Offset(200)  // Skip first 200 rows
 func (sq *SelectQuery) Offset(offset int64) *SelectQuery {
-	sq.offsetValue = &offset
+	if len(sq.unions) > 0 {
+		sq.setOffset = &offset
+	} else {
+		sq.offsetValue = &offset
+	}
 	return sq
 }
 
@@ -740,10 +771,19 @@ func (sq *SelectQuery) Union(other *SelectQuery) *SelectQuery {
 }
 
 // addSetOperation appends a set-operation branch; a nil branch is a build
-// error, not a silently dropped branch.
+// error, not a silently dropped branch. So is a branch added after the
+// combined result got its ORDER BY/LIMIT/OFFSET: those end the compound in
+// SQL, and moving them to the end (Laravel, jOOQ) or nesting the compound
+// (goqu) would each guess what was meant.
 func (sq *SelectQuery) addSetOperation(method string, other *SelectQuery, u unionInfo) *SelectQuery {
 	if other == nil {
 		sq.buildErr = fmt.Errorf("relica: %s() requires a non-nil query", method)
+		return sq
+	}
+	if sq.hasSetRowLimits() {
+		sq.buildErr = fmt.Errorf("relica: %s() after OrderBy/Limit/Offset of the combined result: those apply to "+
+			"the combined result and must come after the last set operation; to combine a sorted or limited "+
+			"compound, pass it as a query: %s(q) or FromSelect(q, alias)", method, method)
 		return sq
 	}
 	sq.unions = append(sq.unions, u)
@@ -1006,7 +1046,13 @@ func (sq *SelectQuery) buildJoins(dialect dialects.Dialect, params *[]any) strin
 // Returns empty string if no ORDER BY is specified.
 // Parses column direction (ASC/DESC) and quotes column names.
 func (sq *SelectQuery) buildOrderBy(dialect dialects.Dialect) (string, []any) {
-	parts, args := buildClauseItems(sq.orderBy, dialect, func(col string) (string, bool) {
+	return sq.buildOrderItems(sq.orderBy, dialect)
+}
+
+// buildOrderItems renders an ORDER BY clause from items: the query's own or,
+// for a set operation, the combined result's (setOrderBy).
+func (sq *SelectQuery) buildOrderItems(items []clauseItem, dialect dialects.Dialect) (string, []any) {
+	parts, args := buildClauseItems(items, dialect, func(col string) (string, bool) {
 		// Parse "column [ASC|DESC]"
 		fields := strings.Fields(col)
 		if len(fields) == 0 {
@@ -1069,17 +1115,22 @@ func (sq *SelectQuery) quoteColumnName(col string, dialect dialects.Dialect) str
 // buildLimitOffset constructs the LIMIT and OFFSET clauses.
 // Returns empty string if neither is set.
 func (sq *SelectQuery) buildLimitOffset() string {
+	return limitOffsetSQL(sq.limitValue, sq.offsetValue)
+}
+
+// limitOffsetSQL renders LIMIT/OFFSET for a query or a combined result.
+func limitOffsetSQL(limit, offset *int64) string {
 	var result string
 
-	if sq.limitValue != nil {
-		result += fmt.Sprintf(" LIMIT %d", *sq.limitValue)
-	} else if sq.offsetValue != nil {
+	if limit != nil {
+		result += fmt.Sprintf(" LIMIT %d", *limit)
+	} else if offset != nil {
 		// MySQL requires LIMIT before OFFSET; emit max value for compatibility
 		result += " LIMIT 9223372036854775807"
 	}
 
-	if sq.offsetValue != nil {
-		result += fmt.Sprintf(" OFFSET %d", *sq.offsetValue)
+	if offset != nil {
+		result += fmt.Sprintf(" OFFSET %d", *offset)
 	}
 
 	return result
@@ -1442,6 +1493,7 @@ func (sq *SelectQuery) buildSetOperations(mainQuery string, allParams []any, dia
 	// by renderSQL, and its set operations are this compound itself.
 	mainSQL := setOperand(mainQuery, sqlite, sq.hasRowLimits())
 
+	unionOrExcept := false // a UNION or EXCEPT since the left side was last grouped
 	for _, u := range sq.unions {
 		// Build union query SQL with raw ? placeholders (no renumbering here)
 		unionSQL, unionArgs := u.query.renderSQL(dialect)
@@ -1451,17 +1503,36 @@ func (sq *SelectQuery) buildSetOperations(mainQuery string, allParams []any, dia
 		if op == "" {
 			op = "UNION"
 		}
+		// The chain means what it reads: each operation applies to everything
+		// before it. SQLite groups compound operators left to right, but
+		// PostgreSQL and MySQL bind INTERSECT tighter than UNION and EXCEPT,
+		// so a.Union(b).Intersect(c) would be a ∪ (b ∩ c) there. Group the
+		// left side so every database computes (a ∪ b) ∩ c; a.Union(b.Intersect(c))
+		// still says the other thing.
+		if op == "INTERSECT" {
+			if unionOrExcept && !sqlite {
+				mainSQL = "(" + mainSQL + ")"
+				unionOrExcept = false
+			}
+		} else {
+			unionOrExcept = true
+		}
 		if u.all && op == "UNION" {
 			op = "UNION ALL"
 		}
 
 		branch := u.query
 		mainSQL += " " + op + " " + setOperand(unionSQL, sqlite,
-			branch.hasRowLimits() || len(branch.ctes) > 0 || len(branch.unions) > 0)
+			branch.hasRowLimits() || branch.hasSetRowLimits() || len(branch.ctes) > 0 || len(branch.unions) > 0)
 
 		// Merge parameters in order
 		allParams = append(allParams, unionArgs...)
 	}
+
+	// The combined result's ORDER BY/LIMIT/OFFSET end the compound.
+	orderClause, orderArgs := sq.buildOrderItems(sq.setOrderBy, dialect)
+	mainSQL += orderClause + limitOffsetSQL(sq.setLimit, sq.setOffset)
+	allParams = append(allParams, orderArgs...)
 
 	return mainSQL, allParams
 }
@@ -1513,7 +1584,7 @@ func (sq *SelectQuery) errVisiting(path map[*SelectQuery]bool) error {
 			return err
 		}
 	}
-	for _, items := range [][]clauseItem{sq.orderBy, sq.groupBy} {
+	for _, items := range [][]clauseItem{sq.orderBy, sq.setOrderBy, sq.groupBy} {
 		for _, item := range items {
 			if item.exp == nil {
 				continue
@@ -1523,7 +1594,41 @@ func (sq *SelectQuery) errVisiting(path map[*SelectQuery]bool) error {
 			}
 		}
 	}
+	if len(sq.unions) > 0 {
+		// The builder is mutable, so a branch is checked when the statement is
+		// built, not when it is added.
+		if orderWithoutLimit(sq.orderBy, sq.limitValue, sq.offsetValue) {
+			return errBranchOrderWithoutLimit
+		}
+		for _, u := range sq.unions {
+			if u.query.branchOrderWithoutLimit() {
+				return errBranchOrderWithoutLimit
+			}
+		}
+	}
 	return nil
+}
+
+// errBranchOrderWithoutLimit: an ORDER BY inside one operand of a set
+// operation does not order the result — PostgreSQL and MySQL document it, and
+// MySQL drops it. It is what ozzo-dbx code wrote to sort a union, so it is an
+// error, not a silent no-op.
+var errBranchOrderWithoutLimit = errors.New("relica: ORDER BY in a UNION/INTERSECT/EXCEPT branch without LIMIT or " +
+	"OFFSET has no effect on the result; call OrderBy after Union to sort the combined result")
+
+// branchOrderWithoutLimit reports whether the query, used as a later operand
+// of a set operation, has an ORDER BY that LIMIT/OFFSET do not make
+// meaningful. A branch that is itself a compound is judged by its combined
+// result's clauses; its own first operand is checked when it is visited.
+func (sq *SelectQuery) branchOrderWithoutLimit() bool {
+	if len(sq.unions) > 0 {
+		return orderWithoutLimit(sq.setOrderBy, sq.setLimit, sq.setOffset)
+	}
+	return orderWithoutLimit(sq.orderBy, sq.limitValue, sq.offsetValue)
+}
+
+func orderWithoutLimit(order []clauseItem, limit, offset *int64) bool {
+	return len(order) > 0 && limit == nil && offset == nil
 }
 
 // setOperand renders one operand of UNION/INTERSECT/EXCEPT. PostgreSQL and
@@ -1544,9 +1649,16 @@ func setOperand(sqlStr string, sqlite, contained bool) string {
 	}
 }
 
-// hasRowLimits reports whether the query has ORDER BY, LIMIT or OFFSET.
+// hasRowLimits reports whether the query (its first branch, in a set
+// operation) has ORDER BY, LIMIT or OFFSET.
 func (sq *SelectQuery) hasRowLimits() bool {
 	return len(sq.orderBy) > 0 || sq.limitValue != nil || sq.offsetValue != nil
+}
+
+// hasSetRowLimits reports whether the combined result of a set operation has
+// ORDER BY, LIMIT or OFFSET.
+func (sq *SelectQuery) hasSetRowLimits() bool {
+	return len(sq.setOrderBy) > 0 || sq.setLimit != nil || sq.setOffset != nil
 }
 
 // Build constructs the Query object from SelectQuery.
@@ -1817,12 +1929,14 @@ func (sq *SelectQuery) existsStatement() (string, []any) {
 }
 
 // aggregateSource is the query whose rows Count and Exists evaluate: a copy
-// without CTEs (withAggregate puts them in front of the whole statement) and,
-// unless it is a set operation, without ORDER BY, LIMIT and OFFSET. In a set
-// operation those belong to the first branch, so they stay.
+// without CTEs (withAggregate puts them in front of the whole statement) and
+// without the ORDER BY, LIMIT and OFFSET of the result, so a paged query
+// reports its total. In a set operation those are the combined result's;
+// the first branch's stay, since they choose which rows enter the compound.
 func (sq *SelectQuery) aggregateSource() *SelectQuery {
 	src := *sq
 	src.ctes = nil
+	src.setOrderBy, src.setLimit, src.setOffset = nil, nil, nil
 	if len(src.unions) == 0 {
 		src.orderBy = nil
 		src.limitValue = nil

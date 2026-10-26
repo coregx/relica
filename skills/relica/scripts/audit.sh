@@ -162,34 +162,50 @@ column_args() {
 		}'
 }
 
-# UPDATE/DELETE builder chains (Update("t") / Delete("t")) that reach
-# .Execute() with no Where/AllRows in between, across up to 15 lines. The
-# chain is one expression: it ends at a ";" or an unbalanced closing bracket,
-# or at a line that closes all its brackets without a trailing "." (Go puts
-# the dot at the end of the line). So Model(u).Update("col") — the Model API,
-# keyed by the primary key — never borrows a later statement's Execute().
-whole_table() {
-	awk_files relicafiles '
-		# scan(s): walks the code of s, outside strings and // comments, keeping
-		# the bracket depth; sets cut (length of the code part of s) and ended
-		# (1 if the expression ends inside s).
-		function scan(s,   i, n, c, instr) {
-			n = length(s); instr = 0; ended = 0; cut = n
-			for (i = 1; i <= n; i++) {
-				c = substr(s, i, 1)
-				if (instr) {
-					if (c == "\\") i++
-					else if (c == "\"") instr = 0
-					continue
-				}
-				if (c == "\"") instr = 1
-				else if (c == "/" && substr(s, i + 1, 1) == "/") { cut = i - 1; return }
-				else if (c == "(" || c == "[" || c == "{") depth++
-				else if (c == ")" || c == "]" || c == "}") {
-					if (--depth < 0) { cut = i; ended = 1; return }
-				} else if (c == ";" && depth == 0) { cut = i; ended = 1; return }
+# Builder chains are followed as one expression: a chain ends at a ";" or an
+# unbalanced closing bracket, or at a line that closes all its brackets
+# without a trailing "." (Go puts the dot at the end of the line).
+# scan(s) walks the code of s, outside strings and // comments, keeping the
+# bracket depth across lines (the caller resets depth at the chain's start);
+# it sets cut (length of the code part of s), ended (1 if the expression ends
+# inside s) and calls (" Name" for each method called on the chain itself,
+# at depth 0 — not inside an argument). cont = 1 when s continues a chain
+# whose previous line ended with the dot: its first call counts too.
+awk_scan='
+	function scan(s, cont,   i, n, c, instr, rest) {
+		n = length(s); instr = 0; ended = 0; cut = n; calls = ""
+		if (cont && depth == 0 && match(s, /^[ \t]*[A-Za-z_][A-Za-z0-9_]*\(/)) {
+			rest = substr(s, 1, RLENGTH - 1)
+			sub(/^[ \t]+/, "", rest)
+			calls = " " rest
+		}
+		for (i = 1; i <= n; i++) {
+			c = substr(s, i, 1)
+			if (instr) {
+				if (c == "\\") i++
+				else if (c == "\"") instr = 0
+				continue
+			}
+			if (c == "\"") instr = 1
+			else if (c == "/" && substr(s, i + 1, 1) == "/") { cut = i - 1; return }
+			else if (c == "(" || c == "[" || c == "{") depth++
+			else if (c == ")" || c == "]" || c == "}") {
+				if (--depth < 0) { cut = i; ended = 1; return }
+			} else if (c == ";" && depth == 0) { cut = i; ended = 1; return }
+			else if (c == "." && depth == 0) {
+				rest = substr(s, i + 1)
+				if (match(rest, /^[A-Za-z_][A-Za-z0-9_]*\(/)) calls = calls " " substr(rest, 1, RLENGTH - 1)
 			}
 		}
+	}
+'
+
+# UPDATE/DELETE builder chains (Update("t") / Delete("t")) that reach
+# .Execute() with no Where/AllRows in between, across up to 15 lines. So
+# Model(u).Update("col") — the Model API, keyed by the primary key — never
+# borrows a later statement's Execute().
+whole_table() {
+	awk_files relicafiles "$awk_scan"'
 		FNR == 1 { open = 0 }
 		{
 			text = $0
@@ -212,6 +228,31 @@ whole_table() {
 				}
 			}
 		}'
+}
+
+# Chains that call OrderBy/OrderByExpr/OrderBySub/Limit/Offset on the chain
+# itself after Union/UnionAll/Intersect/Except — not inside a branch argument,
+# not on a FromSelect wrapper around the compound.
+setop_then_order() {
+	awk_files relicafiles "$awk_scan"'
+		function finish() { if (open && hit) print loc; open = 0 }
+		FNR == 1 { finish() }
+		{
+			text = $0
+			# The dot may end the previous line of the chain.
+			if (!open && match($0, /(^|[.[:space:]])(Union|UnionAll|Intersect|Except)\(/)) {
+				open = 1; start = FNR; loc = FILENAME ":" FNR ":" $0; depth = 0; hit = 0
+				text = substr($0, RSTART)
+			}
+			if (open) {
+				scan(text, FNR > start)
+				if (calls ~ / (OrderBy|OrderByExpr|OrderBySub|Limit|Offset)( |$)/) hit = 1
+				part = substr(text, 1, cut)
+				sub(/[ \t\r]+$/, "", part)
+				if (ended || (depth == 0 && part !~ /\.$/) || FNR - start > 15) finish()
+			}
+		}
+		END { finish() }'
 }
 
 # Builder Upsert("t", …) / OnConflict(…) with no DoUpdate/DoUpdateAll/DoNothing
@@ -353,6 +394,9 @@ report INFO V9 'Row type with db tags and no TableName(), in a repo that uses Mo
 report MEDIUM V10 'Count()/Exists() with GroupBy, Distinct, Having or a set operation — since v0.20.0 they follow what All returns (GroupBy: number of groups)' \
 	'AGENTS.md › Query Helpers › Exists / Count' \
 	< <(g relicafiles '\.(GroupBy|Distinct|Having|Union|UnionAll|Intersect|Except)\(.*\.(Count|Exists)\(\)')
+report MEDIUM V11 'OrderBy/Limit/Offset after Union/Intersect/Except — since v0.20.0 they sort and page the combined result (before: the first branch only); an OrderBy in a branch without Limit is an error' \
+	'AGENTS.md › Set Operations; MIGRATION_GUIDE › Set operations read left to right' \
+	< <(setop_then_order)
 report INFO I5 'OrderBy with a value computed at run time (a sort parameter?) — since v0.20.0 it must be "column [ASC|DESC]"; validate user input against a list of columns' \
 	'AGENTS.md › Ordering with Expressions' \
 	< <(g relicafiles '(^|[^A-Za-z0-9_])OrderBy\([^")]' | grep -v 'func ')

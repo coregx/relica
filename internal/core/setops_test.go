@@ -378,20 +378,20 @@ func TestSelectQuery_Union_With_OrderBy(t *testing.T) {
 	db := mockDB("postgres")
 	qb := &QueryBuilder{db: db}
 
-	q1 := qb.Select("name").From("users").OrderBy("name ASC")
+	// Since v0.20.0 OrderBy after Union sorts the combined result.
+	q1 := qb.Select("name").From("users")
 	q2 := qb.Select("name").From("archived_users")
-
-	query := q1.Union(q2).Build()
-	if query == nil {
-		t.Fatal("expected non-nil")
+	got, _ := q1.Union(q2).OrderBy("name ASC").ToSQL()
+	want := `(SELECT "name" FROM "users") UNION (SELECT "name" FROM "archived_users") ORDER BY "name" ASC`
+	if got != want {
+		t.Errorf("\n got %s\nwant %s", got, want)
 	}
 
-	// Base query should have ORDER BY (column name is quoted)
-	if !strings.Contains(query.sql, "ORDER BY") {
-		t.Errorf("%q does not contain %q", query.sql, "ORDER BY")
-	}
-	if !strings.Contains(query.sql, `"name"`) { // ORDER BY uses quoted column names
-		t.Errorf("%q does not contain %q", query.sql, `"name"`)
+	// OrderBy on the first branch without LIMIT orders nothing: an error,
+	// where ozzo-dbx (and Relica before v0.20.0) sent it inside the branch.
+	branch := qb.Select("name").From("users").OrderBy("name ASC").Union(qb.Select("name").From("archived_users"))
+	if err := branch.Build().prepErr; err == nil || !strings.Contains(err.Error(), "has no effect") {
+		t.Errorf("branch OrderBy without Limit: err = %v", err)
 	}
 }
 

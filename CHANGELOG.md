@@ -60,6 +60,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`OrderBy` kept the first word and the direction and dropped the rest silently**: `OrderBy("salary + 1 DESC")` ran `ORDER BY "salary"`, `"created_at DESC NULLS LAST"` lost NULLS LAST, `"age DESC, name"` lost `name`, `"name COLLATE NOCASE"` lost the collation — a different order, no error, on every database. Each argument is now `"column"` or `"column ASC|DESC"` (any case); an argument containing `(` (a function call) is used as is; anything else, and an empty argument, is an error returned when the query runs. Use `OrderByExpr` for expressions, NULLS FIRST/LAST and COLLATE, and one argument per column. (ozzo-dbx quoted the whole text before the direction as one name, which at least failed in the database.)
 
+### Changed (breaking) — set operations read left to right
+
+- **`a.Union(b).OrderBy("name").Limit(10)` sorted and limited only the first branch**, then appended all of `b` unsorted — the docs promised the first 10 of the union. `OrderBy`, `OrderByExpr`, `OrderBySub`, `Limit` and `Offset` called after the first `Union`/`UnionAll`/`Intersect`/`Except` now apply to the combined result; called before it they still choose the first branch's rows (`a.OrderBy("x").Limit(5).Union(b)`), as the SQL text reads and as jOOQ, Laravel, goqu and SQLAlchemy define it (v0.19 and ozzo-dbx put them in the first branch). `Count()`/`Exists()` ignore the combined result's paging, like any paginated query, and keep a branch's
+- **`a.Union(b).Intersect(c)` returned different rows per database**: sent flat, SQLite computed `(a ∪ b) ∩ c` and PostgreSQL/MySQL `a ∪ (b ∩ c)` (they bind INTERSECT first). Relica now parenthesizes the left side on PostgreSQL and MySQL, so a chain means `(a ∪ b) ∩ c` everywhere; `a.Union(b.Intersect(c))` writes the other grouping
+- **Two ambiguous forms are errors** returned when the query runs: an `OrderBy` in a branch without `Limit`/`Offset` (`a.OrderBy("x").Union(b)` — PostgreSQL and MySQL ignore it; it is what code meant to sort the union wrote), and a set operation after the combined result's `OrderBy`/`Limit`/`Offset` (`a.Union(b).OrderBy("x").Union(c)`). To sort a compound by an expression, wrap it: `db.Select().FromSelect(compound, "u").OrderByExpr(...)`
+
 ### Removed
 
 - **`relica.NewDB`** (deprecated since v0.12.0) — use `relica.Open(driver, dsn, opts...)`, same arguments

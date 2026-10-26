@@ -130,16 +130,19 @@ func GetTopProductNames(db *relica.DB) ([]Product, error) {
 }
 ```
 
-**Generated SQL**:
+**Generated SQL** (PostgreSQL; SQLite writes the branches without parentheses):
 ```sql
-SELECT "name", "price" FROM "products" WHERE active = $1
+(SELECT "name", "price" FROM "products" WHERE active = $1)
 UNION
-SELECT "name", "price" FROM "legacy_products" WHERE available = $2
+(SELECT "name", "price" FROM "legacy_products" WHERE available = $2)
 ORDER BY "name"
 LIMIT 10
 ```
 
-**💡 Tip**: ORDER BY and LIMIT apply to the **entire combined result**, not individual queries.
+**💡 Tip**: `OrderBy`, `Limit` and `Offset` called **after** `Union` apply to the **entire combined result** (since
+v0.20.0). Called **before** it, they choose the first branch's rows: `current.OrderBy("price DESC").Limit(5).Union(legacy)`
+takes the 5 most expensive current products. An `OrderBy` in a branch without `Limit`/`Offset` orders nothing and is an
+error.
 
 ### When to Use UNION
 
@@ -545,20 +548,23 @@ func GetEngagedPremiumUsers(db *relica.DB, since time.Time) ([]int, error) {
 
 ### Precedence Rules
 
-SQL set operations have equal precedence and evaluate left-to-right:
-
-```sql
-A UNION B INTERSECT C EXCEPT D
--- Evaluates as: ((A UNION B) INTERSECT C) EXCEPT D
-```
-
-**💡 Tip**: Use subqueries for complex precedence control:
+A Relica chain evaluates left to right on every database: each operation applies to everything before it.
 
 ```go
-// Force evaluation order with subqueries
-unionResult := q1.Union(q2)
-intersectResult := unionResult.Intersect(q3)
-finalResult := intersectResult.Except(q4)
+q1.Union(q2).Intersect(q3).Except(q4)
+// ((q1 UNION q2) INTERSECT q3) EXCEPT q4
+```
+
+The databases do not agree on this by themselves: SQLite groups compound operators left to right, while
+PostgreSQL and MySQL bind `INTERSECT` tighter than `UNION` and `EXCEPT` (`A UNION B INTERSECT C` is
+`A UNION (B INTERSECT C)` there). Since v0.20.0 Relica puts the left side in parentheses on PostgreSQL and MySQL, so
+the same chain returns the same rows everywhere.
+
+**💡 Tip**: For a different grouping, pass the inner operation as a branch:
+
+```go
+// q1 UNION (q2 INTERSECT q3)
+q1.Union(q2.Intersect(q3))
 ```
 
 ## When to Use Set Operations
@@ -1005,17 +1011,18 @@ q1.Union(q2) // 3500ms for 2M rows
 q1.UnionAll(q2) // 800ms for 2M rows (4.3x faster)
 ```
 
-### Issue: ORDER BY Not Working
+### Issue: "ORDER BY in a UNION/INTERSECT/EXCEPT branch without LIMIT or OFFSET has no effect"
 
-**Problem**: ORDER BY in individual queries ignored
+**Problem**: `OrderBy` called on a branch, before `Union`
 ```go
-// ❌ ORDER BY in q1 is ignored
+// ❌ Error since v0.20.0: an ORDER BY inside a branch does not order the result
+// (PostgreSQL and MySQL ignore it); before v0.20.0 it was sent and silently did nothing
 q1 := db.Select("name").From("users").OrderBy("name")
 q2 := db.Select("name").From("archived")
-q1.Union(q2) // q1's ORDER BY has no effect
+q1.Union(q2)
 ```
 
-**Solution**: Apply ORDER BY to final result
+**Solution**: Call `OrderBy` after `Union` to sort the combined result
 ```go
 // ✅ GOOD: ORDER BY on union result
 q1 := db.Select("name").From("users")
@@ -1023,21 +1030,32 @@ q2 := db.Select("name").From("archived")
 q1.Union(q2).OrderBy("name")
 ```
 
-## Examples Repository
+A branch may keep its `OrderBy` together with `Limit`/`Offset`, which choose its rows: `q1.OrderBy("name").Limit(5)`.
 
-Complete working examples available in Relica repository:
+### Issue: "Union() after OrderBy/Limit/Offset of the combined result"
 
-- `examples/set_operations/union.go` - UNION examples
-- `examples/set_operations/union_all.go` - UNION ALL patterns
-- `examples/set_operations/intersect.go` - INTERSECT examples
-- `examples/set_operations/except.go` - EXCEPT patterns
-- `examples/set_operations/chaining.go` - Complex chaining
+`q1.Union(q2).OrderBy("name").Union(q3)` is an error: the ORDER BY ends the compound. Combine the sorted compound as
+a query of its own: `q3.Union(q1.Union(q2).OrderBy("name").Limit(10))`, or wrap it with `FromSelect`.
+
+### Sorting by an expression
+
+PostgreSQL accepts only output column names or numbers in a compound's ORDER BY, and MySQL rejects `table.column`
+there. Wrap the compound to sort by anything else:
+
+```go
+db.Select().FromSelect(q1.Union(q2), "u").OrderByExpr("LOWER(name)").All(&rows)
+```
+
+## Examples
+
+Every pattern in this guide runs in the integration tests on PostgreSQL, MySQL and SQLite:
+`test/select_features_integration_test.go` (the `Union`, `Intersect`, `Except` and `SetOperations_*` subtests).
 
 ## Further Reading
 
 - [Subquery Guide](./SUBQUERY_GUIDE.md) - Alternative to set operations for filtering
 - [CTE Guide](./CTE_GUIDE.md) - Simplify complex set operations with CTEs
-- [Performance Tuning](./PERFORMANCE.md) - Optimize query performance
+- [Performance Tuning](./guides/PERFORMANCE_TUNING.md) - Optimize query performance
 
 ---
 

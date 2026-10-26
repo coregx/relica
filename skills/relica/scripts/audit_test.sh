@@ -81,6 +81,7 @@ expect "$bad" MEDIUM V7 1
 expect "$bad" INFO V8 2
 expect "$bad" INFO V9 1
 expect "$bad" MEDIUM V10 1
+expect "$bad" MEDIUM V11 2
 expect "$bad" INFO I5 1
 expect "$bad" INFO I6 1
 expect "$bad" INFO I7 1
