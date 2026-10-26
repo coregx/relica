@@ -161,6 +161,23 @@ whole_table() {
 		}'
 }
 
+# Builder Upsert("t", …) / OnConflict(…) with no DoUpdate/DoUpdateAll/DoNothing
+# on the same line or the next 8 (a chain, or an if/else that picks one).
+upsert_without_action() {
+	# POSIX awk (mawk on Ubuntu has no ENDFILE): a new file flushes the open hit.
+	awk_files prodfiles '
+		FNR == 1 { if (open) print hit; open = 0 }
+		{
+			if (open && $0 ~ /(DoUpdate|DoUpdateAll|DoNothing)\(/) open = 0
+			if (open && FNR - start > 8) { print hit; open = 0 }
+			if (!open && $0 ~ /(^|[^A-Za-z0-9_])(Upsert\("|OnConflict\()/ && $0 !~ /func / &&
+			    $0 !~ /(DoUpdate|DoUpdateAll|DoNothing)\(/) {
+				open = 1; start = FNR; hit = FILENAME ":" FNR ":" $0
+			}
+		}
+		END { if (open) print hit }'
+}
+
 # Structs that map rows (some field has a db tag) with exported fields that
 # have none, or with embedded structs: since v0.20.0 untagged fields use the
 # naming rule (CreatedAt → created_at; before: the field name) and embedded
@@ -268,7 +285,7 @@ report HIGH V5 'Removed in v0.20.0 — does not compile: relica.NewDB (use Open)
 	< <(g gofiles "\\b($relica_names)\\.NewDB\\(|(^|[^A-Za-z0-9_])QueryParams\\(\\)")
 report MEDIUM V6 'Builder Upsert / OnConflict — needs exactly one of DoUpdate, DoUpdateAll, DoNothing since v0.20.0 (a missing action is an error; check the whole chain)' \
 	'AGENTS.md › Upsert; MIGRATION_GUIDE › Upsert' \
-	< <(g prodfiles '(^|[^A-Za-z0-9_])(Upsert\("|OnConflict\()' | grep -vE '(DoUpdate|DoUpdateAll|DoNothing)\(|func ')
+	< <(upsert_without_action)
 report MEDIUM V7 'Row lock — must run on a transaction since v0.20.0, and never with Union/GroupBy/Distinct/Count/Exists' \
 	'AGENTS.md › Row Locking' \
 	< <(g prodfiles '(^|[^A-Za-z0-9_])(ForUpdate|ForShare|ForUpdateSkipLocked)\(\)' | grep -v 'func ')
