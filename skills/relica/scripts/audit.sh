@@ -30,6 +30,15 @@ else
 fi
 mapfile -t prodfiles < <(printf '%s\n' "${gofiles[@]}" | grep -v '_test\.go$' | grep -v '^$')
 mapfile -t testfiles < <(printf '%s\n' "${gofiles[@]}" | grep '_test\.go$')
+# Files that use ozzo-dbx and not Relica: the same method names (Select,
+# OrderBy, Delete…) follow ozzo-dbx's rules there, so the Relica-specific
+# checks skip them. Files importing neither (a wrapper type) stay in.
+mapfile -t dbxonly < <(
+	[ ${#prodfiles[@]} -gt 0 ] && printf '%s\0' "${prodfiles[@]}" |
+		xargs -0 grep -l '"github.com/go-ozzo/ozzo-dbx"' 2>/dev/null |
+		while read -r f; do grep -q '"github.com/coregx/relica"' "$f" || echo "$f"; done
+)
+mapfile -t relicafiles < <(printf '%s\n' "${prodfiles[@]}" | grep -vxF -f <(printf '%s\n' "${dbxonly[@]}") | grep -v '^$')
 # context.Background() is legitimate in main packages and CLI tools.
 mapfile -t servicefiles < <(printf '%s\n' "${prodfiles[@]}" | grep -vE '(^|/)cmd/|(^|/)main\.go$' | grep -v '^$')
 
@@ -107,7 +116,7 @@ error_text() { # comparisons on err.Error() only, not logging of it
 # (column with an optional ASC/DESC), group (column). Anything with "(" is
 # used as is by Relica and passes. Calls with nested parentheses are skipped.
 column_args() {
-	g prodfiles "(^|[^A-Za-z0-9_])$1\\(\"" | awk -v m="$1" -v kind="$2" '
+	g relicafiles "(^|[^A-Za-z0-9_])$1\\(\"" | awk -v m="$1" -v kind="$2" '
 		function ok(a,   id, ref, low) {
 			if (index(a, "(") > 0 || a == "...") return 1
 			id = "[A-Za-z_][A-Za-z0-9_$]*"
@@ -144,7 +153,7 @@ column_args() {
 # UPDATE/DELETE builder chains (Update("t") / Delete("t")) that reach
 # .Execute() with no Where/AllRows in between, across up to 15 lines.
 whole_table() {
-	awk_files prodfiles '
+	awk_files relicafiles '
 		FNR == 1 { open = 0 }
 		{
 			if (!open && match($0, /(^|[^A-Za-z0-9_])(Update|Delete)\("[^"]*"\)/)) {
@@ -165,7 +174,7 @@ whole_table() {
 # on the same line or the next 8 (a chain, or an if/else that picks one).
 upsert_without_action() {
 	# POSIX awk (mawk on Ubuntu has no ENDFILE): a new file flushes the open hit.
-	awk_files prodfiles '
+	awk_files relicafiles '
 		FNR == 1 { if (open) print hit; open = 0 }
 		{
 			if (open && $0 ~ /(DoUpdate|DoUpdateAll|DoNothing)\(/) open = 0
@@ -183,7 +192,7 @@ upsert_without_action() {
 # naming rule (CreatedAt → created_at; before: the field name) and embedded
 # structs are flattened into columns.
 untagged_fields() {
-	awk_files prodfiles '
+	awk_files relicafiles '
 		FNR == 1 { in_s = 0 }
 		/^type [A-Za-z0-9_]+ struct[[:space:]]*\{[[:space:]]*$/ { in_s = 1; tagged = 0; n = 0; next }
 		in_s && /^\}/ {
@@ -205,12 +214,12 @@ untagged_fields() {
 # since v0.20.0 the derived table is snake_case singular (UserProfile →
 # user_profile; before: userprofiles).
 models_without_tablename() {
-	[ -n "$(g prodfiles '\.Model\(')" ] || return 0
+	[ -n "$(g relicafiles '\.Model\(')" ] || return 0
 	local named
 	# Receiver forms: (T), (*T), (t T), (t *T).
 	named=$(g gofiles 'func \(([a-zA-Z_][A-Za-z0-9_]* +)?\*?[A-Za-z0-9_]+\) TableName\(\) string' |
 		sed -E 's/.*func \(([a-zA-Z_][A-Za-z0-9_]* +)?\*?([A-Za-z0-9_]+)\) TableName.*/\2/' | sort -u | paste -sd'|')
-	awk_files prodfiles '
+	awk_files relicafiles '
 		FNR == 1 { in_s = 0 }
 		/^type [A-Za-z0-9_]+ struct[[:space:]]*\{/ { in_s = 1; name = $2; where = FILENAME ":" FNR ":" $0; next }
 		in_s && /^\}/ { in_s = 0; next }
@@ -288,7 +297,7 @@ report MEDIUM V6 'Builder Upsert / OnConflict — needs exactly one of DoUpdate,
 	< <(upsert_without_action)
 report MEDIUM V7 'Row lock — must run on a transaction since v0.20.0, and never with Union/GroupBy/Distinct/Count/Exists' \
 	'AGENTS.md › Row Locking' \
-	< <(g prodfiles '(^|[^A-Za-z0-9_])(ForUpdate|ForShare|ForUpdateSkipLocked)\(\)' | grep -v 'func ')
+	< <(g relicafiles '(^|[^A-Za-z0-9_])(ForUpdate|ForShare|ForUpdateSkipLocked)\(\)' | grep -v 'func ')
 report MEDIUM V8 'Struct with db tags and untagged exported or embedded fields — since v0.20.0 untagged fields map to snake_case columns (CreatedAt → created_at) and embedded structs are flattened; tag them to keep the old names' \
 	'AGENTS.md › Table and Column Names' \
 	< <(untagged_fields)
@@ -297,13 +306,13 @@ report INFO V9 'Row type with db tags and no TableName(), in a repo that uses Mo
 	< <(models_without_tablename)
 report MEDIUM V10 'Count()/Exists() with GroupBy, Distinct, Having or a set operation — since v0.20.0 they follow what All returns (GroupBy: number of groups)' \
 	'AGENTS.md › Query Helpers › Exists / Count' \
-	< <(g prodfiles '\.(GroupBy|Distinct|Having|Union|UnionAll|Intersect|Except)\(.*\.(Count|Exists)\(\)')
+	< <(g relicafiles '\.(GroupBy|Distinct|Having|Union|UnionAll|Intersect|Except)\(.*\.(Count|Exists)\(\)')
 report INFO I5 'OrderBy with a value computed at run time (a sort parameter?) — since v0.20.0 it must be "column [ASC|DESC]"; validate user input against a list of columns' \
 	'AGENTS.md › Ordering with Expressions' \
-	< <(g prodfiles '(^|[^A-Za-z0-9_])OrderBy\([^")]' | grep -v 'func ')
+	< <(g relicafiles '(^|[^A-Za-z0-9_])OrderBy\([^")]' | grep -v 'func ')
 report INFO I6 'UpdateStruct — since v0.20.0 the primary key is never written into SET' \
 	'MIGRATION_GUIDE › Table names, column names, struct scanning' \
-	< <(g prodfiles '(^|[^A-Za-z0-9_])UpdateStruct\(' | grep -v 'func ')
+	< <(g relicafiles '(^|[^A-Za-z0-9_])UpdateStruct\(' | grep -v 'func ')
 if g gomods 'modernc\.org/sqlite|mattn/go-sqlite3' >/dev/null && [ ${#testfiles[@]} -gt 0 ]; then
 	report INFO I7 'Test compares generated SQL text and the repo uses SQLite — since v0.20.0 SQLite identifiers are quoted with backticks' \
 		'MIGRATION_GUIDE › SQLite: identifiers in backticks' \
@@ -313,11 +322,11 @@ report INFO I8 'QueryHook / WithLogger — since v0.20.0 they also see raw ExecC
 	'CHANGELOG › v0.20.0 Fixed' \
 	< <(g prodfiles '\b(WithQueryHook|WithLogger)\(')
 report INFO I1 'Select("*") — Select() already means SELECT *' 'AGENTS.md › API Priority' \
-	< <(g prodfiles 'Select\("\*"\)')
+	< <(g relicafiles 'Select\("\*"\)')
 report INFO I2 'db.Builder().X — call db.X directly' 'AGENTS.md › API Priority' \
-	< <(g prodfiles '\.Builder\(\)\.')
+	< <(g relicafiles '\.Builder\(\)\.')
 report INFO I3 'Insert with a map — prefer db.Model(&row).Insert()' 'AGENTS.md › Anti-Pattern 1' \
-	< <(g prodfiles '\.Insert\("[^"]+",[[:space:]]*map\[string\]')
+	< <(g relicafiles '\.Insert\("[^"]+",[[:space:]]*map\[string\]')
 report INFO I4 'relica.WrapDB — fine at startup; a finding only if it runs per request or per transaction' \
 	'AGENTS.md › Transactions › Mistakes found in real projects' \
 	< <(g prodfiles 'relica\.WrapDB\(')
