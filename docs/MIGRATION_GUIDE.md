@@ -755,6 +755,22 @@ conditions assembled from optional filters (`relica.And(conds...)` where `conds`
 Column names in SQL (`Select("col")`, `Where`/`HashExp` keys, `OrderBy`) are not checked by Relica — the database
 rejects unknown columns itself.
 
+## `Count()` and `Exists()` follow what `All` returns
+
+| v0.19 code | v0.19 result | v0.20.0 result |
+|---|---|---|
+| `Select("status").From("orders").GroupBy("status").Count()` | rows in the first group | number of groups |
+| `...GroupBy("status").Having("COUNT(*) > ?", 10).Exists()` | true if the table has rows | true only if a group passes `Having` |
+| `Select("country").Distinct().Count()` | every row | distinct rows |
+| `a.Union(b).Count()` / `.Exists()` | first branch only | the compound result |
+| `With("cte", q).From("cte").Count()` / `.Exists()` | error: the CTE was dropped | counts the CTE's rows |
+| `...Limit(20).Offset(40).Count()` | the total | the total (unchanged) |
+
+Code that used `Count()` on a grouped query to get the size of one group should filter to that group with `Where`.
+
+**Find affected code:** `grep -rn "\.Count()\|\.Exists()" --include=*.go .` and check the chains that also call
+`GroupBy`, `Having`, `Distinct`, `Union`/`Intersect`/`Except` or `With`.
+
 ## Errors inside subqueries, set operations and CTEs
 
 A construction error inside a `FromSelect` subquery, a `Union`/`UnionAll`/`Intersect`/`Except` branch or a CTE used

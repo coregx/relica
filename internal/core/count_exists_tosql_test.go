@@ -419,7 +419,7 @@ func TestSelectQuery_Count_IgnoresOriginalColumns(t *testing.T) {
 		t.Errorf("got %v, want %v", sq.columns, want)
 	}
 
-	sql, _ := sq.countQuery().buildSQL(db.dialect)
+	sql, _ := sq.countStatement()
 	if !strings.Contains(sql, "SELECT COUNT(*)") {
 		t.Errorf("%q does not contain %q", sql, "SELECT COUNT(*)")
 	}
@@ -436,12 +436,10 @@ func TestSelectQuery_Count_SQL_WithGroupBy(t *testing.T) {
 	db := mockDB("postgres")
 	qb := &QueryBuilder{db: db}
 
-	sql, _ := qb.Select("user_id").From("orders").GroupBy("user_id").countQuery().buildSQL(db.dialect)
-	if !strings.Contains(sql, "SELECT COUNT(*)") {
-		t.Errorf("%q does not contain %q", sql, "SELECT COUNT(*)")
-	}
-	if !strings.Contains(sql, `GROUP BY "user_id"`) {
-		t.Errorf("%q does not contain %q", sql, `GROUP BY "user_id"`)
+	sql, _ := qb.Select("user_id").From("orders").GroupBy("user_id").countStatement()
+	want := `SELECT COUNT(*) FROM (SELECT "user_id" FROM "orders" GROUP BY "user_id") AS relica_count`
+	if sql != want {
+		t.Errorf("got %s, want %s", sql, want)
 	}
 }
 
