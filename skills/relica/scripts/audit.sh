@@ -273,11 +273,15 @@ setop_then_order() {
 		END { finish() }'
 }
 
-# Select/AndSelect string arguments with "(" (used as is) and no "AS alias": the
-# database names such a column after the function (coalesce, count, sum), so a
-# struct field tagged with the intended name has no column — an error under
-# ScanRequireFields since v0.20.0, a silently empty field before. Arguments are
-# read inside the call only (a Where("LOWER(x) = ?") on the line is not one).
+# Select/AndSelect string arguments with "(" (used as is) and no "AS alias", in
+# a chain that scans into a struct (All/One on the chain itself): the database
+# names such a column after the function (coalesce, count, sum), so the field
+# tagged with the intended name has no column — an error under
+# ScanRequireFields since v0.20.0, a silently empty field before. Row/Column
+# scan by position and a scalar subquery is named by the outer SelectSub
+# alias, so those chains are not reported. The chain is followed over lines
+# (multi-line Select arguments included); arguments are read inside the
+# Select call only (a Where("LOWER(x) = ?") is not one).
 select_fn_no_alias() {
 	awk_files relicafiles "$awk_scan"'
 		# args(s, from): the string literals at depth 1 of the call whose "(" is
@@ -298,17 +302,39 @@ select_fn_no_alias() {
 			}
 			return out
 		}
-		{
-			line = nocomment($0); rest = line; off = 0; bad = 0
-			while (!bad && match(rest, /(^|[^A-Za-z0-9_])(Select|AndSelect)\(/)) {
-				pos = off + RSTART + RLENGTH - 1   # the "(" in line
-				nargs = split(args(line, pos), a, "\n")
+		# unaliased(s): 1 if a Select/AndSelect call in s has an argument with
+		# "(" and no trailing "AS alias".
+		function unaliased(s,   rest, off, pos, nargs, a, k) {
+			rest = s; off = 0
+			while (match(rest, /(^|[^A-Za-z0-9_])(Select|AndSelect)\(/)) {
+				pos = off + RSTART + RLENGTH - 1   # the "(" in s
+				nargs = split(args(s, pos), a, "\n")
 				for (k = 1; k <= nargs; k++)
-					if (index(a[k], "(") > 0 && a[k] !~ /[ \t][Aa][Ss][ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]*$/) bad = 1
-				off = pos; rest = substr(line, pos + 1)
+					if (index(a[k], "(") > 0 && a[k] !~ /[ \t][Aa][Ss][ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]*$/) return 1
+				off = pos; rest = substr(s, pos + 1)
 			}
-			if (bad) print FILENAME ":" FNR ":" $0
-		}'
+			return 0
+		}
+		function finish() {
+			if (open && all_calls ~ / (All|One)( |$)/ && unaliased(buf)) print loc
+			open = 0
+		}
+		FNR == 1 { finish() }
+		{
+			line = nocomment($0); text = line
+			if (!open && match(line, /(^|[^A-Za-z0-9_])(Select|AndSelect)\(/)) {
+				open = 1; start = FNR; loc = FILENAME ":" FNR ":" $0; depth = 0
+				text = substr(line, RSTART); buf = ""; all_calls = ""
+			}
+			if (open) {
+				scan(text, FNR > start)
+				buf = buf " " substr(text, 1, cut); all_calls = all_calls calls
+				part = substr(text, 1, cut)
+				sub(/[ \t\r]+$/, "", part)
+				if (ended || (depth == 0 && part !~ /\.$/) || FNR - start > 25) finish()
+			}
+		}
+		END { finish() }'
 }
 
 # Builder Upsert("t", …) / OnConflict(…) with no DoUpdate/DoUpdateAll/DoNothing

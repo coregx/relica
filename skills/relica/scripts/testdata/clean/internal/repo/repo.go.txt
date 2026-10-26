@@ -79,6 +79,16 @@ func aliased(db *relica.DB) {
 	db.Select("id").AndSelect("COUNT(*) as n").From("t").GroupBy("id").All(nil)
 }
 
+// Function columns read by position or named by an outer alias: not a struct scan.
+func positional(db *relica.DB) {
+	var n int
+	db.Select("COUNT(*)").From("t").Row(&n)
+	var totals []int
+	db.Select("COALESCE(SUM(amount), 0)").From("t").GroupBy("id").Column(&totals)
+	turnover := db.Select("COALESCE(SUM(amount), 0)").From("o").Where("o.company_id = c.id")
+	db.Select("c.id").SelectSub(turnover.AsExpression(), "turnover").From("c").All(nil)
+}
+
 // A comment that quotes a bad chain is not code:
 // Danger: db.Delete("t").Execute() would wipe the table.
 // Note: a.Union(b).OrderBy("x") sorts the union since v0.20.0.
