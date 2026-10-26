@@ -131,6 +131,15 @@ func v10(db *relica.DB) {
 	db.Select("dept").From("t").GroupBy("dept").Count()
 }
 
+func v11(db *relica.DB) {
+	// V11 ×2: OrderBy/Limit after a set operation — the combined result since v0.20.0
+	db.Select("id").From("a").Union(db.Select("id").From("b")).OrderBy("id").Limit(10).All(nil)
+	db.Select("id").From("a").
+		Intersect(db.Select("id").From("b")).
+		Limit(5).
+		All(nil)
+}
+
 func i5(db *relica.DB, sort string) {
 	// I5 ×1
 	db.Select().From("t").OrderBy(sort).All(nil)

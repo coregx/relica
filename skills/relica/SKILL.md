@@ -1,6 +1,6 @@
 ---
 name: relica
-description: Working with Relica (github.com/coregx/relica, a zero-dependency SQL query builder for Go, successor of ozzo-dbx) in a project that uses it — find the Relica version in go.mod, read Relica's AGENTS.md at exactly that version, write queries, repositories, transactions and error handling the way it prescribes, audit the project's Relica code with the bundled script (transaction context, error-text matching, hand-written ILIKE, LIKE escaping, SQLite read-only DSNs, and every v0.20.0 behaviour change: OrderBy/Select arguments, UPDATE/DELETE without Where, upsert actions, row locks, column and table naming, Count/Exists), and upgrade Relica version by version. Use whenever Go code imports github.com/coregx/relica, or the task mentions Relica, ozzo-dbx migration, dbcontext, With(ctx), Transactional, IsUniqueViolation, ILIKE, or a database-layer audit.
+description: Working with Relica (github.com/coregx/relica, a zero-dependency SQL query builder for Go, successor of ozzo-dbx) in a project that uses it — find the Relica version in go.mod, read Relica's AGENTS.md at exactly that version, write queries, repositories, transactions and error handling the way it prescribes, audit the project's Relica code with the bundled script (transaction context, error-text matching, hand-written ILIKE, LIKE escaping, SQLite read-only DSNs, and every v0.20.0 behaviour change: OrderBy/Select arguments, UPDATE/DELETE without Where, upsert actions, row locks, column and table naming, Count/Exists, set operations), and upgrade Relica version by version. Use whenever Go code imports github.com/coregx/relica, or the task mentions Relica, ozzo-dbx migration, dbcontext, With(ctx), Transactional, IsUniqueViolation, ILIKE, or a database-layer audit.
 license: MIT
 allowed-tools: Bash(bash ${CLAUDE_SKILL_DIR}/scripts/audit.sh *)
 ---
@@ -43,6 +43,7 @@ go mod download -json github.com/coregx/relica@<version>   # "Dir" = the source 
 | Errors | "Error Handling" |
 | Locks | "Row Locking (FOR UPDATE / FOR SHARE)" |
 | UPDATE / DELETE | "UPDATE / DELETE need Where" (v0.20.0+) |
+| UNION / INTERSECT / EXCEPT | "Set Operations" (v0.20.0+: OrderBy/Limit after Union apply to the combined result) |
 | Names, struct scanning | "Table and Column Names" (v0.20.0+) |
 | Count, Exists | "Query Helpers" |
 
@@ -75,7 +76,7 @@ Follow AGENTS.md. The points that caused real bugs in projects using Relica:
 
 1. `bash ${CLAUDE_SKILL_DIR}/scripts/audit.sh <repo>` — read-only, git-tracked `*.go` only. It
    reports leads in three groups: mistakes found in real projects (H1–H3, M1–M7), code whose
-   behaviour changes in v0.20.0 (V1–V10; the group title says whether the project is still below
+   behaviour changes in v0.20.0 (V1–V11; the group title says whether the project is still below
    v0.20.0), and style or placement notes (I1–I8). Each line names the AGENTS.md or
    MIGRATION_GUIDE section to read.
 2. Every finding is a lead: open the file and confirm before reporting. Then go through the

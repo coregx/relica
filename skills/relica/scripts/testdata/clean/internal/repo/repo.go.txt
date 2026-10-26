@@ -73,4 +73,12 @@ func (p *Profile) TableName() string { return "profiles" }
 
 func model(db *relica.DB, u *User) { db.Model(u).Insert() }
 
+// Set operations whose OrderBy/Limit keep their meaning: on the first branch
+// before Union, inside a branch argument, outside a FromSelect wrapper.
+func setOps(db *relica.DB) {
+	db.Select("id").From("a").OrderBy("id").Limit(1).Union(db.Select("id").From("b")).All(nil)
+	db.Select("id").From("a").Union(db.Select("id").From("b").OrderBy("id").Limit(1)).All(nil)
+	db.Select().FromSelect(db.Select("id").From("a").Union(db.Select("id").From("b")), "u").OrderBy("id").All(nil)
+}
+
 const dsn = "file:data.db?mode=ro"

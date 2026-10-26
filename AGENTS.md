@@ -814,6 +814,42 @@ db.Select("id").SelectExpr("price * ? AS gross", 1.2).            // not SelectE
 
 ---
 
+## Set Operations (UNION / INTERSECT / EXCEPT) — v0.20.0 rules
+
+The chain reads left to right, the way the SQL text does:
+
+```go
+// OrderBy/OrderByExpr/OrderBySub/Limit/Offset AFTER Union apply to the combined result
+db.Select("name").From("users").
+    Union(db.Select("name").From("archived_users")).
+    OrderBy("name").Limit(20).                      // first 20 names of the union
+    All(&names)
+
+// BEFORE Union they choose the first branch's rows (here: its 5 newest)
+db.Select("id").From("orders").OrderBy("id DESC").Limit(5).
+    Union(db.Select("id").From("pinned_orders")).
+    OrderBy("id").All(&ids)
+
+// Each operation applies to everything before it: (a ∪ b) ∩ c on every database
+a.Union(b).Intersect(c)
+a.Union(b.Intersect(c))                             // the other grouping: a ∪ (b ∩ c)
+
+// Sort by an expression or a qualified name: wrap the compound (PostgreSQL takes only
+// output column names or numbers in a compound's ORDER BY; MySQL rejects table.col)
+db.Select().FromSelect(a.Union(b), "u").OrderByExpr("id % 2, id").All(&rows)
+```
+
+Errors (returned when the query runs):
+- `OrderBy` in a branch without `Limit`/`Offset` (`a.OrderBy("x").Union(b)`) orders nothing — PostgreSQL and MySQL
+  ignore it — so it is an error: call `OrderBy` after `Union`.
+- A set operation after the combined result's `OrderBy`/`Limit`/`Offset` (`a.Union(b).OrderBy("x").Union(c)`):
+  pass the sorted compound as a query instead (`c.Union(sorted)`, `FromSelect(sorted, "u")`).
+
+Before v0.20.0 (and in ozzo-dbx) `OrderBy`/`Limit` after `Union` went into the first branch, and
+`a.Union(b).Intersect(c)` was sent flat, which PostgreSQL and MySQL read as `a ∪ (b ∩ c)`.
+
+---
+
 ## Primary Key Configuration
 
 ```go
@@ -928,8 +964,8 @@ count, err := db.Select().From("users").
 
 `Count()` is the number of rows `All` would return and `Exists()` whether there is one (v0.20.0): with `GroupBy`
 the number of groups, with `Having`/`Distinct`/`Union`/CTEs and aggregates (`Select("MAX(total)")` counts 1)
-applied. `OrderBy`, `Limit` and `Offset` are ignored, so a paginated query reports its total — except in a set
-operation, where they belong to the first branch (`a.Limit(1).Union(b)`) and are kept:
+applied. The result's `OrderBy`, `Limit` and `Offset` are ignored, so a paginated query reports its total — in a
+set operation those called after `Union`; the first branch's (`a.Limit(1).Union(b)`) choose its rows and are kept:
 
 ```go
 page := db.Select().From("orders").Where(relica.Eq("user_id", id)).OrderBy("id DESC").Limit(20).Offset(40)

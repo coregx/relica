@@ -802,6 +802,25 @@ a `Delete` with one deleted the whole table); now it fails with `no such column`
 
 **Find affected code:** `grep -rnE 'OrderBy\("[^"]* [^"]* ' --include=*.go .` and every `OrderBy(` whose argument is built at run time.
 
+## Set operations read left to right
+
+| v0.19 code | v0.19 result | v0.20.0 result | Change your code to |
+|---|---|---|---|
+| `a.Union(b).OrderBy("name").Limit(10)` | `a` sorted and limited to 10, then all of `b`, unsorted | the first 10 of the union, sorted | nothing — this is what the code says |
+| `a.OrderBy("x").Limit(5).Union(b)` | 5 rows of `a` plus `b` | unchanged | — |
+| `a.OrderBy("x").Union(b)` (branch sort without Limit) | sent, ordered nothing | error | `a.Union(b).OrderBy("x")` |
+| `a.Union(b).OrderBy("x").Union(c)` | `x` sorted `a` | error | sort last: `a.Union(b).Union(c).OrderBy("x")`, or `c.Union(sorted)` |
+| `a.Union(b).Intersect(c)` | PostgreSQL/MySQL: `a ∪ (b ∩ c)`, SQLite: `(a ∪ b) ∩ c` | `(a ∪ b) ∩ c` everywhere | `a.Union(b.Intersect(c))` for the other grouping |
+| `a.Union(b).Limit(1).Count()` | counted `a` limited to 1, plus `b` | counts the whole union (the paging is ignored, as for any query) | — |
+
+v0.19 behaved like ozzo-dbx here, so code ported from ozzo-dbx changes the same way: `OrderBy`/`Limit` after `Union`
+now apply to the combined result, as jOOQ, Laravel, goqu and SQLAlchemy define it. To sort by an expression, wrap the
+compound: `db.Select().FromSelect(a.Union(b), "u").OrderByExpr(...)`.
+
+**Find affected code:** `grep -rnE '\.(Union|UnionAll|Intersect|Except)\(' --include=*.go .` and check what each
+chain calls after it, and whether a branch passed in carries `OrderBy` without `Limit`. The skill's `audit.sh` reports
+these chains (V11).
+
 ## Errors inside subqueries, set operations and CTEs
 
 A construction error inside a `FromSelect` subquery, a `Union`/`UnionAll`/`Intersect`/`Except` branch or a CTE used
