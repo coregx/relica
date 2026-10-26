@@ -923,16 +923,14 @@ count, err := db.Select().From("users").
 ```
 
 `Count()` is the number of rows `All` would return and `Exists()` whether there is one (v0.20.0): with `GroupBy`
-the number of groups, with `Having`/`Distinct`/`Union`/CTEs applied. `OrderBy`, `Limit` and `Offset` are ignored,
-so a paginated query reports its total:
+the number of groups, with `Having`/`Distinct`/`Union`/CTEs and aggregates (`Select("MAX(total)")` counts 1)
+applied. `OrderBy`, `Limit` and `Offset` are ignored, so a paginated query reports its total — except in a set
+operation, where they belong to the first branch (`a.Limit(1).Union(b)`) and are kept:
 
 ```go
 page := db.Select().From("orders").Where(relica.Eq("user_id", id)).OrderBy("id DESC").Limit(20).Offset(40)
 total, err := page.Count() // all of the user's orders, not 20
 ```
-
-A select list that aggregates without `GroupBy` (`Select("MAX(total)")`) is replaced by `COUNT(*)`: use `Row` for
-such queries.
 
 ### ToSQL (Query Preview)
 

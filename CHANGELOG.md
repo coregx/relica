@@ -49,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`Count()` with `GroupBy` returned the first group's row count**; it now returns the number of groups (the rows `All` would return), as GORM does. `GroupByExpr`/`GroupBySub` items were dropped from the count while `Having` stayed; both now apply
 - **`Count()` ignored `Distinct`, set operations and CTEs**: `Distinct` counted every row, `Union`/`Intersect`/`Except` counted only the first branch, a CTE was dropped (the query failed with "no such table"). They now apply: grouped, distinct and compound queries are counted as a derived table `SELECT COUNT(*) FROM (...) AS relica_count`
 - **`Exists()` dropped `GroupBy`, `Having`, `Distinct`, set operations and CTEs** (it sent `SELECT 1` with only FROM, JOIN and WHERE), so a `Having` that filtered every group still returned true and a match in a later `Union` branch returned false. It now sends the query itself inside `SELECT EXISTS(...)`
+- **`Count()` on a select list that aggregates without `GroupBy`** (`Select("MAX(x)")`, `SelectExpr("SUM(x) AS s")`) returned the number of matching rows instead of 1; a select list with anything but plain columns is now counted as a derived table
 - `OrderBy`, `Limit` and `Offset` stay ignored by both (a paginated query reports its total); in a set operation they belong to the first branch and are kept
 
 ### Changed (breaking) — `OrderBy` takes "column [ASC|DESC]" only

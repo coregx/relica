@@ -1695,10 +1695,11 @@ func (sq *SelectQuery) Column(slice any) error {
 // Count returns the number of rows the query would return: with GROUP BY the
 // number of groups, with DISTINCT the number of distinct rows, with a set
 // operation the rows of the compound result. ORDER BY, LIMIT and OFFSET are
-// ignored, so a paginated query reports its total. A plain query is sent as
-// SELECT COUNT(*) with its FROM, JOIN and WHERE; a query with GROUP BY, HAVING,
-// DISTINCT or a set operation is counted as a derived table. A select list that
-// aggregates without GROUP BY is replaced by COUNT(*) like any other.
+// ignored, so a paginated query reports its total; in a set operation they
+// belong to the first branch and are kept. A query whose select list is plain
+// columns is sent as SELECT COUNT(*) with its FROM, JOIN and WHERE; one with
+// GROUP BY, HAVING, DISTINCT, a set operation or an expression in the select
+// list (which may aggregate) is counted as a derived table.
 //
 // Example:
 //
@@ -1753,20 +1754,35 @@ const countAlias = "relica_count"
 // countStatement renders the SQL Count sends (see Count).
 func (sq *SelectQuery) countStatement() (string, []any) {
 	src := sq.aggregateSource()
-	if len(src.groupBy) > 0 || len(src.havingClauses) > 0 || src.distinct || len(src.unions) > 0 {
+	if len(src.groupBy) > 0 || len(src.havingClauses) > 0 || src.distinct || len(src.unions) > 0 ||
+		src.selectListHasExpr() {
 		inner, args := src.renderSQL(sq.builder.db.dialect)
 		sq.keepRenderErr(src)
 		return sq.withAggregate("SELECT COUNT(*) FROM ("+inner+") AS "+countAlias, args)
 	}
-	// The select list does not change the number of rows: drop it, and with
-	// it the parameters of SelectExpr and SelectSub.
+	// A list of plain columns does not change the number of rows: replace it,
+	// with no parameters to drop.
 	src.columns = []string{"COUNT(*)"}
-	src.selectExprs = nil
-	src.subExprs = nil
-	src.distinct = false
 	body, args := src.renderSQL(sq.builder.db.dialect)
 	sq.keepRenderErr(src)
 	return sq.withAggregate(body, args)
+}
+
+// selectListHasExpr reports whether the select list holds anything besides
+// plain column references: a SelectExpr, a SelectSub, or a Select argument
+// with "(" (a function call). Such a list may aggregate — MAX(x) without
+// GROUP BY returns one row — so Count cannot replace it with COUNT(*); telling
+// aggregates from other expressions by their text would be a guess.
+func (sq *SelectQuery) selectListHasExpr() bool {
+	if len(sq.selectExprs) > 0 || len(sq.subExprs) > 0 {
+		return true
+	}
+	for _, c := range sq.columns {
+		if strings.Contains(c, "(") {
+			return true
+		}
+	}
+	return false
 }
 
 // existsStatement renders the SQL Exists sends (see Exists).

@@ -2236,10 +2236,10 @@ func (sq *SelectQuery) Column(slice any) error {
 }
 
 // Count returns the number of rows All would return: with GroupBy the number
-// of groups; Having, Distinct, set operations and CTEs apply. OrderBy, Limit
-// and Offset are ignored, so a paginated query reports its total. A select
-// list that aggregates without GroupBy is replaced by COUNT(*): use Row for
-// such queries.
+// of groups, and a select list that aggregates without GroupBy counts 1;
+// Having, Distinct, set operations and CTEs apply. OrderBy, Limit and Offset
+// are ignored, so a paginated query reports its total — except in a set
+// operation, where they belong to the first branch and are kept.
 //
 // Example:
 //
@@ -2250,7 +2250,8 @@ func (sq *SelectQuery) Count() (int64, error) {
 
 // Exists reports whether the query returns at least one row, by the same rule
 // as Count (GroupBy, Having, Distinct, set operations and CTEs apply; OrderBy,
-// Limit and Offset are ignored). The query is sent inside SELECT EXISTS(...).
+// Limit and Offset are ignored except in the first branch of a set operation).
+// The query is sent inside SELECT EXISTS(...).
 //
 // Example:
 //
