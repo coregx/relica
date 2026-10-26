@@ -45,30 +45,6 @@ func wrapErrNotFound() error {
 	return fmt.Errorf("%w: %w", ErrNotFound, sql.ErrNoRows)
 }
 
-// WrapError wraps an error with additional context message.
-func WrapError(err error, message string) error {
-	if err == nil {
-		return nil
-	}
-	return &wrappedError{
-		msg: message,
-		err: err,
-	}
-}
-
-type wrappedError struct {
-	msg string
-	err error
-}
-
-func (e *wrappedError) Error() string {
-	return e.msg + ": " + e.err.Error()
-}
-
-func (e *wrappedError) Unwrap() error {
-	return e.err
-}
-
 // ============================================================================
 // Cross-database error classification helpers
 // ============================================================================

@@ -1,7 +1,6 @@
 package logger
 
 import (
-	"fmt"
 	"regexp"
 	"strings"
 )
@@ -116,37 +115,4 @@ func (s *Sanitizer) containsSensitivePattern(sql string) bool {
 		}
 	}
 	return false
-}
-
-// FormatParams converts parameters to a safe string representation for logging.
-// Sensitive values should be masked using MaskParams before calling this.
-func (s *Sanitizer) FormatParams(params []any) string {
-	if len(params) == 0 {
-		return "[]"
-	}
-
-	parts := make([]string, len(params))
-	for i, p := range params {
-		parts[i] = s.formatValue(p)
-	}
-
-	return "[" + strings.Join(parts, ", ") + "]"
-}
-
-// formatValue formats a single parameter value for logging.
-// Truncates very long strings to prevent log pollution.
-func (s *Sanitizer) formatValue(v any) string {
-	if v == nil {
-		return "NULL"
-	}
-
-	str := fmt.Sprintf("%v", v)
-
-	// Truncate very long values
-	const maxLen = 100
-	if len(str) > maxLen {
-		return str[:maxLen] + "..."
-	}
-
-	return str
 }

@@ -90,13 +90,6 @@ func (h *healthChecker) isHealthy() bool {
 	return h.lastErr == nil
 }
 
-// lastError returns the error from the most recent health check.
-func (h *healthChecker) lastError() error {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return h.lastErr
-}
-
 // lastCheck returns the time of the most recent health check.
 func (h *healthChecker) lastCheck() time.Time {
 	h.mu.RLock()

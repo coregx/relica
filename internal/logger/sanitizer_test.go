@@ -1,7 +1,6 @@
 package logger
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -127,78 +126,6 @@ func TestSanitizer_MaskParams_CustomFields(t *testing.T) {
 	}
 }
 
-func TestSanitizer_FormatParams(t *testing.T) {
-	sanitizer := NewSanitizer(nil)
-
-	tests := []struct {
-		name   string
-		params []interface{}
-		want   string
-	}{
-		{
-			name:   "Empty params",
-			params: []interface{}{},
-			want:   "[]",
-		},
-		{
-			name:   "Single param",
-			params: []interface{}{123},
-			want:   "[123]",
-		},
-		{
-			name:   "Multiple params",
-			params: []interface{}{123, "Alice", true},
-			want:   "[123, Alice, true]",
-		},
-		{
-			name:   "NULL value",
-			params: []interface{}{nil},
-			want:   "[NULL]",
-		},
-		{
-			name:   "Masked value",
-			params: []interface{}{"***REDACTED***"},
-			want:   "[***REDACTED***]",
-		},
-		{
-			name:   "Long string truncation",
-			params: []interface{}{strings.Repeat("a", 150)},
-			want:   "[" + strings.Repeat("a", 100) + "...]",
-		},
-		{
-			name:   "Mixed types",
-			params: []interface{}{1, "test", nil, true, 3.14},
-			want:   "[1, test, NULL, true, 3.14]",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := sanitizer.FormatParams(tt.params)
-			if got != tt.want {
-				t.Errorf("got %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestSanitizer_FormatParams_AfterMasking(t *testing.T) {
-	sanitizer := NewSanitizer(nil)
-
-	sql := "UPDATE users SET password = ? WHERE id = ?"
-	params := []interface{}{"secretPassword123", 1}
-
-	masked := sanitizer.MaskParams(sql, params)
-	formatted := sanitizer.FormatParams(masked)
-
-	if formatted != "[***REDACTED***, ***REDACTED***]" {
-		t.Errorf("got %v, want %v", formatted, "[***REDACTED***, ***REDACTED***]")
-	}
-	if strings.Contains(formatted, "secretPassword123") {
-		t.Errorf("%q should not contain %q", formatted, "secretPassword123")
-	}
-}
-
 func TestSanitizer_WordBoundaries(t *testing.T) {
 	sanitizer := NewSanitizer(nil)
 
@@ -255,16 +182,6 @@ func BenchmarkSanitizer_MaskParams_NonSensitive(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = sanitizer.MaskParams(sql, params)
-	}
-}
-
-func BenchmarkSanitizer_FormatParams(b *testing.B) {
-	sanitizer := NewSanitizer(nil)
-	params := []interface{}{123, "Alice", true, nil, 3.14}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = sanitizer.FormatParams(params)
 	}
 }
 
