@@ -311,6 +311,40 @@ func TestDocs_NoInternalImports(t *testing.T) {
 	}
 }
 
+// selectExprStringArg matches SelectExpr("expr", "text" — possibly across
+// lines. The arguments after the expression are bound to its placeholders, so
+// a second string there (an alias, another column) is a parameter: with no
+// "?" in the expression the query fails with "0 placeholders but N args".
+var selectExprStringArg = regexp.MustCompile(`\bSelectExpr\(\s*"[^"?]*"\s*,\s*"`)
+
+// TestDocs_SelectExprArgsAreParameters keeps aliases and column lists out of
+// SelectExpr's parameter list in examples: the alias goes inside the
+// expression ("ROW_NUMBER() OVER (...) AS row_num"), one SelectExpr per
+// expression. Counter-examples follow the same skips as the column guard.
+func TestDocs_SelectExprArgsAreParameters(t *testing.T) {
+	for _, file := range publicDocs(t) {
+		if file == "CHANGELOG.md" {
+			continue
+		}
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(data)
+		lines := strings.Split(text, "\n")
+		for _, loc := range selectExprStringArg.FindAllStringIndex(text, -1) {
+			n := strings.Count(text[:loc[0]], "\n")
+			line := lines[n]
+			if strings.Contains(line, "not SelectExpr") ||
+				(n > 0 && (strings.Contains(lines[n-1], "WRONG") || strings.Contains(lines[n-1], "❌"))) {
+				continue
+			}
+			t.Errorf("%s:%d SelectExpr binds its later arguments as parameters; put the alias in the expression: %s",
+				file, n+1, strings.TrimSpace(line))
+		}
+	}
+}
+
 func contains(list []string, s string) bool {
 	for _, v := range list {
 		if v == s {

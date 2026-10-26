@@ -957,16 +957,14 @@ Relica supports window functions via `SelectExpr()` for advanced analytics:
 
 ```go
 // Rank users by order total within each country
-db.Select().
-    SelectExpr("user_id", "country", "total",
-        "RANK() OVER (PARTITION BY country ORDER BY total DESC) as rank").
+db.Select("user_id", "country", "total").
+    SelectExpr("RANK() OVER (PARTITION BY country ORDER BY total DESC) AS rank_no").
     From("orders").
     All(&rankedOrders)
 
 // Running totals with frame specification
-db.Select().
-    SelectExpr("date", "amount",
-        "SUM(amount) OVER (ORDER BY date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) as running_total").
+db.Select("date", "amount").
+    SelectExpr("SUM(amount) OVER (ORDER BY date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_total").
     From("transactions").
     OrderBy("date").
     All(&runningTotals)
