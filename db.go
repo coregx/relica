@@ -2229,8 +2229,11 @@ func (sq *SelectQuery) Column(slice any) error {
 	return sq.sq.Column(slice)
 }
 
-// Count executes a COUNT(*) query and returns the number of matching rows.
-// Any columns specified in Select() are ignored; COUNT(*) is always used.
+// Count returns the number of rows All would return: with GroupBy the number
+// of groups; Having, Distinct, set operations and CTEs apply. OrderBy, Limit
+// and Offset are ignored, so a paginated query reports its total. A select
+// list that aggregates without GroupBy is replaced by COUNT(*): use Row for
+// such queries.
 //
 // Example:
 //
@@ -2239,7 +2242,9 @@ func (sq *SelectQuery) Count() (int64, error) {
 	return sq.sq.Count()
 }
 
-// Exists executes the query wrapped in SELECT EXISTS(...) and returns true if any rows match.
+// Exists reports whether the query returns at least one row, by the same rule
+// as Count (GroupBy, Having, Distinct, set operations and CTEs apply; OrderBy,
+// Limit and Offset are ignored). The query is sent inside SELECT EXISTS(...).
 //
 // Example:
 //
