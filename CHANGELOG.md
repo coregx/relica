@@ -78,6 +78,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A `*SelectQuery` passed as a value** — `In("id", sub)`, `Eq`, `HashExp`, `Coalesce`, a `Set` value — was bound as a query argument: `ToSQL()` showed a plain `?` and the driver failed with "unsupported type relica.SelectQuery". It is a build error naming `sub.AsExpression()`, the way to pass a subquery; nothing is sent
 - **`relica.Open` with a driver that has no SQL dialect panicked**; it returns an error naming the supported driver names, before the pool is opened. The message no longer points at the internal `dialects.RegisterDialect`
 - **An error inside an embedded query was dropped** — a `FromSelect` subquery, a `Union`/`UnionAll`/`Intersect`/`Except` branch or a `With`/`WithRecursive` CTE with an invalid condition (for example a `Like(...).EscapeChars("!")`) lost that condition, and the statement ran unfiltered. The error now fails the outer statement — `All`, `One`, `Column`, `Count`, `Exists`, `Explain` — at any depth, including subqueries passed to `In`/`Exists`/`SelectSub` via `AsExpression()`. `Count()`, `Exists()` and `Explain()` also ignored the query's own construction error
 - **A subquery in `SelectSub`, `OrderBySub` or `GroupBySub` lost an error it got after being added** (the check ran only when it was added, and the subquery rendered without its invalid condition); the error now fails the outer query. **`OrderBySub`/`GroupBySub` with a subquery rendered `ORDER BY SELECT …`** without parentheses; they now wrap it like `SelectSub`

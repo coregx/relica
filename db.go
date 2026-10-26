@@ -2372,7 +2372,7 @@ func (uq *UpdateQuery) WithContext(ctx context.Context) *UpdateQuery {
 //
 //	Update("users").Set(map[string]any{"status": 2})
 func (uq *UpdateQuery) Set(values map[string]any) *UpdateQuery {
-	uq.uq.Set(values)
+	uq.uq.Set(coreValues(values))
 	return uq
 }
 
