@@ -156,14 +156,17 @@ type ScanMode int
 const (
 	// ScanRequireFields (default): a struct field without a matching result
 	// column is an error — it would otherwise stay zero silently. When the
-	// query lists its columns (Select("id", "name")) only those are required.
-	// Fields tagged db:"-" are never required. Extra result columns are ignored.
+	// query lists its columns (Select("id", "name")) only those are required,
+	// and each of them must have a field. Fields tagged db:"-" are never
+	// required. Extra columns of an unlisted result (Select() of a wider
+	// table) are ignored. Two result columns for one field (Select("a.id",
+	// "b.id"), SELECT * over a join) are an error: alias one of them.
 	ScanRequireFields ScanMode = iota
 	// ScanLenient is ozzo-dbx's behavior: unmatched fields keep their value,
-	// unmatched columns are discarded, no error.
+	// unmatched columns are discarded, a repeated column overwrites, no error.
 	ScanLenient
-	// ScanStrict is ScanRequireFields plus an error for a result column that
-	// matches no field.
+	// ScanStrict is ScanRequireFields plus an error for any result column that
+	// matches no field, listed or not.
 	ScanStrict
 )
 

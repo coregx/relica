@@ -13,14 +13,15 @@ type ScanMode int
 
 const (
 	// ScanRequireFields (default): a mapped struct field without a result column
-	// is an error, unless the query lists its columns (Select("id", "name"));
-	// extra result columns are ignored.
+	// is an error, unless the query lists its columns (Select("id", "name")) —
+	// then every listed column must have a field instead. Extra columns of an
+	// unlisted result are ignored; two result columns for one field are an error.
 	ScanRequireFields ScanMode = iota
 	// ScanLenient is ozzo-dbx's behavior: unmatched fields keep their value,
-	// unmatched columns are discarded, no error.
+	// unmatched columns are discarded, a repeated column overwrites, no error.
 	ScanLenient
-	// ScanStrict is ScanRequireFields plus an error for a result column that
-	// matches no field.
+	// ScanStrict is ScanRequireFields plus an error for any result column that
+	// matches no field, listed or not.
 	ScanStrict
 )
 
@@ -62,13 +63,23 @@ func (s scanSettings) plan(t reflect.Type, columns []string) ([]*modelField, err
 			key = key[dot+1:]
 		}
 		if f, ok := mi.byColumn[key]; ok {
+			if matched[f] && s.mode != ScanLenient {
+				// Two result columns for one field: the later scan overwrote the
+				// earlier one without a word (Select("a.id", "b.id"), or SELECT *
+				// over a join where both tables have id).
+				return nil, fmt.Errorf("relica: scanning into %s: result column %q (field %s) appears more than once; "+
+					"alias one of them (AS) or drop it", t, col, f.field.Name)
+			}
 			plan[i] = f
 			matched[f] = true
 			continue
 		}
-		if s.mode == ScanStrict {
+		if s.mode == ScanStrict || (s.mode == ScanRequireFields && s.listed) {
+			// The code named this column (Select("id", "email")) and no field
+			// takes it: it would be read and dropped. Select() of a wider table,
+			// or Select("t.*"), lists nothing, so its extra columns stay ignored.
 			return nil, fmt.Errorf("relica: scanning into %s: result column %q matches no field "+
-				"(ScanStrict: add a field, drop the column from the query, or use ScanRequireFields)", t, col)
+				"(add a field, drop the column from the query, or use ScanLenient)", t, col)
 		}
 	}
 	if s.mode != ScanLenient && !s.listed {
