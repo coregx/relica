@@ -349,6 +349,10 @@ func (sq *SelectQuery) FromSelect(subquery *SelectQuery, alias string) *SelectQu
 		sq.buildErr = fmt.Errorf("relica: FromSelect requires a non-empty alias for the subquery")
 		return sq
 	}
+	if subquery == nil {
+		sq.buildErr = fmt.Errorf("relica: FromSelect requires a non-nil subquery")
+		return sq
+	}
 	sq.fromSrc = &fromSource{
 		isSubquery: true,
 		subquery:   subquery,
@@ -697,9 +701,17 @@ func (sq *SelectQuery) Offset(offset int64) *SelectQuery {
 //
 // Note: Column count and types must match between queries.
 func (sq *SelectQuery) Union(other *SelectQuery) *SelectQuery {
-	if other != nil {
-		sq.unions = append(sq.unions, unionInfo{query: other, all: false, op: "UNION"})
+	return sq.addSetOperation("Union", other, unionInfo{query: other, all: false, op: "UNION"})
+}
+
+// addSetOperation appends a set-operation branch; a nil branch is a build
+// error, not a silently dropped branch.
+func (sq *SelectQuery) addSetOperation(method string, other *SelectQuery, u unionInfo) *SelectQuery {
+	if other == nil {
+		sq.buildErr = fmt.Errorf("relica: %s() requires a non-nil query", method)
+		return sq
 	}
+	sq.unions = append(sq.unions, u)
 	return sq
 }
 
@@ -716,10 +728,7 @@ func (sq *SelectQuery) Union(other *SelectQuery) *SelectQuery {
 //
 //	(SELECT id FROM orders_2023) UNION ALL (SELECT id FROM orders_2024)
 func (sq *SelectQuery) UnionAll(other *SelectQuery) *SelectQuery {
-	if other != nil {
-		sq.unions = append(sq.unions, unionInfo{query: other, all: true, op: "UNION"})
-	}
-	return sq
+	return sq.addSetOperation("UnionAll", other, unionInfo{query: other, all: true, op: "UNION"})
 }
 
 // Intersect combines this query with another using INTERSECT (rows in both queries).
@@ -740,10 +749,7 @@ func (sq *SelectQuery) UnionAll(other *SelectQuery) *SelectQuery {
 //   - MySQL 8.0.31+: ✓ (earlier versions will return error)
 //   - SQLite 3.25+: ✓
 func (sq *SelectQuery) Intersect(other *SelectQuery) *SelectQuery {
-	if other != nil {
-		sq.unions = append(sq.unions, unionInfo{query: other, all: false, op: "INTERSECT"})
-	}
-	return sq
+	return sq.addSetOperation("Intersect", other, unionInfo{query: other, all: false, op: "INTERSECT"})
 }
 
 // Except combines this query with another using EXCEPT (rows in first but not second).
@@ -765,10 +771,7 @@ func (sq *SelectQuery) Intersect(other *SelectQuery) *SelectQuery {
 //   - MySQL 8.0.31+: ✓ (earlier versions will return error)
 //   - SQLite 3.25+: ✓
 func (sq *SelectQuery) Except(other *SelectQuery) *SelectQuery {
-	if other != nil {
-		sq.unions = append(sq.unions, unionInfo{query: other, all: false, op: "EXCEPT"})
-	}
-	return sq
+	return sq.addSetOperation("Except", other, unionInfo{query: other, all: false, op: "EXCEPT"})
 }
 
 // With adds a Common Table Expression (CTE) to the query.
@@ -1421,6 +1424,47 @@ func (sq *SelectQuery) buildSetOperations(mainQuery string, allParams []any, dia
 	return mainSQL, allParams
 }
 
+// errQueryCycle reports a query that contains itself, for example
+// q.Union(q): rendering it would never end.
+var errQueryCycle = errors.New("relica: a query cannot contain itself (FromSelect, set operation or CTE)")
+
+// err returns the first construction error of the query or of a query it
+// embeds: the FromSelect subquery, the set-operation branches and the CTEs.
+// Each of them is rendered into this statement, so its error is this
+// statement's error. Subqueries passed as expressions (In, Exists, SelectSub)
+// are checked when they are added, by ExpressionError.
+func (sq *SelectQuery) err() error {
+	return sq.errVisiting(map[*SelectQuery]bool{})
+}
+
+func (sq *SelectQuery) errVisiting(path map[*SelectQuery]bool) error {
+	if sq.buildErr != nil {
+		return sq.buildErr
+	}
+	if path[sq] {
+		return errQueryCycle
+	}
+	path[sq] = true
+	defer delete(path, sq)
+
+	if sq.fromSrc != nil && sq.fromSrc.subquery != nil {
+		if err := sq.fromSrc.subquery.errVisiting(path); err != nil {
+			return err
+		}
+	}
+	for _, u := range sq.unions {
+		if err := u.query.errVisiting(path); err != nil {
+			return err
+		}
+	}
+	for _, c := range sq.ctes {
+		if err := c.query.errVisiting(path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Build constructs the Query object from SelectQuery.
 // If a programming error was stored during query construction (e.g., wrong type
 // passed to Where), the error is propagated through the Query and returned by
@@ -1432,6 +1476,9 @@ func (sq *SelectQuery) Build() *Query {
 		ctx = sq.builder.ctx
 	}
 
+	if sq.buildErr == nil {
+		sq.buildErr = sq.err()
+	}
 	if sq.buildErr == nil {
 		sq.buildErr = sq.lockError()
 	}
@@ -1591,6 +1638,9 @@ func (sq *SelectQuery) Column(slice any) error {
 //
 //	count, err := db.Select().From("users").Where(relica.Eq("status", 1)).Count()
 func (sq *SelectQuery) Count() (int64, error) {
+	if err := sq.err(); err != nil {
+		return 0, err
+	}
 	if sq.lockClause != "" {
 		return 0, errLockWithAggregate
 	}
@@ -1631,6 +1681,9 @@ func (sq *SelectQuery) countQuery() *SelectQuery {
 //
 //	exists, err := db.Select().From("users").Where(relica.Eq("email", email)).Exists()
 func (sq *SelectQuery) Exists() (bool, error) {
+	if err := sq.err(); err != nil {
+		return false, err
+	}
 	if sq.lockClause != "" {
 		return false, errLockWithAggregate
 	}
@@ -1648,6 +1701,9 @@ func (sq *SelectQuery) Exists() (bool, error) {
 	}
 
 	innerSQL, innerParams := innerQuery.buildSQL(sq.builder.db.dialect)
+	if innerQuery.buildErr != nil {
+		return false, innerQuery.buildErr
+	}
 
 	// Wrap in SELECT EXISTS(...)
 	existsSQL := "SELECT EXISTS(" + innerSQL + ")"
@@ -1729,8 +1785,14 @@ func (sq *SelectQuery) ExplainAnalyze() (*QueryPlan, error) {
 
 // explainQuery implements query analysis using database EXPLAIN functionality.
 func (sq *SelectQuery) explainQuery(withAnalyze bool) (*QueryPlan, error) {
+	if err := sq.err(); err != nil {
+		return nil, err
+	}
 	// Build the SELECT query
 	sqlQuery, params := sq.buildSQL(sq.builder.db.dialect)
+	if sq.buildErr != nil {
+		return nil, sq.buildErr
+	}
 
 	// Context priority: query ctx > builder ctx > background
 	ctx := sq.ctx

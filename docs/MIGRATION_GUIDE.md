@@ -755,6 +755,14 @@ conditions assembled from optional filters (`relica.And(conds...)` where `conds`
 Column names in SQL (`Select("col")`, `Where`/`HashExp` keys, `OrderBy`) are not checked by Relica — the database
 rejects unknown columns itself.
 
+## Errors inside subqueries, set operations and CTEs
+
+A construction error inside a `FromSelect` subquery, a `Union`/`UnionAll`/`Intersect`/`Except` branch or a CTE used
+to be dropped together with the condition that caused it, so the statement ran without that filter. It now fails the
+whole statement (`All`, `One`, `Count`, `Exists`, `Explain`). Code that saw no error before and now gets one was
+running an unfiltered query: fix the condition the error names. `nil` passed to these methods panicked before and
+returns an error now.
+
 ## Removed
 
 | Removed | Use |

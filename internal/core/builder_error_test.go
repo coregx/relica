@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -418,5 +419,78 @@ func TestLikeExp_BuildErr_EscapeChars_ValidAfterError(t *testing.T) {
 
 	if exp.Err() == nil {
 		t.Error("expected non-nil error")
+	}
+}
+
+// TestSelectQuery_Err_NestedAndCycle verifies that a construction error inside
+// an embedded query (FromSelect, set-operation branch, CTE) fails the outer
+// statement, and that a query containing itself is an error instead of an
+// endless render.
+func TestSelectQuery_Err_NestedAndCycle(t *testing.T) {
+	db := mockDB("postgres")
+	qb := &QueryBuilder{db: db}
+	bad := func() *SelectQuery { return qb.Select("id").From("t").Where(42) }
+
+	cases := map[string]*SelectQuery{
+		"FromSelect":      qb.Select("id").FromSelect(bad(), "s"),
+		"Union":           qb.Select("id").From("a").Union(bad()),
+		"With":            qb.Select("id").With("c", bad()).From("c"),
+		"FromSelectUnion": qb.Select("id").FromSelect(qb.Select("id").From("a").Except(bad()), "s"),
+	}
+	for name, sq := range cases {
+		if q := sq.Build(); q.prepErr == nil || !strings.Contains(q.prepErr.Error(), "Where()") {
+			t.Errorf("%s: Build prepErr = %v, want the nested Where() error", name, q.prepErr)
+		}
+	}
+
+	self := qb.Select("id").From("a")
+	self.Union(self)
+	if q := self.Build(); !errors.Is(q.prepErr, errQueryCycle) {
+		t.Errorf("q.Union(q): prepErr = %v, want errQueryCycle", q.prepErr)
+	}
+
+	a := qb.Select("id").From("a")
+	b := qb.Select("id").FromSelect(a, "s")
+	a.UnionAll(b)
+	if _, err := b.Count(); !errors.Is(err, errQueryCycle) {
+		t.Errorf("mutual cycle: Count err = %v, want errQueryCycle", err)
+	}
+	if _, err := b.Exists(); !errors.Is(err, errQueryCycle) {
+		t.Errorf("mutual cycle: Exists err = %v, want errQueryCycle", err)
+	}
+
+	// The same branch twice is not a cycle.
+	shared := qb.Select("id").From("b")
+	if q := qb.Select("id").From("a").Union(shared).UnionAll(shared).Build(); q.prepErr != nil {
+		t.Errorf("shared branch: prepErr = %v, want nil", q.prepErr)
+	}
+}
+
+// TestSelectQuery_Err_NilArguments verifies that nil subqueries are build
+// errors, not silently dropped branches.
+func TestSelectQuery_Err_NilArguments(t *testing.T) {
+	db := mockDB("postgres")
+	qb := &QueryBuilder{db: db}
+	for name, sq := range map[string]*SelectQuery{
+		"Union":      qb.Select("id").From("a").Union(nil),
+		"UnionAll":   qb.Select("id").From("a").UnionAll(nil),
+		"Intersect":  qb.Select("id").From("a").Intersect(nil),
+		"Except":     qb.Select("id").From("a").Except(nil),
+		"FromSelect": qb.Select("id").FromSelect(nil, "s"),
+	} {
+		if sq.buildErr == nil || !strings.Contains(sq.buildErr.Error(), name) || !strings.Contains(sq.buildErr.Error(), "non-nil") {
+			t.Errorf("%s(nil): buildErr = %v", name, sq.buildErr)
+		}
+	}
+}
+
+// TestSelectQuery_Explain_BuildError verifies that Explain reports a
+// construction error instead of explaining the statement without it.
+func TestSelectQuery_Explain_BuildError(t *testing.T) {
+	db := mockDB("postgres")
+	qb := &QueryBuilder{db: db}
+	bad := qb.Select("id").From("t").Where(42)
+	if _, err := qb.Select("id").FromSelect(bad, "s").Explain(); err == nil || !strings.Contains(err.Error(), "Where()") {
+		t.Errorf("Explain err = %v, want the nested Where() error", err)
 	}
 }

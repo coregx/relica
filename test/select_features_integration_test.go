@@ -190,7 +190,6 @@ func runSelectFeatureTests(t *testing.T, db *relica.DB, dialect string) {
 	})
 
 	t.Run("FromSelect_SubqueryBuildError_Propagates", func(t *testing.T) {
-		t.Skip("BUG: FromSelect ignores the subquery's build error: its invalid Where is dropped and the outer query runs over the unfiltered subquery")
 		sub := db.Select("id").From("sf_emp").Where(sfBadLike())
 		var ids []int
 		err := db.Select("id").FromSelect(sub, "s").Column(&ids)
@@ -199,7 +198,6 @@ func runSelectFeatureTests(t *testing.T, db *relica.DB, dialect string) {
 	})
 
 	t.Run("FromSelect_NilSubquery_NoPanic", func(t *testing.T) {
-		t.Skip("BUG: SelectQuery.FromSelect(nil, alias) panics with a nil pointer dereference (db.go wrapper reads subquery.sq)")
 		var err error
 		panicked := sfPanics(func() {
 			var ids []int
@@ -602,7 +600,6 @@ func runSelectFeatureTests(t *testing.T, db *relica.DB, dialect string) {
 	})
 
 	t.Run("SetOperations_BranchBuildError_Propagates", func(t *testing.T) {
-		t.Skip("BUG: Union/UnionAll/Intersect/Except ignore the other branch's build error: its invalid Where is dropped and the branch runs unfiltered")
 		bad := func() *relica.SelectQuery { return db.Select("id").From("sf_emp").Where(sfBadLike()) }
 		for name, compound := range map[string]*relica.SelectQuery{
 			"Union":     lowIDs().Union(bad()),
@@ -618,14 +615,19 @@ func runSelectFeatureTests(t *testing.T, db *relica.DB, dialect string) {
 	})
 
 	t.Run("SetOperations_NilOther_NoPanic", func(t *testing.T) {
-		t.Skip("BUG: Union/UnionAll/Intersect/Except(nil) panic with a nil pointer dereference (db.go wrappers read other.sq; core ignores nil)")
 		for name, op := range map[string]func(*relica.SelectQuery) *relica.SelectQuery{
 			"Union":     func(o *relica.SelectQuery) *relica.SelectQuery { return lowIDs().Union(o) },
 			"UnionAll":  func(o *relica.SelectQuery) *relica.SelectQuery { return lowIDs().UnionAll(o) },
 			"Intersect": func(o *relica.SelectQuery) *relica.SelectQuery { return lowIDs().Intersect(o) },
 			"Except":    func(o *relica.SelectQuery) *relica.SelectQuery { return lowIDs().Except(o) },
 		} {
-			assert.False(t, sfPanics(func() { _ = op(nil) }), name)
+			var err error
+			assert.False(t, sfPanics(func() {
+				var ids []int
+				err = op(nil).Column(&ids)
+			}), name)
+			require.Error(t, err, "%s(nil) must fail the query, not drop the branch", name)
+			assert.Contains(t, err.Error(), "non-nil", name)
 		}
 	})
 
@@ -695,7 +697,6 @@ func runSelectFeatureTests(t *testing.T, db *relica.DB, dialect string) {
 	})
 
 	t.Run("WithRecursive_CTEBuildError_Propagates", func(t *testing.T) {
-		t.Skip("BUG: WithRecursive ignores the CTE query's build error: an invalid Where in the recursive branch is dropped and the CTE runs unfiltered")
 		anchor := db.Select("id", "parent_id").SelectExpr("0 AS depth").From("sf_tree").Where(relica.Eq("id", 1))
 		badRecursive := db.Select("t.id", "t.parent_id").SelectExpr("c.depth + 1").
 			From("sf_tree t").InnerJoin("sf_subtree c", relica.EqCol("t.parent_id", "c.id")).
@@ -708,14 +709,45 @@ func runSelectFeatureTests(t *testing.T, db *relica.DB, dialect string) {
 	})
 
 	t.Run("WithRecursive_NilQuery_NoPanic", func(t *testing.T) {
-		t.Skip("BUG: SelectQuery.WithRecursive(name, nil) and With(name, nil) panic with a nil pointer dereference (db.go wrappers read query.sq; core returns an error)")
 		var err error
 		panicked := sfPanics(func() {
 			var ids []int
 			err = db.Select("id").WithRecursive("sf_subtree", nil).From("sf_subtree").Column(&ids)
 		})
 		assert.False(t, panicked)
-		assert.Error(t, err)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "non-nil CTE query")
+
+		panicked = sfPanics(func() {
+			var ids []int
+			err = db.Select("id").With("sf_subtree", nil).From("sf_subtree").Column(&ids)
+		})
+		assert.False(t, panicked)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "non-nil CTE query")
+	})
+
+	t.Run("With_CTEBuildError_Propagates", func(t *testing.T) {
+		var ids []int
+		bad := db.Select("id").From("sf_emp").Where(sfBadLike())
+		err := db.Select("id").With("sf_e", bad).From("sf_e").Column(&ids)
+		require.Error(t, err, "an invalid CTE must fail the query before it is sent")
+		assert.Contains(t, err.Error(), "EscapeChars")
+	})
+
+	t.Run("NestedBuildError_Propagates", func(t *testing.T) {
+		// The error sits two levels down: a set-operation branch inside a
+		// FromSelect subquery, and the same inside an IN subquery.
+		bad := db.Select("id").From("sf_emp").Where(sfBadLike())
+		var ids []int
+		err := db.Select("id").FromSelect(lowIDs().Union(bad), "u").Column(&ids)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "EscapeChars")
+
+		bad = db.Select("id").From("sf_emp").Where(sfBadLike())
+		err = db.Select("id").From("sf_emp").Where(relica.In("id", lowIDs().Union(bad).AsExpression())).Column(&ids)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "EscapeChars")
 	})
 
 	// -----------------------------------------------------------------------
@@ -752,10 +784,26 @@ func runSelectFeatureTests(t *testing.T, db *relica.DB, dialect string) {
 	})
 
 	t.Run("ExistsMethod_InvalidFilter_Error", func(t *testing.T) {
-		t.Skip("BUG: SelectQuery.Exists() ignores the query's build error: an invalid Where expression is dropped and EXISTS runs unfiltered, returning (true, nil)")
 		ok, err := db.Select().From("sf_emp").Where(sfBadLike()).Exists()
 		assert.Error(t, err, "an invalid filter must fail, not run an unfiltered EXISTS")
 		assert.False(t, ok)
+
+		bad := db.Select("id").From("sf_emp").Where(sfBadLike())
+		ok, err = db.Select("id").FromSelect(bad, "s").Exists()
+		assert.Error(t, err, "an invalid subquery must fail EXISTS")
+		assert.False(t, ok)
+	})
+
+	t.Run("CountMethod_InvalidFilter_Error", func(t *testing.T) {
+		n, err := db.Select().From("sf_emp").Where(sfBadLike()).Count()
+		require.Error(t, err, "an invalid filter must fail, not count every row")
+		assert.Contains(t, err.Error(), "EscapeChars")
+		assert.Zero(t, n)
+
+		bad := db.Select("id").From("sf_emp").Where(sfBadLike())
+		n, err = db.Select().FromSelect(bad, "s").Count()
+		require.Error(t, err, "an invalid subquery must fail Count")
+		assert.Zero(t, n)
 	})
 
 	// -----------------------------------------------------------------------

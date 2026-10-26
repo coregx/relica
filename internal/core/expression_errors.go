@@ -27,9 +27,9 @@ func ExpressionError(v any) error {
 	case nil:
 		return nil
 	case *selectQueryExpression:
-		return x.query.buildErr
+		return x.query.err()
 	case *SelectQuery:
-		return x.buildErr
+		return x.err()
 	case errCarrier:
 		if err := x.Err(); err != nil {
 			return err
