@@ -521,34 +521,32 @@ func runSelectFeatureTests(t *testing.T, db *relica.DB, dialect string) {
 	ordered := func(compound *relica.SelectQuery) *relica.SelectQuery {
 		return db.Select("id").FromSelect(compound, "u").OrderBy("id")
 	}
-	// Set operations wrap every branch in parentheses, "(SELECT ...) UNION
-	// (SELECT ...)", which SQLite's grammar does not accept.
-	skipSQLiteCompound := func(t *testing.T) {
-		t.Helper()
+	// setOp is how an operator joins two plain branches: PostgreSQL and MySQL
+	// parenthesize every branch, SQLite's compound-select grammar takes none.
+	setOp := func(op string) string {
 		if dialect == "sqlite" {
-			t.Skip("BUG: set operations render parenthesized branches, (SELECT ...) UNION (SELECT ...); SQLite rejects them: syntax error")
+			return " " + op + " SELECT "
 		}
+		return " " + op + " (SELECT "
 	}
 
 	t.Run("Union_RemovesDuplicates", func(t *testing.T) {
 		u := lowIDs().Union(midIDs())
 		sqlStr, args := u.ToSQL()
-		assert.Contains(t, sqlStr, " UNION (")
+		assert.Contains(t, sqlStr, setOp("UNION"))
 		assert.NotContains(t, sqlStr, "UNION ALL")
 		assert.Equal(t, []any{2, 2, 3}, args)
 		if dialect == "postgres" {
 			assert.Contains(t, sqlStr, "<= $1) UNION (")
 			assert.Contains(t, sqlStr, "BETWEEN $2 AND $3)")
 		}
-		skipSQLiteCompound(t)
 		assert.Equal(t, []int{1, 2, 3}, sfOrderedIDs(t, ordered(u)))
 	})
 
 	t.Run("UnionAll_KeepsDuplicates", func(t *testing.T) {
 		u := lowIDs().UnionAll(midIDs())
 		sqlStr, _ := u.ToSQL()
-		assert.Contains(t, sqlStr, " UNION ALL (")
-		skipSQLiteCompound(t)
+		assert.Contains(t, sqlStr, setOp("UNION ALL"))
 		assert.Equal(t, []int{1, 2, 2, 3}, sfOrderedIDs(t, ordered(u)))
 		// Chained: three branches.
 		u3 := lowIDs().UnionAll(midIDs()).UnionAll(db.Select("id").From("sf_emp").Where(relica.Eq("id", 4)))
@@ -559,16 +557,14 @@ func runSelectFeatureTests(t *testing.T, db *relica.DB, dialect string) {
 		// mysql:8.0 in CI resolves to the latest 8.0.x (>= 8.0.31), which has INTERSECT.
 		u := lowIDs().Intersect(midIDs())
 		sqlStr, _ := u.ToSQL()
-		assert.Contains(t, sqlStr, " INTERSECT (")
-		skipSQLiteCompound(t)
+		assert.Contains(t, sqlStr, setOp("INTERSECT"))
 		assert.Equal(t, []int{2}, sfOrderedIDs(t, ordered(u)))
 	})
 
 	t.Run("Except_RowsOnlyInFirst", func(t *testing.T) {
 		u := lowIDs().Except(midIDs())
 		sqlStr, _ := u.ToSQL()
-		assert.Contains(t, sqlStr, " EXCEPT (")
-		skipSQLiteCompound(t)
+		assert.Contains(t, sqlStr, setOp("EXCEPT"))
 		assert.Equal(t, []int{1}, sfOrderedIDs(t, ordered(u)))
 		// Reversed operands.
 		assert.Equal(t, []int{3}, sfOrderedIDs(t, ordered(midIDs().Except(lowIDs()))))
@@ -576,16 +572,32 @@ func runSelectFeatureTests(t *testing.T, db *relica.DB, dialect string) {
 
 	t.Run("SetOperations_DirectExecution", func(t *testing.T) {
 		// Without the FromSelect wrapper: the compound statement is sent as built.
-		skipSQLiteCompound(t)
 		assert.Equal(t, []int{1, 2, 3}, sfIDs(t, lowIDs().Union(midIDs())))
 		assert.Equal(t, []int{1, 2, 2, 3}, sfIDs(t, lowIDs().UnionAll(midIDs())))
 		assert.Equal(t, []int{2}, sfIDs(t, lowIDs().Intersect(midIDs())))
 		assert.Equal(t, []int{1}, sfIDs(t, lowIDs().Except(midIDs())))
 	})
 
+	t.Run("SetOperations_BranchOrderLimit", func(t *testing.T) {
+		// ORDER BY/LIMIT belong to their own branch: the first two ids and the
+		// last one. SQLite takes them only inside a subquery operand.
+		first2 := db.Select("id").From("sf_emp").OrderBy("id").Limit(2)
+		last1 := db.Select("id").From("sf_emp").OrderBy("id DESC").Limit(1)
+		assert.Equal(t, []int{1, 2, 4}, sfOrderedIDs(t, ordered(first2.UnionAll(last1))))
+		skip1 := db.Select("id").From("sf_emp").OrderBy("id").Limit(10).Offset(3)
+		assert.Equal(t, []int{2, 4}, sfOrderedIDs(t, ordered(midIDs().Except(db.Select("id").From("sf_emp").
+			Where(relica.Eq("id", 3))).Union(skip1))))
+	})
+
+	t.Run("SetOperations_NestedBranchKeepsGrouping", func(t *testing.T) {
+		// A EXCEPT (B UNION C) = {1,2} - {2,3,4} = {1}; read left to right without
+		// the grouping it would be (A EXCEPT B) UNION C = {1,4}.
+		four := db.Select("id").From("sf_emp").Where(relica.Eq("id", 4))
+		assert.Equal(t, []int{1}, sfOrderedIDs(t, ordered(lowIDs().Except(midIDs().Union(four)))))
+	})
+
 	t.Run("SetOperations_ColumnCountMismatch_ServerError", func(t *testing.T) {
 		two := func() *relica.SelectQuery { return db.Select("id", "name").From("sf_emp") }
-		skipSQLiteCompound(t)
 		for name, compound := range map[string]*relica.SelectQuery{
 			"Union":     two().Union(lowIDs()),
 			"UnionAll":  two().UnionAll(lowIDs()),
@@ -660,7 +672,6 @@ func runSelectFeatureTests(t *testing.T, db *relica.DB, dialect string) {
 			assert.Contains(t, sqlStr, `"c"."depth" < $2`)
 		}
 
-		skipSQLiteCompound(t)
 		var rows []treeRow
 		require.NoError(t, query.All(&rows))
 		assert.Equal(t, []treeRow{{1, 0}, {2, 1}, {3, 1}, {4, 2}}, rows)
@@ -672,7 +683,6 @@ func runSelectFeatureTests(t *testing.T, db *relica.DB, dialect string) {
 			From("sf_subtree").Where(relica.NotEq("id", 3)).OrderBy("id")
 		_, args := query.ToSQL()
 		assert.Equal(t, []any{1, 1, 3}, args)
-		skipSQLiteCompound(t)
 		var rows []treeRow
 		require.NoError(t, query.All(&rows))
 		assert.Equal(t, []treeRow{{1, 0}, {2, 1}}, rows)
@@ -828,7 +838,6 @@ func runSelectFeatureTests(t *testing.T, db *relica.DB, dialect string) {
 		assert.Equal(t, int64(2), count(db.Select().
 			With("sf_hi", emp("id").Where(relica.GreaterThan("salary", 75))).From("sf_hi")), "CTE")
 
-		skipSQLiteCompound(t)
 		assert.Equal(t, int64(3), count(lowIDs().Union(midIDs())), "UNION")
 		assert.Equal(t, int64(4), count(lowIDs().UnionAll(midIDs())), "UNION ALL")
 	})
@@ -850,7 +859,6 @@ func runSelectFeatureTests(t *testing.T, db *relica.DB, dialect string) {
 		assert.False(t, exists(db.Select().
 			With("sf_hi", emp("id").Where(relica.GreaterThan("salary", 500))).From("sf_hi")), "empty CTE")
 
-		skipSQLiteCompound(t)
 		none := emp("id").Where(relica.Eq("id", -1))
 		assert.True(t, exists(none.Union(emp("id").Where(relica.Eq("id", 1)))), "a later branch has rows")
 	})
