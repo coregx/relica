@@ -205,6 +205,15 @@ type SelectQuery struct {
 	sq *core.SelectQuery
 }
 
+// core returns the wrapped query, or nil for a nil *SelectQuery argument, so
+// that core reports a build error instead of the wrapper panicking.
+func (sq *SelectQuery) core() *core.SelectQuery {
+	if sq == nil {
+		return nil
+	}
+	return sq.sq
+}
+
 // Tx represents a database transaction.
 //
 // Transactions provide ACID guarantees and support all standard
@@ -1736,7 +1745,7 @@ func (sq *SelectQuery) From(table string) *SelectQuery {
 //	db.Builder().Select("*").FromSelect(sub, "order_counts").
 //	    Where("cnt > ?", 10).All(&results)
 func (sq *SelectQuery) FromSelect(subquery *SelectQuery, alias string) *SelectQuery {
-	sq.sq.FromSelect(subquery.sq, alias)
+	sq.sq.FromSelect(subquery.core(), alias)
 	return sq
 }
 
@@ -2057,7 +2066,7 @@ func (sq *SelectQuery) ForUpdateSkipLocked() *SelectQuery {
 //	q2 := db.Builder().Select("name").From("archived_users")
 //	q1.Union(q2).All(&names)
 func (sq *SelectQuery) Union(other *SelectQuery) *SelectQuery {
-	sq.sq.Union(other.sq)
+	sq.sq.Union(other.core())
 	return sq
 }
 
@@ -2069,7 +2078,7 @@ func (sq *SelectQuery) Union(other *SelectQuery) *SelectQuery {
 //	q2 := db.Builder().Select("id").From("orders_2024")
 //	q1.UnionAll(q2).All(&orderIDs)
 func (sq *SelectQuery) UnionAll(other *SelectQuery) *SelectQuery {
-	sq.sq.UnionAll(other.sq)
+	sq.sq.UnionAll(other.core())
 	return sq
 }
 
@@ -2083,7 +2092,7 @@ func (sq *SelectQuery) UnionAll(other *SelectQuery) *SelectQuery {
 //	q2 := db.Builder().Select("user_id").From("orders")
 //	q1.Intersect(q2).All(&ids)  // Users who have placed orders
 func (sq *SelectQuery) Intersect(other *SelectQuery) *SelectQuery {
-	sq.sq.Intersect(other.sq)
+	sq.sq.Intersect(other.core())
 	return sq
 }
 
@@ -2097,7 +2106,7 @@ func (sq *SelectQuery) Intersect(other *SelectQuery) *SelectQuery {
 //	q2 := db.Builder().Select("user_id").From("banned_users")
 //	q1.Except(q2).All(&activeUsers)
 func (sq *SelectQuery) Except(other *SelectQuery) *SelectQuery {
-	sq.sq.Except(other.sq)
+	sq.sq.Except(other.core())
 	return sq
 }
 
@@ -2110,7 +2119,7 @@ func (sq *SelectQuery) Except(other *SelectQuery) *SelectQuery {
 //	db.Builder().Select("*").With("order_totals", cte).
 //	    From("order_totals").Where("total > ?", 1000).All(&users)
 func (sq *SelectQuery) With(name string, query *SelectQuery) *SelectQuery {
-	sq.sq.With(name, query.sq)
+	sq.sq.With(name, query.core())
 	return sq
 }
 
@@ -2129,7 +2138,7 @@ func (sq *SelectQuery) With(name string, query *SelectQuery) *SelectQuery {
 //	db.Builder().Select("*").WithRecursive("hierarchy", cte).
 //	    From("hierarchy").OrderBy("level", "name").All(&employees)
 func (sq *SelectQuery) WithRecursive(name string, query *SelectQuery) *SelectQuery {
-	sq.sq.WithRecursive(name, query.sq)
+	sq.sq.WithRecursive(name, query.core())
 	return sq
 }
 

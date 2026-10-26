@@ -415,24 +415,19 @@ func TestSelectQuery_Union_With_Limit(t *testing.T) {
 	}
 }
 
-// TestSelectQuery_Union_Nil_Query tests that nil queries are safely ignored
+// TestSelectQuery_Union_Nil_Query tests that a nil branch is a build error
+// (v0.20.0; it used to be dropped silently, running only the first query).
 func TestSelectQuery_Union_Nil_Query(t *testing.T) {
 	db := mockDB("postgres")
 	qb := &QueryBuilder{db: db}
 
-	q1 := qb.Select("id").From("users")
-	query := q1.Union(nil).Build()
+	query := qb.Select("id").From("users").Union(nil).Build()
 
-	if query == nil {
-		t.Fatal("expected non-nil")
+	if query.prepErr == nil || !strings.Contains(query.prepErr.Error(), "Union() requires a non-nil query") {
+		t.Errorf("prepErr = %v, want the nil-branch error", query.prepErr)
 	}
-
-	// Should only contain the first query (column name is quoted)
-	if !strings.Contains(query.sql, `SELECT "id" FROM "users"`) {
-		t.Errorf("%q does not contain %q", query.sql, `SELECT "id" FROM "users"`)
-	}
-	if strings.Contains(query.sql, "UNION") {
-		t.Errorf("%q should not contain %q", query.sql, "UNION")
+	if query.sql != "" {
+		t.Errorf("sql = %q, want none", query.sql)
 	}
 }
 
