@@ -4,7 +4,7 @@
 > **Read this BEFORE generating any code.**
 >
 > Agent skill: `skills/relica/` (Agent Skills format) — how to find the docs for your version, an audit script for
-> a project's Relica code (`skills/relica/scripts/audit.sh`), the upgrade procedure. Claude Code:
+> a project's Relica code (`skills/relica/scripts/audit.sh`), the upgrade procedure. Claude Code (v2.1.275+):
 > `/plugin install relica --marketplace coregx/relica`; any agent: `<module Dir>/skills/relica/SKILL.md`.
 
 ---
@@ -48,6 +48,8 @@ _, err = db.Upsert("users", values).OnConflict("id").DoUpdateAll().Execute()    
 _, err = db.Upsert("users", values).OnConflict("id").DoUpdate("name").Execute()  // listed columns only
 _, err = db.Upsert("users", values).OnConflict("id").DoNothing().Execute()       // keep existing row
 // WRONG: db.Upsert("users", values).Execute()  /  .OnConflict("id").Execute()  → error, nothing sent
+// MySQL writes VALUES(col) (deprecated since 8.0.20, warning 1287); on 8.0.19+ switch to the row alias:
+// relica.Open("mysql", dsn, relica.WithMySQLUpsertSyntax(relica.MySQLUpsertRowAlias))
 
 // UPDATE CHANGED - CORRECT (only modified fields)
 original := user
@@ -1380,6 +1382,56 @@ db.Select().From("users").Where(relica.Eq("id", id)).One(&user)
 user.Status = "active"
 db.Model(&user).Update("status")
 ```
+
+---
+
+## Other Public API
+
+Everything exported by package `relica` that the sections above do not show (a test keeps this list complete).
+
+**Builder types** — returned by the builder methods; you hold them only to chain: `QueryBuilder` (`db.Builder()`,
+`tx.Builder()`; prefer the shortcuts `db.Select`, `db.Insert`, …), `ModelQuery` (`db.Model(&m)`), `UpdateQuery`,
+`DeleteQuery`, `UpsertQuery`, `BatchInsertQuery`, `BatchUpdateQuery`.
+
+**Column-to-column comparisons** (JOIN ON, correlated subqueries): `EqCol`, `NotEqCol`, `GreaterThanCol`,
+`LessThanCol`, `GreaterOrEqualCol`, `LessOrEqualCol` — `relica.LessThanCol("o.created_at", "u.deleted_at")`.
+
+**More conditions**: `NotBetween(col, from, to)`, `NotExists(subquery)` (the negations of `Between` and `Exists`).
+
+**Expression result types** (for declarations): `ConcatExp` (`Concat`), `GreatestLeastExp` (`Greatest`, `Least`),
+`NullIfExp` (`NullIf`).
+
+**Options** (`relica.Open(driver, dsn, opts...)`, `WrapDB`; type `Option`):
+- pool: `WithMaxOpenConns`, `WithMaxIdleConns`, `WithConnMaxLifetime(d)`, `WithConnMaxIdleTime(d)` (durations:
+  `30*time.Minute`, not `300`); `WithHealthCheck(interval)` pings the database to detect dead connections;
+  `db.Stats()` returns `PoolStats`;
+- `WithStmtCacheCapacity(n)`;
+- `WithMySQLUpsertSyntax(MySQLUpsertValues | MySQLUpsertRowAlias)` (type `MySQLUpsertSyntax`; see Upsert above);
+- `WithNaming`, `WithScanMode` (see Table and Column Names).
+
+**Naming building blocks**: `Snake(opts ...SnakeOption)` with `TablePrefix`, `PluralTables` (type `SnakeOption`);
+`SnakeCase(name, opts ...CaseOption)` with `Initialisms`, `GoInitialisms()`, `SplitAcronyms()` (type `CaseOption`);
+a custom `Naming{Table: func(relica.TableSource) string, ...}` receives `TableSource{Type}` (the model's struct type).
+
+**Logging and observability**:
+- `WithLogger(l Logger)` — `Logger` is Debug/Info/Warn/Error with key-value args; `NewSlogAdapter(*slog.Logger)`
+  returns a `SlogAdapter`; `NoopLogger` discards everything.
+- `WithQueryHook(QueryHook)` — a `QueryHook` gets a `QueryEvent` (SQL, Args, Duration, RowsAffected, Error,
+  Operation) after every statement, raw `ExecContext`/`QueryContext` included; several hooks run in order,
+  synchronously. Pass `Args` through `MaskArgs(sql, args)` before logging: it masks every argument of a statement
+  that touches a password/token/api_key column. `DetectOperation(sql)` returns SELECT/INSERT/UPDATE/DELETE/UNKNOWN.
+
+```go
+db, err := relica.Open("postgres", dsn,
+    relica.WithLogger(relica.NewSlogAdapter(slog.Default())),
+    relica.WithQueryHook(func(ctx context.Context, e relica.QueryEvent) {
+        slog.InfoContext(ctx, "sql", "op", e.Operation, "ms", e.Duration.Milliseconds(),
+            "args", relica.MaskArgs(e.SQL, e.Args), "err", e.Error)
+    }))
+```
+
+**Query plans**: `q.Explain()` / `q.ExplainAnalyze()` return a `QueryPlan` (Cost, EstimatedRows, ActualRows,
+ActualTime, UsesIndex, …) on every database; see docs/QUERY_ANALYZER_GUIDE.md.
 
 ---
 

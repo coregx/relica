@@ -1011,15 +1011,11 @@ fmt.Println(sql)
 fmt.Println(params)
 ```
 
-## Examples Repository
+## Examples
 
-Complete working examples available in Relica repository:
-
-- `examples/subqueries/in_subquery.go` - IN and NOT IN examples
-- `examples/subqueries/exists.go` - EXISTS and NOT EXISTS patterns
-- `examples/subqueries/from_subquery.go` - Derived table examples
-- `examples/subqueries/scalar.go` - Scalar subquery patterns
-- `examples/subqueries/correlated.go` - Correlated subquery optimization
+The subquery forms of this guide run in the integration tests on PostgreSQL, MySQL and SQLite:
+`test/select_features_integration_test.go` (the `FromSelect_*`, `Exists_*`, `NotExists_*` and `AsExpression_*`
+subtests: IN / NOT IN, scalar comparison and SelectSub).
 
 ## Further Reading
 

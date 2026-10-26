@@ -391,7 +391,7 @@ func BenchmarkReplicaSelect(b *testing.B) {
 
 - **Benchmark Repository**: [github.com/coregx/relica-benchmarks](https://github.com/coregx/relica-benchmarks)
 - **Performance Tuning Guide**: [docs/guides/PERFORMANCE_TUNING.md](guides/PERFORMANCE_TUNING.md)
-- **Batch Operations Guide**: [docs/reports/BATCH_OPERATIONS.md](reports/BATCH_OPERATIONS.md)
+- **Batch Operations**: [AGENTS.md › Batch Operations](../AGENTS.md#batch-operations)
 
 ---
 

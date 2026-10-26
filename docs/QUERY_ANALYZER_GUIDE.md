@@ -606,13 +606,10 @@ ANALYZE TABLE users;
 
 ---
 
-## Examples Repository
+## Examples
 
-See `docs/examples/query_analyzer/` for more examples:
-- `basic_usage.go` - Simple queries
-- `join_analysis.go` - Complex joins
-- `optimization_workflow.go` - Before/after comparisons
-- `production_monitoring.go` - Real-time monitoring
+`Explain` and `ExplainAnalyze` run in the integration tests on PostgreSQL, MySQL and SQLite:
+`test/public_types_integration_test.go` (the `QueryPlan_*` subtests).
 
 ---
 
