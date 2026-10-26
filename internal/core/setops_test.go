@@ -594,3 +594,28 @@ func TestSelectQuery_Union_Empty_Result(t *testing.T) {
 		t.Errorf("expected length %d, got %d", 2, len(query.params))
 	}
 }
+
+// TestSelectQuery_SetOperations_SQLiteOperands verifies the SQLite form of a
+// compound select: plain operands bare (its grammar takes no parentheses),
+// operands with ORDER BY/LIMIT/OFFSET, WITH or set operations of their own as
+// SELECT * FROM (...). PostgreSQL keeps every operand in parentheses.
+func TestSelectQuery_SetOperations_SQLiteOperands(t *testing.T) {
+	for _, tc := range []struct {
+		dialect string
+		want    string
+	}{
+		{"sqlite", `SELECT * FROM (SELECT "id" FROM "a" ORDER BY "id" LIMIT 2) UNION SELECT "id" FROM "b" ` +
+			`EXCEPT SELECT * FROM (SELECT "id" FROM "c" UNION ALL SELECT "id" FROM "d")`},
+		{"postgres", `(SELECT "id" FROM "a" ORDER BY "id" LIMIT 2) UNION (SELECT "id" FROM "b") ` +
+			`EXCEPT ((SELECT "id" FROM "c") UNION ALL (SELECT "id" FROM "d"))`},
+	} {
+		qb := &QueryBuilder{db: mockDB(tc.dialect)}
+		nested := qb.Select("id").From("c").UnionAll(qb.Select("id").From("d"))
+		got, _ := qb.Select("id").From("a").OrderBy("id").Limit(2).
+			Union(qb.Select("id").From("b")).
+			Except(nested).ToSQL()
+		if got != tc.want {
+			t.Errorf("%s:\n got %s\nwant %s", tc.dialect, got, tc.want)
+		}
+	}
+}

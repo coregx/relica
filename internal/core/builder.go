@@ -1398,8 +1398,10 @@ func (sq *SelectQuery) buildSQL(dialect dialects.Dialect) (string, []any) {
 // Each branch is rendered via renderSQL so all ? placeholders are preserved
 // for the single final replacePlaceholders pass applied by buildSQL.
 func (sq *SelectQuery) buildSetOperations(mainQuery string, allParams []any, dialect dialects.Dialect) (string, []any) {
-	// Wrap main query in parentheses
-	mainSQL := "(" + mainQuery + ")"
+	_, sqlite := dialect.(*dialects.SQLiteDialect)
+	// The first operand's CTEs are rendered in front of the whole statement
+	// by renderSQL, and its set operations are this compound itself.
+	mainSQL := setOperand(mainQuery, sqlite, sq.hasRowLimits())
 
 	for _, u := range sq.unions {
 		// Build union query SQL with raw ? placeholders (no renumbering here)
@@ -1414,8 +1416,9 @@ func (sq *SelectQuery) buildSetOperations(mainQuery string, allParams []any, dia
 			op = "UNION ALL"
 		}
 
-		// Append set operation: (query1) UNION (query2)
-		mainSQL += " " + op + " (" + unionSQL + ")"
+		branch := u.query
+		mainSQL += " " + op + " " + setOperand(unionSQL, sqlite,
+			branch.hasRowLimits() || len(branch.ctes) > 0 || len(branch.unions) > 0)
 
 		// Merge parameters in order
 		allParams = append(allParams, unionArgs...)
@@ -1463,6 +1466,29 @@ func (sq *SelectQuery) errVisiting(path map[*SelectQuery]bool) error {
 		}
 	}
 	return nil
+}
+
+// setOperand renders one operand of UNION/INTERSECT/EXCEPT. PostgreSQL and
+// MySQL take every operand in parentheses, which keeps its ORDER BY/LIMIT and
+// its own set operations to itself. SQLite's compound-select grammar takes no
+// parentheses: a plain operand is written bare, and one that needs its own
+// ORDER BY, LIMIT, OFFSET, WITH or set operations (contained) becomes the
+// subquery operand SELECT * FROM (...), since bare it would bind to the whole
+// compound or regroup it left to right.
+func setOperand(sqlStr string, sqlite, contained bool) string {
+	switch {
+	case !sqlite:
+		return "(" + sqlStr + ")"
+	case contained:
+		return "SELECT * FROM (" + sqlStr + ")"
+	default:
+		return sqlStr
+	}
+}
+
+// hasRowLimits reports whether the query has ORDER BY, LIMIT or OFFSET.
+func (sq *SelectQuery) hasRowLimits() bool {
+	return len(sq.orderBy) > 0 || sq.limitValue != nil || sq.offsetValue != nil
 }
 
 // Build constructs the Query object from SelectQuery.

@@ -62,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **An error inside an embedded query was dropped** — a `FromSelect` subquery, a `Union`/`UnionAll`/`Intersect`/`Except` branch or a `With`/`WithRecursive` CTE with an invalid condition (for example a `Like(...).EscapeChars("!")`) lost that condition, and the statement ran unfiltered. The error now fails the outer statement — `All`, `One`, `Column`, `Count`, `Exists`, `Explain` — at any depth, including subqueries passed to `In`/`Exists`/`SelectSub` via `AsExpression()`. `Count()`, `Exists()` and `Explain()` also ignored the query's own construction error
 - **`nil` passed to `FromSelect`, `Union`, `UnionAll`, `Intersect`, `Except`, `With` or `WithRecursive` panicked**; it is now an error returned when the query runs
 - **A query that contains itself** (`q.Union(q)`, or two queries embedding each other) overflowed the stack when built; it is now an error
+- **`Union`, `UnionAll`, `Intersect`, `Except` and `WithRecursive` failed on SQLite** with a syntax error: every operand was parenthesized, which SQLite's compound-select grammar does not accept. On SQLite plain operands are now written bare, and an operand with its own `OrderBy`/`Limit`/`Offset`, CTE or set operation becomes `SELECT * FROM (...)`, so it keeps its rows and grouping. PostgreSQL and MySQL are unchanged
 
 ### Added
 
