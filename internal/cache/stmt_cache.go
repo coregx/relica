@@ -193,7 +193,8 @@ func (sc *StmtCache) Pin(key string) bool {
 }
 
 // Unpin removes the pin from a cached statement, allowing it to be evicted normally.
-// Returns true if the key was found and unpinned, false otherwise.
+// Returns true if the key was found pinned and is now unpinned; false if it is
+// not cached or was not pinned.
 func (sc *StmtCache) Unpin(key string) bool {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
@@ -204,6 +205,9 @@ func (sc *StmtCache) Unpin(key string) bool {
 	}
 
 	entry := elem.Value.(*cacheEntry)
+	if !entry.pinned {
+		return false
+	}
 	entry.pinned = false
 	return true
 }

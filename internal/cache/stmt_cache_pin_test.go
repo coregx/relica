@@ -48,9 +48,9 @@ func TestStmtCache_Unpin(t *testing.T) {
 		t.Error("Query should not be pinned after unpin")
 	}
 
-	// Try to unpin again
-	if !cache.Unpin("query1") {
-		t.Error("Unpin should return true even if already unpinned")
+	// Unpinning again reports false: it was not pinned (DB.UnpinQuery godoc).
+	if cache.Unpin("query1") {
+		t.Error("Unpin should return false for a cached query that is not pinned")
 	}
 }
 

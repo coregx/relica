@@ -125,8 +125,19 @@ func (q *Query) prepareStatement(ctx context.Context) (*sql.Stmt, error) {
 		return stmt, nil
 	}
 
+	start := time.Now()
 	stmt, err := q.db.sqlDB.PrepareContext(ctx, q.sql)
 	if err != nil {
+		// The server rejected the statement (PostgreSQL and MySQL prepare on
+		// the server: a missing table, a syntax error). The callers return
+		// before their own hook call, so report the failed statement here.
+		q.db.invokeHook(ctx, QueryEvent{
+			SQL:       q.sql,
+			Args:      q.params,
+			Duration:  time.Since(start),
+			Error:     err,
+			Operation: DetectOperation(q.sql),
+		})
 		return nil, err
 	}
 	cached, inserted := q.db.stmtCache.GetOrSet(q.sql, stmt)
