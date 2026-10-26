@@ -1,155 +1,93 @@
 package core
 
 import (
-	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/coregx/relica/internal/util"
 )
 
-// TestInsertStruct_SkipsZeroPK verifies that InsertStruct excludes zero PK
-// from the column list, matching Model().Insert() behavior.
-func TestInsertStruct_SkipsZeroPK(t *testing.T) {
-	db := mockDB("postgres")
-	qb := &QueryBuilder{db: db}
+// InsertStruct / BatchInsertStruct leave a zero single-column primary key out
+// of the INSERT so the database generates it, as Model().Insert() does.
 
+func TestInsertStruct_SkipsZeroPK(t *testing.T) {
 	type User struct {
 		ID    int64  `db:"id,pk"`
 		Name  string `db:"name"`
 		Email string `db:"email"`
 	}
-
-	user := User{Name: "Alice", Email: "alice@example.com"} // ID=0
-	dataMap, _ := util.StructToMap(user)
-
-	// Before fix: dataMap includes "id" with value 0
-	if _, ok := dataMap["id"]; !ok {
-		t.Errorf("StructToMap should include id")
-	}
-
-	// Simulate the zero PK check (same logic as in db.go InsertStruct)
-	pkInfo, err := util.FindPrimaryKeyFields(testReflectValue(user))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if pkInfo == nil {
-		t.Fatal("expected non-nil")
-	}
-	if !pkInfo.IsSingle() {
-		t.Error("expected true")
-	}
-	if !util.IsPrimaryKeyZero(pkInfo.Values[0]) {
-		t.Error("expected true")
-	}
-
-	// After deletion: "id" should be removed
-	delete(dataMap, pkInfo.Columns[0])
-	if _, ok := dataMap["id"]; ok {
-		t.Errorf("expected %q not in map", "id")
-	}
-	if _, ok := dataMap["name"]; !ok {
-		t.Errorf("expected %q in map", "name")
-	}
-	if _, ok := dataMap["email"]; !ok {
-		t.Errorf("expected %q in map", "email")
-	}
-
-	// Build query without PK
-	q := qb.Insert("users", dataMap)
-	if q == nil {
-		t.Error("expected non-nil")
-	}
-	if strings.Contains(q.sql, `"id"`) {
-		t.Errorf("%q should not contain %q", q.sql, `"id"`)
-	}
-	if !strings.Contains(q.sql, `"name"`) {
-		t.Errorf("%q does not contain %q", q.sql, `"name"`)
-	}
-	if !strings.Contains(q.sql, `"email"`) {
-		t.Errorf("%q does not contain %q", q.sql, `"email"`)
-	}
+	qb := &QueryBuilder{db: mockDB("postgres")}
+	q := qb.InsertStruct("users", User{Name: "Alice", Email: "alice@example.com"})
+	buildOK(t, q, `INSERT INTO "users" ("email", "name") VALUES ($1, $2)`)
 }
 
-// TestInsertStruct_KeepsNonZeroPK verifies that non-zero PK is kept.
 func TestInsertStruct_KeepsNonZeroPK(t *testing.T) {
 	type User struct {
 		ID   int64  `db:"id,pk"`
 		Name string `db:"name"`
 	}
-
-	user := User{ID: 42, Name: "Bob"}
-	dataMap, _ := util.StructToMap(user)
-
-	pkInfo, _ := util.FindPrimaryKeyFields(testReflectValue(user))
-	if util.IsPrimaryKeyZero(pkInfo.Values[0]) {
-		t.Error("expected false")
-	}
-	if _, ok := dataMap["id"]; !ok {
-		t.Errorf("Non-zero PK should be kept: expected %q in map", "id")
-	}
+	qb := &QueryBuilder{db: mockDB("postgres")}
+	buildOK(t, qb.InsertStruct("users", &User{ID: 42, Name: "Bob"}),
+		`INSERT INTO "users" ("id", "name") VALUES ($1, $2)`)
 }
 
-// TestBatchInsertStruct_SkipsZeroPK verifies batch insert also excludes zero PK.
-func TestBatchInsertStruct_SkipsZeroPK(t *testing.T) {
+func TestInsertStruct_CompositePK_NotSkipped(t *testing.T) {
+	type OrderItem struct {
+		OrderID int `db:"order_id,pk"`
+		ItemID  int `db:"item_id,pk"`
+		Qty     int `db:"qty"`
+	}
+	qb := &QueryBuilder{db: mockDB("postgres")}
+	buildOK(t, qb.InsertStruct("order_items", OrderItem{Qty: 1}),
+		`INSERT INTO "order_items" ("item_id", "order_id", "qty") VALUES ($1, $2, $3)`)
+}
+
+func TestInsertStruct_EmbeddedAndUntaggedColumns(t *testing.T) {
+	// FIX-011: embedded structs were written as one column named after the
+	// type, untagged fields under their Go name.
+	type Audit struct {
+		CreatedAt string
+		CreatedBy string
+	}
+	type Doc struct {
+		Audit
+		ID    int `db:"id,pk"`
+		Title string
+	}
+	qb := &QueryBuilder{db: mockDB("sqlite")}
+	buildOK(t, qb.InsertStruct("docs", Doc{Audit: Audit{CreatedAt: "t", CreatedBy: "u"}, Title: "x"}),
+		`INSERT INTO "docs" ("created_at", "created_by", "title") VALUES (?, ?, ?)`)
+}
+
+func TestBatchInsertStruct_SkipsZeroPKInEveryRow(t *testing.T) {
 	type Item struct {
 		ID   int64  `db:"id,pk"`
 		Name string `db:"name"`
 	}
+	qb := &QueryBuilder{db: mockDB("postgres")}
+	buildOK(t, qb.BatchInsertStruct("items", []Item{{Name: "a"}, {Name: "b"}}),
+		`INSERT INTO "items" ("name") VALUES ($1), ($2)`)
+	buildOK(t, qb.BatchInsertStruct("items", []*Item{{ID: 1, Name: "a"}, {ID: 2, Name: "b"}}),
+		`INSERT INTO "items" ("id", "name") VALUES ($1, $2), ($3, $4)`)
+}
 
-	items := []Item{
-		{Name: "Item A"}, // ID=0
-		{Name: "Item B"}, // ID=0
+func TestBatchInsertStruct_MixedZeroAndExplicitPK_IsError(t *testing.T) {
+	// v0.19 dropped the id column when the FIRST row's key was zero, so the
+	// explicit keys of later rows were silently lost.
+	type Item struct {
+		ID   int64  `db:"id,pk"`
+		Name string `db:"name"`
 	}
-
-	// First element check
-	dataMap, _ := util.StructToMap(items[0])
-	pkInfo, _ := util.FindPrimaryKeyFields(testReflectValue(items[0]))
-	if pkInfo == nil {
-		t.Fatal("expected non-nil")
-	}
-	if !util.IsPrimaryKeyZero(pkInfo.Values[0]) {
-		t.Error("expected true")
-	}
-
-	delete(dataMap, pkInfo.Columns[0])
-	if _, ok := dataMap["id"]; ok {
-		t.Errorf("expected %q not in map", "id")
-	}
-	if _, ok := dataMap["name"]; !ok {
-		t.Errorf("expected %q in map", "name")
+	qb := &QueryBuilder{db: mockDB("postgres")}
+	q := qb.BatchInsertStruct("items", []Item{{Name: "a"}, {ID: 7, Name: "b"}})
+	if q.prepErr == nil || !strings.Contains(q.prepErr.Error(), "1 of 2 rows have a zero primary key") {
+		t.Fatalf("err = %v, sql = %q", q.prepErr, q.sql)
 	}
 }
 
-// TestInsertStruct_CompositePK_NotSkipped verifies composite PK is never skipped.
-func TestInsertStruct_CompositePK_NotSkipped(t *testing.T) {
-	type OrderItem struct {
-		OrderID int64 `db:"order_id,pk"`
-		ItemID  int64 `db:"item_id,pk"`
-		Qty     int   `db:"qty"`
+func TestBatchInsertStruct_InvalidInput(t *testing.T) {
+	qb := &QueryBuilder{db: mockDB("postgres")}
+	for _, in := range []any{42, []int{}, []string{"x"}} {
+		if q := qb.BatchInsertStruct("t", in); q.prepErr == nil {
+			t.Errorf("%T %v: expected an error", in, in)
+		}
 	}
-
-	oi := OrderItem{OrderID: 1, ItemID: 2, Qty: 5}
-	dataMap, _ := util.StructToMap(oi)
-
-	pkInfo, _ := util.FindPrimaryKeyFields(testReflectValue(oi))
-	if pkInfo == nil {
-		t.Fatal("expected non-nil")
-	}
-	if pkInfo.IsSingle() {
-		t.Error("Composite PK should not be single: expected false")
-	}
-
-	// Both PK columns should remain
-	if _, ok := dataMap["order_id"]; !ok {
-		t.Errorf("expected %q in map", "order_id")
-	}
-	if _, ok := dataMap["item_id"]; !ok {
-		t.Errorf("expected %q in map", "item_id")
-	}
-}
-
-// helper
-func testReflectValue(v interface{}) reflect.Value {
-	return reflect.ValueOf(v)
 }

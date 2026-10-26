@@ -76,13 +76,13 @@ func nullStringMapSliceTarget(dest any) (func([]NullStringMap), bool) {
 
 // scanOne scans the current row into dest: a NullStringMap-shaped map (any
 // named type) or anything the struct scanner accepts.
-func scanOne(rows *sql.Rows, dest any) error {
+func scanOne(rows *sql.Rows, dest any, s scanSettings) error {
 	store, ok := nullStringMapTarget(dest)
 	if !ok {
-		return globalScanner.scanRow(rows, dest)
+		return s.scanRow(rows, dest)
 	}
 	var m NullStringMap
-	if err := globalScanner.scanMapRow(rows, &m); err != nil {
+	if err := scanMapRow(rows, &m); err != nil {
 		return err
 	}
 	store(m)
@@ -91,13 +91,13 @@ func scanOne(rows *sql.Rows, dest any) error {
 
 // scanAll scans all remaining rows into dest: a slice of NullStringMap-shaped
 // maps or anything the struct scanner accepts.
-func scanAll(rows *sql.Rows, dest any) error {
+func scanAll(rows *sql.Rows, dest any, s scanSettings) error {
 	store, ok := nullStringMapSliceTarget(dest)
 	if !ok {
-		return globalScanner.scanRows(rows, dest)
+		return s.scanRows(rows, dest)
 	}
 	var ms []NullStringMap
-	if err := globalScanner.scanMapRows(rows, &ms); err != nil {
+	if err := scanMapRows(rows, &ms); err != nil {
 		return err
 	}
 	store(ms)

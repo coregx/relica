@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
-	"strings"
 
 	"github.com/coregx/relica/internal/util"
 )
@@ -22,12 +21,13 @@ const (
 
 // ModelQuery handles CRUD operations on struct models.
 type ModelQuery struct {
-	db      *DB
-	tx      *sql.Tx // nil for non-transactional queries
-	model   any
-	table   string
-	exclude map[string]bool
-	ctx     context.Context // nil means use background context
+	db       *DB
+	tx       *sql.Tx // nil for non-transactional queries
+	model    any
+	table    string
+	tableErr error // why the table could not be derived (cleared by Table)
+	exclude  map[string]bool
+	ctx      context.Context // nil means use background context
 }
 
 // WithContext returns a new ModelQuery with the given context.
@@ -43,55 +43,42 @@ func (mq *ModelQuery) WithContext(ctx context.Context) *ModelQuery {
 
 // Model creates a new ModelQuery for the given struct.
 func (db *DB) Model(model any) *ModelQuery {
+	table, err := db.tableNameOf(model)
 	return &ModelQuery{
-		db:      db,
-		tx:      nil,
-		model:   model,
-		table:   inferTableName(model),
-		exclude: make(map[string]bool),
-		ctx:     db.ctx, // inherit DB.WithContext; ModelQuery.WithContext overrides
+		db:       db,
+		tx:       nil,
+		model:    model,
+		table:    table,
+		tableErr: err,
+		exclude:  make(map[string]bool),
+		ctx:      db.ctx, // inherit DB.WithContext; ModelQuery.WithContext overrides
 	}
 }
 
 // Model creates a ModelQuery within transaction context.
 func (tx *Tx) Model(model any) *ModelQuery {
 	db := tx.builder.db
+	table, err := db.tableNameOf(model)
 	return &ModelQuery{
-		db:      db,
-		tx:      tx.tx,
-		model:   model,
-		table:   inferTableName(model),
-		exclude: make(map[string]bool),
-		ctx:     tx.ctx,
+		db:       db,
+		tx:       tx.tx,
+		model:    model,
+		table:    table,
+		tableErr: err,
+		exclude:  make(map[string]bool),
+		ctx:      tx.ctx,
 	}
 }
 
-// inferTableName determines table name from struct.
-// Returns an empty string if model is nil; callers that need the table name
-// must handle the empty-string case (ModelQuery operations return an error).
-func inferTableName(model any) string {
-	if model == nil {
-		return ""
+// checkTable returns why the model has no table.
+func (mq *ModelQuery) checkTable() error {
+	if mq.tableErr != nil {
+		return mq.tableErr
 	}
-
-	// Check for TableName() method.
-	if tn, ok := model.(interface{ TableName() string }); ok {
-		return tn.TableName()
+	if mq.table == "" {
+		return errors.New("model: table name not specified")
 	}
-
-	// Fallback: struct name lowercased + 's'.
-	t := reflect.TypeOf(model)
-	if t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-
-	name := t.Name()
-	// Simple pluralization.
-	if !strings.HasSuffix(name, "s") {
-		name += "s"
-	}
-
-	return strings.ToLower(name)
+	return nil
 }
 
 // getPrimaryKeys returns primary key column names and values.
@@ -107,7 +94,7 @@ func (mq *ModelQuery) getPrimaryKeys() ([]string, []any, error) {
 		v = v.Elem()
 	}
 
-	pkInfo, err := util.FindPrimaryKeyFields(v)
+	pkInfo, err := mq.db.primaryKey(v)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -147,6 +134,7 @@ func (mq *ModelQuery) filterFields(data map[string]any, only []string) map[strin
 // Table overrides the table name.
 func (mq *ModelQuery) Table(name string) *ModelQuery {
 	mq.table = name
+	mq.tableErr = nil
 	return mq
 }
 
@@ -181,17 +169,20 @@ func (mq *ModelQuery) populateAutoIDFields() {
 		v = v.Elem()
 	}
 
-	fields := util.FindAutoIDFields(v)
-	if len(fields) == 0 {
+	if v.Kind() != reflect.Struct {
 		return
+	}
+	fields, err := mq.db.autoIDFields(v.Type())
+	if err != nil {
+		return // the struct error surfaces from the operation itself
 	}
 
 	for _, f := range fields {
-		fv := v.Field(f.FieldIndex)
+		fv := v.FieldByIndex(f.index)
 		if fv.Kind() != reflect.String || fv.String() != "" {
 			continue
 		}
-		fv.SetString(util.GenerateAutoID(f.Prefix, f.Generator))
+		fv.SetString(util.GenerateAutoID(f.prefix, f.generator))
 	}
 }
 
@@ -201,8 +192,8 @@ func (mq *ModelQuery) populateAutoIDFields() {
 // For composite primary keys (CPK), auto-populate is NOT supported.
 // All CPK values must be provided by the caller.
 func (mq *ModelQuery) Insert(attrs ...string) error {
-	if mq.table == "" {
-		return errors.New("model: table name not specified")
+	if err := mq.checkTable(); err != nil {
+		return err
 	}
 
 	if err := mq.callBeforeInsert(); err != nil {
@@ -212,7 +203,7 @@ func (mq *ModelQuery) Insert(attrs ...string) error {
 	mq.populateAutoIDFields()
 
 	// Convert struct to map.
-	dataMap, err := util.StructToMap(mq.model)
+	dataMap, err := mq.db.structValues(mq.model)
 	if err != nil {
 		return err
 	}
@@ -226,7 +217,7 @@ func (mq *ModelQuery) Insert(attrs ...string) error {
 		v = v.Elem()
 	}
 
-	pkInfo, _ := util.FindPrimaryKeyFields(v)
+	pkInfo, _ := mq.db.primaryKey(v)
 
 	// Handle PK removal for auto-increment.
 	// For single PK with zero value: remove from INSERT (auto-increment).
@@ -286,7 +277,7 @@ func (mq *ModelQuery) populatePrimaryKey(result sql.Result) error {
 		v = v.Elem()
 	}
 
-	pkInfo, err := util.FindPrimaryKeyFields(v)
+	pkInfo, err := mq.db.primaryKey(v)
 	if err != nil {
 		return nil //nolint:nilerr // Intentionally ignore - no PK means skip auto-population.
 	}
@@ -363,7 +354,7 @@ func (mq *ModelQuery) needsReturning() (bool, string) {
 		v = v.Elem()
 	}
 
-	pkInfo, err := util.FindPrimaryKeyFields(v)
+	pkInfo, err := mq.db.primaryKey(v)
 	if err != nil {
 		return false, "" // No PK.
 	}
@@ -409,7 +400,7 @@ func (mq *ModelQuery) insertWithReturning(query *Query, pkCol string) error {
 		v = v.Elem()
 	}
 
-	pkInfo, err := util.FindPrimaryKeyFields(v)
+	pkInfo, err := mq.db.primaryKey(v)
 	if err != nil {
 		return err
 	}
@@ -426,12 +417,12 @@ func (mq *ModelQuery) insertWithReturning(query *Query, pkCol string) error {
 // Update updates the model in the table.
 // Supports both single PK and composite PK for WHERE clause.
 func (mq *ModelQuery) Update(attrs ...string) error {
-	if mq.table == "" {
-		return errors.New("model: table name not specified")
+	if err := mq.checkTable(); err != nil {
+		return err
 	}
 
 	// Convert struct to map.
-	dataMap, err := util.StructToMap(mq.model)
+	dataMap, err := mq.db.structValues(mq.model)
 	if err != nil {
 		return err
 	}
@@ -495,8 +486,8 @@ func (mq *ModelQuery) Update(attrs ...string) error {
 //	err = db.Model(&user).Upsert("name")
 //	// ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name
 func (mq *ModelQuery) Upsert(fields ...string) error {
-	if mq.table == "" {
-		return errors.New("model: table name not specified")
+	if err := mq.checkTable(); err != nil {
+		return err
 	}
 
 	if err := mq.callBeforeInsert(); err != nil {
@@ -521,8 +512,8 @@ func (mq *ModelQuery) Upsert(fields ...string) error {
 //	db.Model(&node).UpsertOn([]string{"project_id", "qualified_name"}, "name", "label")
 //	// ON CONFLICT ("project_id", "qualified_name") DO UPDATE SET name=EXCLUDED.name, label=EXCLUDED.label
 func (mq *ModelQuery) UpsertOn(conflictColumns []string, fields ...string) error {
-	if mq.table == "" {
-		return errors.New("model: table name not specified")
+	if err := mq.checkTable(); err != nil {
+		return err
 	}
 
 	if len(conflictColumns) == 0 {
@@ -548,7 +539,7 @@ func (mq *ModelQuery) UpsertOn(conflictColumns []string, fields ...string) error
 // Exclude leaves a column out of both the INSERT and the update, as in Insert.
 // All names are column names; an unknown name is an error, never ignored.
 func (mq *ModelQuery) buildUpsert(target, fields []string) (*Query, error) {
-	dataMap, err := util.StructToMap(mq.model)
+	dataMap, err := mq.db.structValues(mq.model)
 	if err != nil {
 		return nil, err
 	}
@@ -643,7 +634,7 @@ func (mq *ModelQuery) removeZeroPK(dataMap map[string]any) {
 	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
-	pkInfo, err := util.FindPrimaryKeyFields(v)
+	pkInfo, err := mq.db.primaryKey(v)
 	if err != nil || pkInfo == nil || !pkInfo.IsSingle() {
 		return
 	}
@@ -677,7 +668,7 @@ func (mq *ModelQuery) scanReturningID(q *Query, _ string) error {
 		v = v.Elem()
 	}
 
-	pkInfo, err := util.FindPrimaryKeyFields(v)
+	pkInfo, err := mq.db.primaryKey(v)
 	if err != nil {
 		return err
 	}
@@ -749,8 +740,8 @@ func scanReturningIntoField(q *Query, pkField reflect.Value) error {
 //	err := db.Model(&user).UpdateChanged(&original)
 //	// UPDATE users SET name=?, status=? WHERE id=?
 func (mq *ModelQuery) UpdateChanged(original any) error {
-	if mq.table == "" {
-		return errors.New("model: table name not specified")
+	if err := mq.checkTable(); err != nil {
+		return err
 	}
 
 	changed, err := mq.diffFields(original)
@@ -792,8 +783,6 @@ func (mq *ModelQuery) UpdateChanged(original any) error {
 
 // diffFields compares the current model with original and returns only the fields
 // whose values have changed, excluding primary key fields.
-//
-//nolint:cyclop // Acceptable complexity for field comparison across all reflect kinds.
 func (mq *ModelQuery) diffFields(original any) (map[string]any, error) {
 	current := mq.model
 
@@ -822,78 +811,41 @@ func (mq *ModelQuery) diffFields(original any) (map[string]any, error) {
 			" does not match model type " + currentVal.Type().String())
 	}
 
-	// Collect PK columns to skip from SET.
-	pkInfo, _ := util.FindPrimaryKeyFields(currentVal)
-	pkSet := buildPKSet(pkInfo)
-
-	t := currentVal.Type()
+	// One struct description for write, read and PK (ADR-018): embedded
+	// fields included, columns as Insert/Update write them.
+	mi, err := mq.db.modelInfoOf(currentVal.Type())
+	if err != nil {
+		return nil, err
+	}
 	changed := make(map[string]any)
-
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-
-		// Skip unexported fields.
-		if !field.IsExported() {
+	for _, f := range mi.fields {
+		if isPKField(mi, f) {
 			continue
 		}
-
-		// Determine db column name.
-		col, skip := columnFromField(field)
-		if skip {
-			continue
-		}
-
-		// Skip PK columns.
-		if pkSet[col] {
-			continue
-		}
-
-		curField := currentVal.Field(i)
-		origField := origVal.Field(i)
-
-		if !reflect.DeepEqual(curField.Interface(), origField.Interface()) {
-			changed[col] = curField.Interface()
+		cur := currentVal.FieldByIndex(f.index).Interface()
+		if !reflect.DeepEqual(cur, origVal.FieldByIndex(f.index).Interface()) {
+			changed[f.column] = cur
 		}
 	}
-
 	return changed, nil
 }
 
-// buildPKSet builds a set of primary key column names for fast lookup.
-func buildPKSet(pkInfo *util.PrimaryKeyInfo) map[string]bool {
-	if pkInfo == nil {
-		return map[string]bool{}
+// isPKField reports whether f is one of the model's primary key fields
+// (including the ID/Id fallback, which carries no pk tag).
+func isPKField(mi *modelInfo, f *modelField) bool {
+	for _, pk := range mi.pk {
+		if pk == f {
+			return true
+		}
 	}
-	set := make(map[string]bool, len(pkInfo.Columns))
-	for _, col := range pkInfo.Columns {
-		set[col] = true
-	}
-	return set
-}
-
-// columnFromField extracts the db column name from a struct field.
-// Returns the column name and a skip flag (true means the field should be ignored).
-func columnFromField(field reflect.StructField) (col string, skip bool) {
-	tag, hasTag := field.Tag.Lookup("db")
-	if !hasTag {
-		// No db tag: use field name as-is (consistent with StructToMap).
-		return field.Name, false
-	}
-
-	// Parse db tag: "column" or "column,pk" or "-".
-	parts := strings.SplitN(tag, ",", 2)
-	col = strings.TrimSpace(parts[0])
-	if col == "-" {
-		return "", true
-	}
-	return col, false
+	return false
 }
 
 // Delete deletes the model from the table.
 // Supports both single PK and composite PK for WHERE clause.
 func (mq *ModelQuery) Delete() error {
-	if mq.table == "" {
-		return errors.New("model: table name not specified")
+	if err := mq.checkTable(); err != nil {
+		return err
 	}
 
 	// Get primary keys for WHERE.
@@ -928,8 +880,8 @@ func (mq *ModelQuery) Delete() error {
 // Validates the prefix if the autoid tag specifies one.
 // Scans the result into the model struct (same as One).
 func (mq *ModelQuery) FindByPublicID(publicID string) error {
-	if mq.table == "" {
-		return errors.New("model: table name not specified")
+	if err := mq.checkTable(); err != nil {
+		return err
 	}
 
 	if publicID == "" {
@@ -941,14 +893,20 @@ func (mq *ModelQuery) FindByPublicID(publicID string) error {
 		v = v.Elem()
 	}
 
-	fields := util.FindAutoIDFields(v)
+	if v.Kind() != reflect.Struct {
+		return errors.New("model: FindByPublicID needs a struct model")
+	}
+	fields, err := mq.db.autoIDFields(v.Type())
+	if err != nil {
+		return err
+	}
 	if len(fields) == 0 {
 		return errors.New("model: no autoid field found")
 	}
 
 	f := fields[0]
 
-	if err := util.ValidateAutoIDPrefix(publicID, f.Prefix); err != nil {
+	if err := util.ValidateAutoIDPrefix(publicID, f.prefix); err != nil {
 		return err
 	}
 
@@ -960,7 +918,7 @@ func (mq *ModelQuery) FindByPublicID(publicID string) error {
 
 	return qb.Select().
 		From(mq.table).
-		Where(Eq(f.Column, publicID)).
+		Where(Eq(f.column, publicID)).
 		Limit(1).
 		One(mq.model)
 }
@@ -970,8 +928,8 @@ func (mq *ModelQuery) FindByPublicID(publicID string) error {
 // in struct field declaration order.
 // Returns ErrNotFound if no record matches.
 func (mq *ModelQuery) Find(pk ...any) error {
-	if mq.table == "" {
-		return errors.New("model: table name not specified")
+	if err := mq.checkTable(); err != nil {
+		return err
 	}
 
 	v := reflect.ValueOf(mq.model)
@@ -979,7 +937,7 @@ func (mq *ModelQuery) Find(pk ...any) error {
 		v = v.Elem()
 	}
 
-	pkInfo, err := util.FindPrimaryKeyFields(v)
+	pkInfo, err := mq.db.primaryKey(v)
 	if err != nil {
 		return errors.New("model: primary key not found")
 	}

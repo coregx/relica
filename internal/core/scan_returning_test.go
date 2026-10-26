@@ -23,7 +23,7 @@ func TestScanRow_RejectsScalarTypes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := globalScanner.scanRow(nil, tt.dest)
+			err := testScanner.scanRow(nil, tt.dest)
 			if err == nil {
 				t.Error("expected error")
 			}
@@ -39,7 +39,7 @@ func TestScanRow_RejectsNonPointer(t *testing.T) {
 	type User struct {
 		ID int `db:"id"`
 	}
-	err := globalScanner.scanRow(nil, User{})
+	err := testScanner.scanRow(nil, User{})
 	if err == nil {
 		t.Error("expected error")
 	}
@@ -54,7 +54,7 @@ func TestScanRow_RejectsNilPointer(t *testing.T) {
 		ID int `db:"id"`
 	}
 	var u *User
-	err := globalScanner.scanRow(nil, u)
+	err := testScanner.scanRow(nil, u)
 	if err == nil {
 		t.Error("expected error")
 	}

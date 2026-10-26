@@ -5,131 +5,103 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	"sync"
 )
 
-// scanner handles reflection-based scanning of SQL rows into structs.
-type scanner struct {
-	mu    sync.RWMutex
-	cache map[reflect.Type]*structInfo
-}
+// ScanMode selects how strictly result columns must match struct fields when
+// scanning into a struct (ADR-018).
+type ScanMode int
 
-// parseDBTagForScanner extracts column name from db tag.
-// Handles: "column", "column,pk", "-".
-func parseDBTagForScanner(tag string) string {
-	parts := strings.Split(tag, ",")
-	return strings.TrimSpace(parts[0])
-}
+const (
+	// ScanRequireFields (default): a mapped struct field without a result column
+	// is an error, unless the query lists its columns (Select("id", "name"));
+	// extra result columns are ignored.
+	ScanRequireFields ScanMode = iota
+	// ScanLenient is ozzo-dbx's behavior: unmatched fields keep their value,
+	// unmatched columns are discarded, no error.
+	ScanLenient
+	// ScanStrict is ScanRequireFields plus an error for a result column that
+	// matches no field.
+	ScanStrict
+)
 
-// structInfo contains cached metadata about a struct type.
-type structInfo struct {
-	fields []*fieldInfo
-}
-
-// fieldInfo describes how to scan into a struct field.
-type fieldInfo struct {
-	index  []int  // field index path for nested structs
-	dbName string // column name from db:"" tag or field name
-	field  reflect.StructField
-}
-
-// newScanner creates a new scanner with empty cache.
-func newScanner() *scanner {
-	return &scanner{
-		cache: make(map[reflect.Type]*structInfo),
+// WithScanMode sets the DB's default scan mode; SelectQuery.ScanMode and
+// Query.ScanMode override it per query.
+func WithScanMode(m ScanMode) Option {
+	return func(db *DB) {
+		db.scanMode = m
 	}
 }
 
-// globalScanner is the global scanner instance.
-var globalScanner = newScanner()
+// scanSettings carries what struct scanning needs from the query.
+type scanSettings struct {
+	db     *DB
+	mode   ScanMode
+	listed bool // the SELECT lists its columns: fields outside the list are not required
+}
 
-// getStructInfo returns cached struct metadata or builds it.
-func (s *scanner) getStructInfo(typ reflect.Type) (*structInfo, error) {
-	// Fast path: check cache with read lock
-	s.mu.RLock()
-	info, ok := s.cache[typ]
-	s.mu.RUnlock()
-
-	if ok {
-		return info, nil
+func (q *Query) scanSettings() scanSettings {
+	mode := q.db.scanMode
+	if q.scanMode != nil {
+		mode = *q.scanMode
 	}
+	return scanSettings{db: q.db, mode: mode, listed: q.listedColumns}
+}
 
-	// Slow path: build struct info with write lock
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// Double-check after acquiring write lock
-	if info, ok := s.cache[typ]; ok {
-		return info, nil
-	}
-
-	// Build struct info
-	info, err := s.buildStructInfo(typ, nil)
+// plan maps every result column to a field of struct type t (nil = discard).
+func (s scanSettings) plan(t reflect.Type, columns []string) ([]*modelField, error) {
+	mi, err := s.db.modelInfoOf(t)
 	if err != nil {
 		return nil, err
 	}
-
-	s.cache[typ] = info
-	return info, nil
+	plan := make([]*modelField, len(columns))
+	matched := make(map[*modelField]bool, len(columns))
+	for i, col := range columns {
+		key := strings.ToLower(col)
+		// A qualified result name ("src.qualified_name") matches its last part.
+		if dot := strings.LastIndex(key, "."); dot >= 0 {
+			key = key[dot+1:]
+		}
+		if f, ok := mi.byColumn[key]; ok {
+			plan[i] = f
+			matched[f] = true
+			continue
+		}
+		if s.mode == ScanStrict {
+			return nil, fmt.Errorf("relica: scanning into %s: result column %q matches no field "+
+				"(ScanStrict: add a field, drop the column from the query, or use ScanRequireFields)", t, col)
+		}
+	}
+	if s.mode != ScanLenient && !s.listed {
+		for _, f := range mi.fields {
+			if !matched[f] {
+				return nil, fmt.Errorf("relica: scanning into %s: field %s expects column %q, which the result "+
+					"does not have (ScanRequireFields: tag the field db:\"-\", list the columns in Select, or use ScanLenient)",
+					t, f.field.Name, f.column)
+			}
+		}
+	}
+	return plan, nil
 }
 
-// buildStructInfo analyzes struct type and extracts field information.
-func (s *scanner) buildStructInfo(typ reflect.Type, index []int) (*structInfo, error) {
-	if typ.Kind() == reflect.Pointer {
-		typ = typ.Elem()
-	}
-
-	if typ.Kind() != reflect.Struct {
-		return nil, fmt.Errorf("scanner: expected struct, got %s", typ.Kind())
-	}
-
-	info := &structInfo{}
-
-	for i := 0; i < typ.NumField(); i++ {
-		field := typ.Field(i)
-
-		// Skip unexported fields
-		if !field.IsExported() {
+// scanInto scans the current row into struct value v using plan.
+func scanInto(rows *sql.Rows, v reflect.Value, plan []*modelField) error {
+	dests := make([]any, len(plan))
+	for i, f := range plan {
+		if f == nil {
+			var discard any
+			dests[i] = &discard
 			continue
 		}
-
-		// Build field index path
-		fieldIndex := append(append([]int{}, index...), i)
-
-		// Check if field is embedded struct (recurse)
-		if field.Anonymous && field.Type.Kind() == reflect.Struct {
-			nested, err := s.buildStructInfo(field.Type, fieldIndex)
-			if err != nil {
-				return nil, err
-			}
-			info.fields = append(info.fields, nested.fields...)
-			continue
-		}
-
-		// Get column name from db:"" tag or use field name
-		// Handles: "column", "column,pk", "-"
-		dbName := field.Name
-		if tag, ok := field.Tag.Lookup("db"); ok {
-			column := parseDBTagForScanner(tag)
-			if column == "-" {
-				// Skip this field
-				continue
-			}
-			dbName = column
-		}
-
-		info.fields = append(info.fields, &fieldInfo{
-			index:  fieldIndex,
-			dbName: strings.ToLower(dbName), // normalize to lowercase
-			field:  field,
-		})
+		dests[i] = v.FieldByIndex(f.index).Addr().Interface()
 	}
-
-	return info, nil
+	if err := rows.Scan(dests...); err != nil {
+		return fmt.Errorf("scanner: scan failed: %w", err)
+	}
+	return nil
 }
 
 // scanRow scans a single SQL row into dest struct.
-func (s *scanner) scanRow(rows *sql.Rows, dest any) error {
+func (s scanSettings) scanRow(rows *sql.Rows, dest any) error {
 	destValue := reflect.ValueOf(dest)
 	if destValue.Kind() != reflect.Pointer {
 		return fmt.Errorf("scanner: dest must be pointer to struct, got %T", dest)
@@ -137,142 +109,58 @@ func (s *scanner) scanRow(rows *sql.Rows, dest any) error {
 	if destValue.IsNil() {
 		return fmt.Errorf("scanner: dest is a nil pointer, pass a non-nil *%s", destValue.Type().Elem())
 	}
-
 	destValue = destValue.Elem()
 	if destValue.Kind() != reflect.Struct {
 		return fmt.Errorf("scanner: dest must be pointer to struct, got pointer to %s", destValue.Kind())
 	}
 
-	// Get struct metadata
-	info, err := s.getStructInfo(destValue.Type())
-	if err != nil {
-		return err
-	}
-
-	// Get column names from SQL result
 	columns, err := rows.Columns()
 	if err != nil {
 		return fmt.Errorf("scanner: failed to get columns: %w", err)
 	}
-
-	// Build mapping from column name to field
-	fieldMap := make(map[string]*fieldInfo, len(info.fields))
-	for _, f := range info.fields {
-		fieldMap[strings.ToLower(f.dbName)] = f
+	plan, err := s.plan(destValue.Type(), columns)
+	if err != nil {
+		return err
 	}
-
-	// Prepare scan destinations
-	scanDests := make([]any, len(columns))
-	for i, colName := range columns {
-		colName = strings.ToLower(colName)
-		// Strip table prefix (e.g., "src.qualified_name" → "qualified_name")
-		if dotIdx := strings.LastIndex(colName, "."); dotIdx >= 0 {
-			colName = colName[dotIdx+1:]
-		}
-
-		if fieldInfo, ok := fieldMap[colName]; ok {
-			// Get field value by index path
-			fieldValue := destValue
-			for _, idx := range fieldInfo.index {
-				fieldValue = fieldValue.Field(idx)
-			}
-
-			// Use field address as scan destination
-			scanDests[i] = fieldValue.Addr().Interface()
-		} else {
-			// Column not mapped to any field - scan into dummy variable
-			var dummy any
-			scanDests[i] = &dummy
-		}
-	}
-
-	// Scan the row
-	if err := rows.Scan(scanDests...); err != nil {
-		return fmt.Errorf("scanner: scan failed: %w", err)
-	}
-
-	return nil
+	return scanInto(rows, destValue, plan)
 }
 
 // scanRows scans multiple SQL rows into dest slice.
-func (s *scanner) scanRows(rows *sql.Rows, dest any) error {
+func (s scanSettings) scanRows(rows *sql.Rows, dest any) error {
 	destValue := reflect.ValueOf(dest)
 	if destValue.Kind() != reflect.Pointer {
 		return fmt.Errorf("scanner: dest must be pointer to slice, got %T", dest)
 	}
-
 	sliceValue := destValue.Elem()
 	if sliceValue.Kind() != reflect.Slice {
 		return fmt.Errorf("scanner: dest must be pointer to slice, got pointer to %s", sliceValue.Kind())
 	}
 
 	elemType := sliceValue.Type().Elem()
-
-	// Determine if slice element is pointer or value
 	isPtr := elemType.Kind() == reflect.Pointer
 	if isPtr {
 		elemType = elemType.Elem()
 	}
-
-	// Pre-check that element type is struct
 	if elemType.Kind() != reflect.Struct {
 		return fmt.Errorf("scanner: slice element must be struct or *struct, got %s", elemType.Kind())
 	}
 
-	// Get struct metadata once
-	info, err := s.getStructInfo(elemType)
-	if err != nil {
-		return err
-	}
-
-	// Get column names from SQL result
 	columns, err := rows.Columns()
 	if err != nil {
 		return fmt.Errorf("scanner: failed to get columns: %w", err)
 	}
-
-	// Build mapping from column name to field
-	fieldMap := make(map[string]*fieldInfo, len(info.fields))
-	for _, f := range info.fields {
-		fieldMap[strings.ToLower(f.dbName)] = f
+	// Checked before the first row: a mismatch is a programming error even
+	// when the result is empty.
+	plan, err := s.plan(elemType, columns)
+	if err != nil {
+		return err
 	}
 
-	// Scan all rows
 	for rows.Next() {
-		// Create new element
 		elemValue := reflect.New(elemType).Elem()
-
-		// Prepare scan destinations
-		scanDests := make([]any, len(columns))
-		for i, colName := range columns {
-			colName = strings.ToLower(colName)
-			// Strip table prefix (e.g., "src.qualified_name" → "qualified_name")
-			if dotIdx := strings.LastIndex(colName, "."); dotIdx >= 0 {
-				colName = colName[dotIdx+1:]
-			}
-
-			if fieldInfo, ok := fieldMap[colName]; ok {
-				// Get field value by index path
-				fieldValue := elemValue
-				for _, idx := range fieldInfo.index {
-					fieldValue = fieldValue.Field(idx)
-				}
-
-				// Use field address as scan destination
-				scanDests[i] = fieldValue.Addr().Interface()
-			} else {
-				// Column not mapped to any field
-				var dummy any
-				scanDests[i] = &dummy
-			}
+		if err := scanInto(rows, elemValue, plan); err != nil {
+			return err
 		}
-
-		// Scan the row
-		if err := rows.Scan(scanDests...); err != nil {
-			return fmt.Errorf("scanner: scan failed: %w", err)
-		}
-
-		// Append to slice
 		if isPtr {
 			sliceValue.Set(reflect.Append(sliceValue, elemValue.Addr()))
 		} else {
@@ -283,74 +171,61 @@ func (s *scanner) scanRows(rows *sql.Rows, dest any) error {
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("scanner: rows iteration failed: %w", err)
 	}
-
 	return nil
 }
 
 // scanMapRow scans a single SQL row into a NullStringMap.
 // All values are scanned as sql.NullString regardless of actual column type.
-func (s *scanner) scanMapRow(rows *sql.Rows, dest *NullStringMap) error {
-	// Get column names from SQL result
+func scanMapRow(rows *sql.Rows, dest *NullStringMap) error {
 	columns, err := rows.Columns()
 	if err != nil {
 		return fmt.Errorf("scanner: failed to get columns: %w", err)
 	}
 
-	// Prepare scan destinations - all as NullString
 	values := make([]sql.NullString, len(columns))
 	scanDests := make([]any, len(columns))
 	for i := range values {
 		scanDests[i] = &values[i]
 	}
 
-	// Scan the row
 	if err := rows.Scan(scanDests...); err != nil {
 		return fmt.Errorf("scanner: scan failed: %w", err)
 	}
 
-	// Build the map
 	*dest = make(NullStringMap, len(columns))
 	for i, col := range columns {
 		(*dest)[col] = values[i]
 	}
-
 	return nil
 }
 
 // scanMapRows scans multiple SQL rows into a slice of NullStringMap.
-func (s *scanner) scanMapRows(rows *sql.Rows, dest *[]NullStringMap) error {
-	// Get column names from SQL result
+func scanMapRows(rows *sql.Rows, dest *[]NullStringMap) error {
 	columns, err := rows.Columns()
 	if err != nil {
 		return fmt.Errorf("scanner: failed to get columns: %w", err)
 	}
 
-	// Scan all rows
 	for rows.Next() {
-		// Prepare scan destinations - all as NullString
 		values := make([]sql.NullString, len(columns))
 		scanDests := make([]any, len(columns))
 		for i := range values {
 			scanDests[i] = &values[i]
 		}
 
-		// Scan the row
 		if err := rows.Scan(scanDests...); err != nil {
 			return fmt.Errorf("scanner: scan failed: %w", err)
 		}
 
-		// Build the map for this row
 		rowMap := make(NullStringMap, len(columns))
 		for i, col := range columns {
 			rowMap[col] = values[i]
 		}
-
 		*dest = append(*dest, rowMap)
 	}
 
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("scanner: rows iteration failed: %w", err)
 	}
-
 	return nil
 }

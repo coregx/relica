@@ -90,7 +90,7 @@ func TestScannerSimpleStruct(t *testing.T) {
 	}
 
 	var user SimpleUser
-	if err := globalScanner.scanRow(rows, &user); err != nil {
+	if err := testScanner.scanRow(rows, &user); err != nil {
 		t.Fatalf("scanRow failed: %v", err)
 	}
 
@@ -120,7 +120,7 @@ func TestScannerWithTags(t *testing.T) {
 	}
 
 	var user UserWithTags
-	if err := globalScanner.scanRow(rows, &user); err != nil {
+	if err := testScanner.scanRow(rows, &user); err != nil {
 		t.Fatalf("scanRow failed: %v", err)
 	}
 
@@ -150,7 +150,7 @@ func TestScannerNoTags(t *testing.T) {
 	}
 
 	var user UserNoTags
-	if err := globalScanner.scanRow(rows, &user); err != nil {
+	if err := testScanner.scanRow(rows, &user); err != nil {
 		t.Fatalf("scanRow failed: %v", err)
 	}
 
@@ -176,7 +176,7 @@ func TestScannerMultipleRows(t *testing.T) {
 	defer rows.Close()
 
 	var users []SimpleUser
-	if err := globalScanner.scanRows(rows, &users); err != nil {
+	if err := testScanner.scanRows(rows, &users); err != nil {
 		t.Fatalf("scanRows failed: %v", err)
 	}
 
@@ -208,7 +208,7 @@ func TestScannerPointerSlice(t *testing.T) {
 	defer rows.Close()
 
 	var users []*SimpleUser
-	if err := globalScanner.scanRows(rows, &users); err != nil {
+	if err := testScanner.scanRows(rows, &users); err != nil {
 		t.Fatalf("scanRows failed: %v", err)
 	}
 
@@ -236,7 +236,7 @@ func TestScannerIgnoredField(t *testing.T) {
 	}
 
 	var user UserWithIgnored
-	if err := globalScanner.scanRow(rows, &user); err != nil {
+	if err := testScanner.scanRow(rows, &user); err != nil {
 		t.Fatalf("scanRow failed: %v", err)
 	}
 
@@ -262,7 +262,7 @@ func TestScannerEmptyResult(t *testing.T) {
 	defer rows.Close()
 
 	var users []SimpleUser
-	if err := globalScanner.scanRows(rows, &users); err != nil {
+	if err := testScanner.scanRows(rows, &users); err != nil {
 		t.Fatalf("scanRows failed: %v", err)
 	}
 
@@ -287,8 +287,12 @@ func TestScannerErrorNotPointer(t *testing.T) {
 
 	var user SimpleUser
 	// Pass value instead of pointer - should error
-	err = globalScanner.scanRow(rows, user)
+	err = testScanner.scanRow(rows, user)
 	if err == nil {
 		t.Error("Expected error when passing non-pointer, got nil")
 	}
 }
+
+// testScanner scans like a lenient SQLite DB (the behavior these tests were
+// written for); scan_mode_test.go covers the default ScanRequireFields.
+var testScanner = scanSettings{db: mockDB("sqlite"), mode: ScanLenient}

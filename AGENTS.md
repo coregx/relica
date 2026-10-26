@@ -797,7 +797,40 @@ type OrderItem struct {
 }
 ```
 
-**PK detection priority**: `db:"col,pk"` tag → field named `ID` → field named `Id`.
+**PK detection priority**: every field tagged pk (`db:"col,pk"`, `db:",pk"`, legacy `db:"pk"`) → field named `ID` → field named `Id`. Embedded structs count.
+
+---
+
+## Table and Column Names (v0.20.0+, ADR-018)
+
+| Go code | Name used |
+|---|---|
+| `db:"col"` tag | `col` |
+| no tag | snake_case of the field name: `CreatedAt` → `created_at`, `UserID` → `user_id`, `HTTPLog` → `httplog` |
+| `db:"-"` | field skipped |
+| embedded struct (no tag) | its fields are flattened into the model |
+| table: `Table("x")` | `x` |
+| table: `TableName()` method (value **or pointer** receiver) | its result |
+| table: neither | snake_case singular of the type: `UserProfile` → `user_profile`, `User` → `user` (NOT `users`) |
+
+```go
+// Plural or legacy table names: say so explicitly
+func (User) TableName() string { return "users" }
+
+// Other rules, per DB:
+db, err := relica.Open("postgres", dsn,
+    relica.WithNaming(relica.Snake(relica.Initialisms(relica.GoInitialisms()...)))) // HTTPLog → http_log
+// relica.Snake(relica.TablePrefix("app."), relica.PluralTables(f)) — prefix/plural for derived tables only
+// relica.Naming{Column: func(relica.ColumnSource) string { return "" }} — every field must have a db tag
+```
+
+**Reading (ScanMode)**: by default a struct field that has no column in the result is an **error**
+(`ScanRequireFields`) instead of a silent zero. `Select("id", "name")` requires only the listed columns;
+`db:"-"` fields are never required; extra result columns are ignored. Per DB: `relica.WithScanMode(...)`;
+per query: `.ScanMode(relica.ScanLenient)` (ozzo-dbx behavior) or `relica.ScanStrict` (extra columns are errors too).
+
+**Common mistake after upgrading**: a model without `TableName()` that relied on the old `+ "s"` rule now
+queries `user` instead of `users` → add `TableName()`.
 
 ---
 

@@ -48,36 +48,41 @@ type TestComment struct {
 	Message string `db:"message"`
 }
 
-func TestInferTableName_WithTableNameMethod(t *testing.T) {
-	user := ModelTestUser{}
-	name := inferTableName(&user)
-	if name != "test_users" {
-		t.Errorf("Should use TableName() method: got %v, want %v", name, "test_users")
+func TestTableNameOf_WithTableNameMethod(t *testing.T) {
+	name, err := mockDB("postgres").tableNameOf(&ModelTestUser{})
+	if err != nil || name != "test_users" {
+		t.Errorf("Should use TableName() method: got %q, %v", name, err)
 	}
 }
 
-func TestInferTableName_DefaultPluralization(t *testing.T) {
-	product := TestProduct{}
-	name := inferTableName(&product)
-	if name != "testproducts" {
-		t.Errorf("Should lowercase struct name + 's': got %v, want %v", name, "testproducts")
+// v0.20.0 (FIX-011, ADR-018): the fallback is snake_case singular, as in
+// ozzo-dbx; it was lower case + "s" ("testproducts").
+func TestTableNameOf_DefaultSnakeSingular(t *testing.T) {
+	name, err := mockDB("postgres").tableNameOf(&TestProduct{})
+	if err != nil || name != "test_product" {
+		t.Errorf("got %q, %v; want test_product", name, err)
 	}
 }
 
-func TestInferTableName_AlreadyPlural(t *testing.T) {
+func TestTableNameOf_NoPluralGuessing(t *testing.T) {
 	type News struct {
 		ID int `db:"id"`
 	}
-	news := News{}
-	name := inferTableName(&news)
-	if name != "news" {
-		t.Errorf("Should keep unchanged if already ends with 's': got %v, want %v", name, "news")
+	type Category struct {
+		ID int `db:"id"`
+	}
+	db := mockDB("postgres")
+	for model, want := range map[any]string{&News{}: "news", &Category{}: "category"} {
+		if got, err := db.tableNameOf(model); err != nil || got != want {
+			t.Errorf("%T: got %q, %v; want %q", model, got, err, want)
+		}
 	}
 }
 
 func TestModelQuery_Table_Override(t *testing.T) {
 	user := ModelTestUser{}
 	mq := &ModelQuery{
+		db:      mockDB("postgres"),
 		model:   &user,
 		table:   "test_users",
 		exclude: make(map[string]bool),
@@ -92,6 +97,7 @@ func TestModelQuery_Table_Override(t *testing.T) {
 func TestModelQuery_Exclude(t *testing.T) {
 	user := ModelTestUser{}
 	mq := &ModelQuery{
+		db:      mockDB("postgres"),
 		model:   &user,
 		table:   "test_users",
 		exclude: make(map[string]bool),
@@ -112,6 +118,7 @@ func TestModelQuery_Exclude(t *testing.T) {
 
 func TestModelQuery_FilterFields_OnlySpecified(t *testing.T) {
 	mq := &ModelQuery{
+		db:      mockDB("postgres"),
 		exclude: make(map[string]bool),
 	}
 
@@ -139,6 +146,7 @@ func TestModelQuery_FilterFields_OnlySpecified(t *testing.T) {
 
 func TestModelQuery_FilterFields_AllExceptExcluded(t *testing.T) {
 	mq := &ModelQuery{
+		db: mockDB("postgres"),
 		exclude: map[string]bool{
 			"created_at": true,
 			"status":     true,
@@ -177,6 +185,7 @@ func TestModelQuery_FilterFields_AllExceptExcluded(t *testing.T) {
 
 func TestModelQuery_FilterFields_OnlyWithExclude(t *testing.T) {
 	mq := &ModelQuery{
+		db: mockDB("postgres"),
 		exclude: map[string]bool{
 			"email": true,
 		},
@@ -206,6 +215,7 @@ func TestModelQuery_GetPrimaryKeys_SinglePK_IDField(t *testing.T) {
 	// ModelTestUser has ID field (int) with db:"id" tag - found by field name fallback
 	user := ModelTestUser{ID: 123}
 	mq := &ModelQuery{
+		db:    mockDB("postgres"),
 		model: &user,
 	}
 
@@ -229,6 +239,7 @@ func TestModelQuery_GetPrimaryKeys_SinglePK_ExplicitTag(t *testing.T) {
 	// TestPost has explicit db:"post_id,pk" tag
 	post := TestPost{PostID: 456}
 	mq := &ModelQuery{
+		db:    mockDB("postgres"),
 		model: &post,
 	}
 
@@ -249,6 +260,7 @@ func TestModelQuery_GetPrimaryKeys_CompositePK(t *testing.T) {
 	// TestOrderItem has composite PK: order_id + product_id
 	item := TestOrderItem{OrderID: 100, ProductID: 200, Quantity: 5}
 	mq := &ModelQuery{
+		db:    mockDB("postgres"),
 		model: &item,
 	}
 
@@ -270,6 +282,7 @@ func TestModelQuery_GetPrimaryKeys_IDFieldWithDbTag(t *testing.T) {
 	// TestComment has ID field with db:"comment_id" tag
 	comment := TestComment{ID: 789}
 	mq := &ModelQuery{
+		db:    mockDB("postgres"),
 		model: &comment,
 	}
 
@@ -293,6 +306,7 @@ func TestModelQuery_GetPrimaryKeys_NotFound(t *testing.T) {
 	}
 	noID := NoID{Name: "test"}
 	mq := &ModelQuery{
+		db:    mockDB("postgres"),
 		model: &noID,
 	}
 
@@ -316,6 +330,7 @@ func TestModelQuery_GetPrimaryKeys_ExplicitPK_TakesPrecedence(t *testing.T) {
 	}
 	model := WithExplicitPK{ID: 111, TenantID: 222}
 	mq := &ModelQuery{
+		db:    mockDB("postgres"),
 		model: &model,
 	}
 

@@ -15,6 +15,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **New `WithMySQLUpsertSyntax(MySQLUpsertRowAlias)`** selects `VALUES (...) AS excluded ... col = excluded.col` (MySQL 8.0.19+) instead of the default `col = VALUES(col)`. Both read the proposed row after `BEFORE INSERT` triggers, like PostgreSQL's `EXCLUDED`; the server version is never probed
 - **`Model(&m).Exclude(...).Upsert()` honours `Exclude`** — excluded columns were inserted and overwritten on every upsert; now they are left out of both the INSERT and the update, as in `Insert`. Unknown `fields`/`Exclude`/`UpsertOn` names, a field in the conflict target, an excluded field and a model with nothing to update are errors instead of being ignored or producing an empty `SET`
 
+### Changed (breaking) — table and column names, struct scanning (ADR-018)
+
+- **Derived table names are snake_case singular** — a model without `TableName()` used the lower-cased type name plus `s` (`UserProfile` → `userprofiles`, `Category` → `categorys`); it is now `user_profile`, `category`, as in ozzo-dbx. Add `TableName()` to keep a plural or legacy name
+- **`TableName()` with a pointer receiver works on value models** — `db.Model(User{})` ignored `func (*User) TableName()`; both receivers are honoured for `T`, `*T`, `[]T` and `[]*T`, and on a non-nil `*T` the method runs on that value (instance-dependent names)
+- **Untagged fields are snake_case columns** — a field without a `db` tag was written under its Go name (`"CreatedAt"`) and read case-insensitively; it is now `created_at` on write and read (ozzo-dbx rule: `UserID` → `user_id`, `HTTPLog` → `httplog`)
+- **Embedded structs are flattened on write** — `InsertStruct`, `Model().Insert/Update/Upsert` and `UpdateChanged` wrote an embedded struct as one column named after its type (or failed with "unsupported type"); its fields are now columns, as the reader always did. Embedded pointers and `db` tags on embedded structs are errors
+- **Legacy `db:"pk"` tag** wrote a column named `pk` while the primary-key code used the lower-cased field name; it now marks the primary key and takes the column from the naming rule (`UserKey int db:"pk"` → `user_key`)
+- **Reading into a struct fails when a field has no result column** (`ScanRequireFields`, the new default) — such fields stayed zero with `err == nil`. Queries that list their columns (`Select("id", "name")`) require only those; `db:"-"` fields are never required; extra result columns are still ignored. `ScanLenient` restores the old behavior, `ScanStrict` also rejects extra columns — per DB (`WithScanMode`) or per query (`SelectQuery.ScanMode`, `Query.ScanMode`)
+- **Errors for names that would silently collide** — two fields mapping to the same column (case-insensitive), a derived name over 63 bytes (PostgreSQL truncates silently) and a `Naming` that refuses a name are errors before anything is sent
+- `BatchInsertStruct` with a zero primary key in some rows and explicit keys in others is an error — the key column was dropped when the first row's key was zero, losing the explicit keys
+- Removed the unused internal `GetTableName` / `DefaultFieldMapFunc` (a third, different naming rule) and the reflection helpers they duplicated
+
+### Added
+
+- **`WithNaming(Naming)`** — how a DB derives names: `Naming{Table, Column}` funcs over `TableSource` / `ColumnSource` (model, declaring struct, field, index path). Built-in `Snake(...)` with `SplitAcronyms()` (`HTTPLog` → `http_log`), `Initialisms(GoInitialisms()...)` (`IPv4Address` → `ipv4_address`, whole tokens only), `TablePrefix`, `PluralTables`; `SnakeCase` for custom rules
+- **`ScanMode`** — `ScanRequireFields` (default), `ScanLenient`, `ScanStrict`; `WithScanMode`, `SelectQuery.ScanMode`, `Query.ScanMode`
+- **`WrapDB(sqlDB, driver, opts...)` takes options** (hooks, logger, naming, scan mode, cache, health check) — existing calls compile unchanged
+
 ### Documentation
 
 - **Guides no longer show API users cannot call** — SECURITY, SECURITY_TESTING, QUERY_OPTIMIZER_GUIDE, LOGGING_GUIDE, PRODUCTION_DEPLOYMENT, PERFORMANCE_TUNING and BEST_PRACTICES described the SQL validator, audit log, optimizer and an OpenTelemetry tracer that exist only as internal groundwork, plus `db.StmtCacheStats()` and `db.SetQueryLogger()`, which never existed. They now document the public equivalents (parameters, quoting, `WithLogger`, `WithQueryHook`, `MaskArgs`, `Stats()`), tracing as a user-side `QueryHook` with OpenTelemetry (Relica stays dependency-free), and mark the internal features as planned. `PRODUCTION_DEPLOYMENT` also showed `WithConnMaxLifetime(300)`, which is 300 ns

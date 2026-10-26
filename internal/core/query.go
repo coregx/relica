@@ -19,6 +19,15 @@ type Query struct {
 	stmt     *sql.Stmt // manually prepared statement (bypasses cache)
 	prepared bool      // true if Prepare() was called
 	prepErr  error     // error from Prepare() call
+
+	scanMode      *ScanMode // per-query override of DB.scanMode
+	listedColumns bool      // the SELECT lists its columns (ScanRequireFields checks only those)
+}
+
+// ScanMode overrides the DB's scan mode for this query.
+func (q *Query) ScanMode(m ScanMode) *Query {
+	q.scanMode = &m
+	return q
 }
 
 // appendSQL appends a suffix to the SQL query.
@@ -278,7 +287,7 @@ func (q *Query) One(dest any) error {
 		return err
 	}
 
-	scanErr := scanOne(rows, dest)
+	scanErr := scanOne(rows, dest, q.scanSettings())
 	if scanErr != nil {
 		elapsed := time.Since(start)
 		q.db.invokeHook(ctx, QueryEvent{
@@ -543,7 +552,7 @@ func (q *Query) All(dest any) error {
 	}
 	defer func() { _ = rows.Close() }()
 
-	scanErr := scanAll(rows, dest)
+	scanErr := scanAll(rows, dest, q.scanSettings())
 	if scanErr != nil {
 		elapsed := time.Since(start)
 		q.db.invokeHook(ctx, QueryEvent{

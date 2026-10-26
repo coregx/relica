@@ -37,6 +37,13 @@ type DB struct {
 	ctx           context.Context
 
 	mysqlUpsertSyntax MySQLUpsertSyntax // how MySQL upserts read the proposed row (ADR-019)
+
+	// naming derives table and column names (ADR-018); models caches the
+	// resulting struct descriptions. A pointer, because WithContext copies DB.
+	naming Naming
+	models *modelCache
+
+	scanMode ScanMode // struct scanning strictness (ADR-018); zero = ScanRequireFields
 }
 
 // Tx represents a database transaction.
@@ -188,6 +195,7 @@ func NewDB(driverName, dsn string) (*DB, error) {
 		sqlDB:      sqlDB,
 		driverName: driverName,
 		stmtCache:  cache.NewStmtCache(),
+		models:     &modelCache{},
 		dialect:    dialect,
 	}, nil
 }
@@ -223,17 +231,22 @@ func Open(driverName, dsn string, opts ...Option) (*DB, error) {
 //	defer db.Close() // Caller's responsibility
 //
 // Note: Each wrapped DB instance gets its own statement cache for isolation.
-func WrapDB(sqlDB *sql.DB, driverName string) *DB {
+func WrapDB(sqlDB *sql.DB, driverName string, opts ...Option) *DB {
 	if sqlDB == nil {
 		panic("relica: WrapDB called with nil *sql.DB")
 	}
 	dialect := dialects.GetDialect(driverName)
-	return &DB{
+	db := &DB{
 		sqlDB:      sqlDB,
 		driverName: driverName,
 		stmtCache:  cache.NewStmtCache(),
+		models:     &modelCache{},
 		dialect:    dialect,
 	}
+	for _, opt := range opts {
+		opt(db)
+	}
+	return db
 }
 
 // Close releases all database resources.

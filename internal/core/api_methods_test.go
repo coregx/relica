@@ -518,7 +518,7 @@ func TestSelectQuery_Model_AutoTable(t *testing.T) {
 	db := openCovDB(t)
 	defer db.Close()
 
-	// Table name should be inferred as "model_items" (struct name lowercased + 's').
+	// Table name is inferred as "model_item" (snake_case singular, ADR-018).
 	type ModelItem struct {
 		ID   int64  `db:"id,pk"`
 		Name string `db:"name"`
@@ -527,19 +527,19 @@ func TestSelectQuery_Model_AutoTable(t *testing.T) {
 	ctx := context.Background()
 	// Create table using the inferred name.
 	_, err := db.ExecContext(ctx,
-		`CREATE TABLE modelitems (id INTEGER, name TEXT)`)
+		`CREATE TABLE model_item (id INTEGER, name TEXT)`)
 	if err != nil {
 		t.Fatalf("create table: %v", err)
 	}
 	_, err = db.ExecContext(ctx,
-		`INSERT INTO modelitems (id, name) VALUES (7, 'auto')`)
+		`INSERT INTO model_item (id, name) VALUES (7, 'auto')`)
 	if err != nil {
 		t.Fatalf("insert: %v", err)
 	}
 
 	dest := ModelItem{ID: 7}
 	qb := &QueryBuilder{db: db}
-	// No From() — table must be inferred as "modelitems".
+	// No From() — table must be inferred as "model_item".
 	err = qb.Select().Model(&dest)
 	if err != nil {
 		t.Fatalf("Model() auto-table: unexpected error: %v", err)

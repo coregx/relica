@@ -357,7 +357,8 @@ type User struct {
     Age   int    `db:"age"`
 }
 
-// Implement TableName() interface
+// Implement TableName() interface. Without it Relica derives the table from
+// the type name in snake_case singular: User → "user", UserProfile → "user_profile".
 func (User) TableName() string {
     return "users"
 }

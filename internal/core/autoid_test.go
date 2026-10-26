@@ -1,7 +1,6 @@
 package core
 
 import (
-	"reflect"
 	"strings"
 	"testing"
 
@@ -159,18 +158,9 @@ func TestInsert_AutoID_IncludedInSQL(t *testing.T) {
 
 	user := User{Name: "Alice"}
 
-	// Simulate what Insert() does: populate autoid, then StructToMap
-	v := reflect.ValueOf(&user)
-	fields := util.FindAutoIDFields(v)
-	if len(fields) != 1 {
-		t.Fatalf("expected length %d, got %d", 1, len(fields))
-	}
-
-	// Populate
-	fv := v.Elem().Field(fields[0].FieldIndex)
-	fv.SetString(util.GenerateAutoID(fields[0].Prefix, fields[0].Generator))
-
-	dataMap, err := util.StructToMap(&user)
+	// The steps of Insert(): populate autoid fields, then read the columns.
+	db.Model(&user).populateAutoIDFields()
+	dataMap, err := db.structValues(&user)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -213,17 +203,9 @@ func TestInsert_AutoID_PresetNotOverwritten_SQL(t *testing.T) {
 
 	user := User{PublicID: "usr_preset-id", Name: "Bob"}
 
-	// Simulate populate — should NOT overwrite
-	v := reflect.ValueOf(&user).Elem()
-	fields := util.FindAutoIDFields(v)
-	for _, f := range fields {
-		fv := v.Field(f.FieldIndex)
-		if fv.Kind() == reflect.String && fv.String() != "" {
-			continue // skip preset
-		}
-	}
-
-	dataMap, _ := util.StructToMap(&user)
+	// populate must NOT overwrite a preset value
+	db.Model(&user).populateAutoIDFields()
+	dataMap, _ := db.structValues(&user)
 	delete(dataMap, "id")
 
 	query := qb.Insert("users", dataMap)

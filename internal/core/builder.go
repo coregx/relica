@@ -251,6 +251,7 @@ type subExprEntry struct {
 // SelectQuery represents a SELECT query being built.
 type SelectQuery struct {
 	builder       *QueryBuilder
+	scanMode      *ScanMode // per-query override of DB.scanMode (ADR-018)
 	columns       []string
 	table         string         // DEPRECATED: use fromSrc instead (kept for backward compatibility)
 	fromSrc       *fromSource    // FROM source (table or subquery)
@@ -1452,12 +1453,39 @@ func (sq *SelectQuery) Build() *Query {
 	}
 
 	return &Query{
-		sql:    query,
-		params: allParams,
-		db:     sq.builder.db,
-		tx:     sq.builder.tx,
-		ctx:    ctx,
+		sql:           query,
+		params:        allParams,
+		db:            sq.builder.db,
+		tx:            sq.builder.tx,
+		ctx:           ctx,
+		scanMode:      sq.scanMode,
+		listedColumns: sq.listsColumns(),
 	}
+}
+
+// ScanMode overrides the DB's scan mode for this query (ADR-018).
+func (sq *SelectQuery) ScanMode(m ScanMode) *SelectQuery {
+	sq.scanMode = &m
+	return sq
+}
+
+// listsColumns reports whether the SELECT names its columns, so a struct
+// scan requires only those. "*" and "t.*" are not a list.
+func (sq *SelectQuery) listsColumns() bool {
+	if len(sq.columns)+len(sq.selectExprs)+len(sq.subExprs) == 0 {
+		return false
+	}
+	for _, c := range sq.columns {
+		if c = strings.TrimSpace(c); c == "*" || strings.HasSuffix(c, ".*") {
+			return false
+		}
+	}
+	for _, e := range sq.selectExprs {
+		if s := strings.TrimSpace(e.SQL); s == "*" || strings.HasSuffix(s, ".*") {
+			return false
+		}
+	}
+	return true
 }
 
 // validateModelDest validates dest is a non-nil struct pointer and returns the dereferenced Value.
@@ -1474,10 +1502,10 @@ func validateModelDest(dest any) (reflect.Value, error) {
 }
 
 // extractNonZeroPK extracts PK info from struct and validates at least one PK field is non-zero.
-func extractNonZeroPK(v reflect.Value) (*util.PrimaryKeyInfo, error) {
-	pkInfo, err := util.FindPrimaryKeyFields(v)
+func (sq *SelectQuery) extractNonZeroPK(v reflect.Value) (*util.PrimaryKeyInfo, error) {
+	pkInfo, err := sq.builder.db.primaryKey(v)
 	if err != nil {
-		return nil, errors.New("model: primary key not found")
+		return nil, err
 	}
 	for _, val := range pkInfo.Values {
 		if !util.IsPrimaryKeyZero(val) {
@@ -1498,14 +1526,14 @@ func (sq *SelectQuery) Model(dest any) error {
 	}
 
 	if sq.table == "" && sq.fromSrc == nil {
-		tableName := inferTableName(dest)
-		if tableName == "" {
-			return errors.New("model: cannot infer table name")
+		tableName, err := sq.builder.db.tableNameOf(dest)
+		if err != nil {
+			return err
 		}
 		sq.From(tableName)
 	}
 
-	pkInfo, err := extractNonZeroPK(v)
+	pkInfo, err := sq.extractNonZeroPK(v)
 	if err != nil {
 		return err
 	}
