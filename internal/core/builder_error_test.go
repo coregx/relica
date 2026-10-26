@@ -514,3 +514,45 @@ func TestSelectQuery_ToSQL_BuildError(t *testing.T) {
 		t.Errorf("valid query: ToSQL = %q", sqlStr)
 	}
 }
+
+// TestSelectQuery_Err_LateErrorInStoredExpression verifies that SelectSub,
+// OrderBySub and GroupBySub, which keep the expression and render it when the
+// outer query runs, also report a construction error the subquery got after
+// it was added (the add-time check alone missed it, and the subquery rendered
+// without its invalid condition).
+func TestSelectQuery_Err_LateErrorInStoredExpression(t *testing.T) {
+	qb := &QueryBuilder{db: mockDB("postgres")}
+	for name, attach := range map[string]func(outer, sub *SelectQuery){
+		"SelectSub":  func(o, s *SelectQuery) { o.SelectSub(s.AsExpression(), "n") },
+		"OrderBySub": func(o, s *SelectQuery) { o.OrderBySub(s.AsExpression()) },
+		"GroupBySub": func(o, s *SelectQuery) { o.GroupBySub(s.AsExpression()) },
+	} {
+		sub := qb.Select("COUNT(*)").From("orders")
+		outer := qb.Select("id").From("users")
+		attach(outer, sub)
+		sub.Where(42) // invalid, added after attaching
+		if q := outer.Build(); q.prepErr == nil || !strings.Contains(q.prepErr.Error(), "Where()") {
+			t.Errorf("%s: prepErr = %v, sql %q", name, q.prepErr, q.sql)
+		}
+	}
+}
+
+// TestOrderByGroupBySub_SubqueryParenthesized verifies that a subquery passed
+// to OrderBySub/GroupBySub is wrapped in parentheses, as SelectSub does; it
+// rendered ORDER BY SELECT ..., which no database accepts.
+func TestOrderByGroupBySub_SubqueryParenthesized(t *testing.T) {
+	qb := &QueryBuilder{db: mockDB("postgres")}
+	sub := func() Expression {
+		return qb.Select("COUNT(*)").From("orders").Where(EqCol("orders.user_id", "users.id")).AsExpression()
+	}
+	got, _ := qb.Select("id").From("users").OrderBySub(sub()).ToSQL()
+	want := `SELECT "id" FROM "users" ORDER BY (SELECT COUNT(*) FROM "orders" WHERE "orders"."user_id" = "users"."id")`
+	if got != want {
+		t.Errorf("OrderBySub:\n got %s\nwant %s", got, want)
+	}
+	got, _ = qb.Select("id").From("users").GroupBySub(sub()).ToSQL()
+	want = `SELECT "id" FROM "users" GROUP BY (SELECT COUNT(*) FROM "orders" WHERE "orders"."user_id" = "users"."id")`
+	if got != want {
+		t.Errorf("GroupBySub:\n got %s\nwant %s", got, want)
+	}
+}
