@@ -88,7 +88,7 @@ func TestParseDBTag_BackwardCompatible(t *testing.T) {
 // --- GenerateAutoID ---
 
 func TestGenerateAutoID_WithPrefix(t *testing.T) {
-	id := GenerateAutoID("usr", "")
+	id, _ := GenerateAutoID("usr", "")
 	if len(id) <= 4 {
 		t.Error("should have prefix + UUID")
 	}
@@ -106,7 +106,7 @@ func TestGenerateAutoID_WithPrefix(t *testing.T) {
 }
 
 func TestGenerateAutoID_WithoutPrefix(t *testing.T) {
-	id := GenerateAutoID("", "")
+	id, _ := GenerateAutoID("", "")
 	if len(id) != 36 { // raw UUID v7
 		t.Errorf("expected length %d, got %d", 36, len(id))
 	}
@@ -118,7 +118,7 @@ func TestGenerateAutoID_WithoutPrefix(t *testing.T) {
 func TestGenerateAutoID_Uniqueness(t *testing.T) {
 	seen := make(map[string]bool, 1000)
 	for range 1000 {
-		id := GenerateAutoID("usr", "")
+		id, _ := GenerateAutoID("usr", "")
 		if seen[id] {
 			t.Fatalf("duplicate: %s", id)
 		}
@@ -134,24 +134,22 @@ func TestGenerateAutoID_CustomGenerator(t *testing.T) {
 		generatorsMu.Unlock()
 	}()
 
-	id := GenerateAutoID("evt", "fixed")
+	id, _ := GenerateAutoID("evt", "fixed")
 	if id != "evt_test-fixed-id" {
 		t.Errorf("got %v, want %v", id, "evt_test-fixed-id")
 	}
 
-	id = GenerateAutoID("", "fixed")
+	id, _ = GenerateAutoID("", "fixed")
 	if id != "test-fixed-id" {
 		t.Errorf("got %v, want %v", id, "test-fixed-id")
 	}
 }
 
+// v0.20.0: an unknown generator is an error; it fell back to UUID v7 silently.
 func TestGenerateAutoID_UnknownGenerator(t *testing.T) {
-	id := GenerateAutoID("x", "nonexistent")
-	if len(id) <= 0 {
-		t.Error("should fallback to UUID v7")
-	}
-	if id[:2] != "x_" {
-		t.Errorf("got %v, want %v", id[:2], "x_")
+	id, err := GenerateAutoID("x", "nonexistent")
+	if err == nil || !strings.Contains(err.Error(), `"nonexistent" is not registered`) || id != "" {
+		t.Fatalf("id = %q, err = %v", id, err)
 	}
 }
 
@@ -235,8 +233,8 @@ func TestRegisterIDGenerator(t *testing.T) {
 		generatorsMu.Unlock()
 	}()
 
-	id1 := GenerateAutoID("", "seq")
-	id2 := GenerateAutoID("", "seq")
+	id1, _ := GenerateAutoID("", "seq")
+	id2, _ := GenerateAutoID("", "seq")
 	if id1 == id2 {
 		t.Errorf("expected different, both %v", id1)
 	}
@@ -244,7 +242,7 @@ func TestRegisterIDGenerator(t *testing.T) {
 
 func BenchmarkGenerateAutoID(b *testing.B) {
 	for range b.N {
-		GenerateAutoID("usr", "")
+		_, _ = GenerateAutoID("usr", "")
 	}
 }
 

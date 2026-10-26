@@ -742,3 +742,15 @@ needs a `Where` like `Update`. SELECT keeps its semantics: an empty condition se
 
 **Find affected code:** search for `.Delete(` / `.Update(` chains that end in `.Execute()` with no `.Where(`, and for
 conditions assembled from optional filters (`relica.And(conds...)` where `conds` may be empty).
+
+## Names Relica cannot find
+
+| v0.19 code | v0.20.0 | Change your code to |
+|---|---|---|
+| `db.Model(&m).Insert("name", "emial")` / `.Update("emial")` | error "field "emial" is not a column of the model" (was: skipped) | fix the name; names are column names (`db` tag), not Go field names |
+| `db.Model(&m).Exclude("crated_at")...` | error "Exclude name ... is not a column of the model" (was: ignored) | fix the name |
+| `BatchInsert(t, cols).ValuesMap(map[string]any{"typo": v})` | error "key ... is not one of the batch columns" (was: dropped, NULL written) | fix the key or add the column to `cols` |
+| `db:"public_id,autoid:usr,gen=ulid"` with no `RegisterIDGenerator("ulid", ...)` | error "autoid generator "ulid" is not registered" (was: UUID v7) | register the generator at start-up |
+
+Column names in SQL (`Select("col")`, `Where`/`HashExp` keys, `OrderBy`) are not checked by Relica — the database
+rejects unknown columns itself.
