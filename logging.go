@@ -32,8 +32,12 @@ type QueryEvent struct {
 	Operation string
 }
 
-// QueryHook is called after each statement with its QueryEvent. Use it for
-// logging, metrics or tracing. Several hooks registered with WithQueryHook
+// QueryHook is called after each statement with its QueryEvent: builder
+// queries, NewQuery, and the raw ExecContext/QueryContext/QueryRowContext of
+// DB and Tx (for QueryContext, when the rows are returned; for QueryRowContext,
+// with the row's error). Statements the server rejects at prepare time are
+// reported too; construction errors that stop a statement before it is sent
+// are not. Use it for logging, metrics or tracing. Several hooks registered with WithQueryHook
 // run in registration order. A hook runs synchronously on the query's
 // goroutine, so keep it fast.
 type QueryHook func(ctx context.Context, event QueryEvent)

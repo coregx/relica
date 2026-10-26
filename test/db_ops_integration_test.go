@@ -1146,6 +1146,55 @@ func runDBOpsOptionTests(t *testing.T, db *relica.DB, dialect, dsn string) {
 			relica.MaskArgs("UPDATE ops_item SET name = ? WHERE id = ?", []any{"x", 7}))
 	})
 
+	t.Run("QueryHook_RawStatements", func(t *testing.T) {
+		// QueryHook runs "after each statement": raw ExecContext/QueryContext/
+		// QueryRowContext on *DB and *Tx included (O3; they bypassed it).
+		type ev struct {
+			op  string
+			err bool
+		}
+		var mu sync.Mutex
+		var got []ev
+		hdb := open(t, relica.WithQueryHook(func(_ context.Context, e relica.QueryEvent) {
+			mu.Lock()
+			got = append(got, ev{e.Operation, e.Error != nil})
+			mu.Unlock()
+		}))
+		p := hdb.GenerateParamName(1)
+		_, err := hdb.ExecContext(ctx, "INSERT INTO ops_item (id, name) VALUES (71, 'raw')")
+		require.NoError(t, err)
+		rows, err := hdb.QueryContext(ctx, "SELECT name FROM ops_item WHERE id = "+p, 71)
+		require.NoError(t, err)
+		require.NoError(t, rows.Close())
+		var name string
+		require.NoError(t, hdb.QueryRowContext(ctx, "SELECT name FROM ops_item WHERE id = "+p, 71).Scan(&name))
+		_, err = hdb.ExecContext(ctx, "UPDATE ops_missing_table SET name = 'x'")
+		require.Error(t, err)
+
+		require.NoError(t, hdb.Transactional(ctx, func(tx *relica.Tx) error {
+			if _, err := tx.ExecContext(ctx, "UPDATE ops_item SET name = 'raw2' WHERE id = "+p, 71); err != nil {
+				return err
+			}
+			rows, err := tx.QueryContext(ctx, "SELECT name FROM ops_item WHERE id = "+p, 71)
+			if err != nil {
+				return err
+			}
+			_ = rows.Close()
+			return tx.QueryRowContext(ctx, "SELECT name FROM ops_item WHERE id = "+p, 71).Scan(&name)
+		}))
+		_, err = hdb.ExecContext(ctx, "DELETE FROM ops_item WHERE id = "+p, 71)
+		require.NoError(t, err)
+
+		mu.Lock()
+		defer mu.Unlock()
+		assert.Equal(t, []ev{
+			{"INSERT", false}, {"SELECT", false}, {"SELECT", false}, {"UPDATE", true},
+			{"UPDATE", false}, {"SELECT", false}, {"SELECT", false},
+			{"DELETE", false},
+		}, got)
+		assert.Equal(t, "raw2", name)
+	})
+
 	t.Run("QueryHook_DetectOperation_WithDelete", func(t *testing.T) {
 		var mu sync.Mutex
 		var ops []string
