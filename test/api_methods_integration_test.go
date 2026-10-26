@@ -154,7 +154,7 @@ func TestTx_QueryContext_SQLite(t *testing.T) {
 
 	tx, err := db.BeginTx(ctx, nil)
 	require.NoError(t, err)
-	defer tx.Rollback() //nolint:errcheck
+	defer tx.Rollback()
 
 	// QueryContext within the transaction.
 	rows, err := tx.QueryContext(ctx, `SELECT score FROM tx_query_test ORDER BY score`)
@@ -194,7 +194,7 @@ func TestTx_QueryRowContext_SQLite(t *testing.T) {
 
 	tx, err := db.BeginTx(ctx, nil)
 	require.NoError(t, err)
-	defer tx.Rollback() //nolint:errcheck
+	defer tx.Rollback()
 
 	var name string
 	row := tx.QueryRowContext(ctx, `SELECT name FROM tx_rowquery_test WHERE name = ?`, "bob")

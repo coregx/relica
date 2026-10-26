@@ -178,7 +178,7 @@ func runUpsertV020Tests(t *testing.T, db *relica.DB, dialect string) {
 		assert.Equal(t, int64(2), n)
 	})
 
-	t.Run("Model Upsert honours Exclude on insert and update", func(t *testing.T) {
+	t.Run("Model Upsert honors Exclude on insert and update", func(t *testing.T) {
 		_, err := db.ExecContext(context.Background(), "DELETE FROM up_items")
 		require.NoError(t, err)
 		m := upItem{ID: 5, Code: strp("M"), Name: "a", CreatedAt: "from struct"}
@@ -375,7 +375,7 @@ func TestUpsertV020_MySQL(t *testing.T) {
 
 func TestUpsertV020_SQLite(t *testing.T) {
 	requireDB(t, "sqlite")
-	// One connection: SQLite serialises writers, and the concurrency case then
+	// One connection: SQLite serializes writers, and the concurrency case then
 	// checks the result, not "database is locked".
 	db, err := relica.Open("sqlite", filepath.Join(t.TempDir(), "upsert.db"), relica.WithMaxOpenConns(1))
 	require.NoError(t, err)

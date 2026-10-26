@@ -287,14 +287,14 @@ func TestWrapDB_ConnectionPoolSettings(t *testing.T) {
 			errChan := make(chan error, concurrent)
 
 			for i := 0; i < concurrent; i++ {
-				go func(id int) {
+				go func() {
 					_, err := db.Builder().
 						Insert("pool_test", map[string]interface{}{
 							"value": "concurrent",
 						}).
 						Execute()
 					errChan <- err
-				}(i)
+				}()
 			}
 
 			// Collect errors

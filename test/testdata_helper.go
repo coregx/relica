@@ -19,7 +19,10 @@ import (
 // It uses the caller's file location so the path is correct regardless
 // of the working directory used when running tests.
 func testdataDir() string {
-	_, file, _, _ := runtime.Caller(0)
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		return "testdata"
+	}
 	return filepath.Join(filepath.Dir(file), "testdata")
 }
 
@@ -32,7 +35,7 @@ func SetupTestData(t *testing.T, db *relica.DB, dialect string) {
 	t.Helper()
 
 	sqlFile := filepath.Join(testdataDir(), dialect+".sql")
-	data, err := os.ReadFile(sqlFile)
+	data, err := os.ReadFile(sqlFile) //nolint:gosec // G304: the testdata dir plus a dialect name
 	require.NoError(t, err, "read testdata file %s", sqlFile)
 
 	ctx := context.Background()
