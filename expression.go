@@ -1,6 +1,10 @@
 package relica
 
-import "github.com/coregx/relica/internal/core"
+import (
+	"errors"
+
+	"github.com/coregx/relica/internal/core"
+)
 
 // Expression is a SQL fragment together with its bound arguments. It can be
 // used as a WHERE or HAVING condition, a JOIN ON clause, a computed column
@@ -72,17 +76,57 @@ func coreExps(es []Expression) []core.Expression {
 // expression, so it must be converted; other expressions are unwrapped so the
 // builder sees its own types. Everything else passes through unchanged.
 func coreArg(v any) any {
-	if e, ok := v.(Expression); ok {
-		return coreExp(e)
+	switch x := v.(type) {
+	case Expression:
+		return coreExp(x)
+	case *SelectQuery:
+		return queryAsValue{}
 	}
 	return v
 }
+
+// needsCoreArg reports whether coreArg changes v.
+func needsCoreArg(v any) bool {
+	switch v.(type) {
+	case Expression, *SelectQuery:
+		return true
+	}
+	return false
+}
+
+// coreValues converts the values of a SET map with coreArg; it returns the
+// caller's map unchanged when nothing needs converting.
+func coreValues(m map[string]any) map[string]any {
+	for _, v := range m {
+		if needsCoreArg(v) {
+			out := make(map[string]any, len(m))
+			for k, v := range m {
+				out[k] = coreArg(v)
+			}
+			return out
+		}
+	}
+	return m
+}
+
+// errQueryAsValue: a *SelectQuery where a value goes was bound as a query
+// argument and failed only in the driver ("unsupported type
+// relica.SelectQuery, a struct"), with ToSQL showing a plain placeholder.
+var errQueryAsValue = errors.New("relica: a *SelectQuery passed as a value: " +
+	"use q.AsExpression() to pass it as a subquery")
+
+// queryAsValue stands in for a *SelectQuery passed as a value. Its Err makes
+// the condition or SET value a build error (core.ExpressionError), so nothing
+// is sent.
+type queryAsValue struct{}
+
+func (queryAsValue) Err() error { return errQueryAsValue }
 
 // coreArgs converts every element with coreArg. It returns the input slice
 // unchanged (no allocation) when it holds no public expression.
 func coreArgs(vs []any) []any {
 	for i, v := range vs {
-		if !isExpression(v) {
+		if !needsCoreArg(v) {
 			continue
 		}
 		out := make([]any, len(vs))
@@ -93,11 +137,6 @@ func coreArgs(vs []any) []any {
 		return out
 	}
 	return vs
-}
-
-func isExpression(v any) bool {
-	_, ok := v.(Expression)
-	return ok
 }
 
 // ============================================================================
@@ -122,7 +161,19 @@ func isExpression(v any) bool {
 // And, Or or Not.
 type HashExp map[string]any
 
-func (h HashExp) coreExpression() core.Expression { return core.HashExp(h) }
+func (h HashExp) coreExpression() core.Expression {
+	for _, v := range h {
+		if _, ok := v.(*SelectQuery); ok {
+			// Copy only when needed: the map stays the caller's.
+			out := make(core.HashExp, len(h))
+			for k, v := range h {
+				out[k] = coreArg(v)
+			}
+			return out
+		}
+	}
+	return core.HashExp(h)
+}
 
 // ============================================================================
 // LikeExp
