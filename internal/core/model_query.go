@@ -101,7 +101,7 @@ func (mq *ModelQuery) getPrimaryKeys() ([]string, []any, error) {
 
 	values := make([]any, len(pkInfo.Values))
 	for i, val := range pkInfo.Values {
-		values[i] = val.Interface()
+		values[i] = argValue(val)
 	}
 
 	return pkInfo.Columns, values, nil
@@ -843,9 +843,9 @@ func (mq *ModelQuery) diffFields(original any) (map[string]any, error) {
 		if isPKField(mi, f) {
 			continue
 		}
-		cur := currentVal.FieldByIndex(f.index).Interface()
-		if !reflect.DeepEqual(cur, origVal.FieldByIndex(f.index).Interface()) {
-			changed[f.column] = cur
+		cur := currentVal.FieldByIndex(f.index)
+		if !reflect.DeepEqual(cur.Interface(), origVal.FieldByIndex(f.index).Interface()) {
+			changed[f.column] = argValue(cur)
 		}
 	}
 	return changed, nil

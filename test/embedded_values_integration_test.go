@@ -66,10 +66,42 @@ type f3NotePtr struct {
 
 func (f3NotePtr) TableName() string { return "f3_note" }
 
+// Level has Value and Scan on *Level only: database/sql calls Value only on
+// the argument itself, so the field must be passed as a pointer, or the
+// integer is written instead of "level-N".
+type Level int
+
+func (l *Level) Value() (driver.Value, error) { return fmt.Sprintf("level-%d", int(*l)), nil }
+
+func (l *Level) Scan(src any) error {
+	var s string
+	switch v := src.(type) {
+	case string:
+		s = v
+	case []byte:
+		s = string(v)
+	default:
+		return fmt.Errorf("Level: cannot scan %T", src)
+	}
+	_, err := fmt.Sscanf(s, "level-%d", (*int)(l))
+	return err
+}
+
+type f3Level struct {
+	ID    int   `db:"id,pk"`
+	Level Level `db:"level"`
+}
+
+func (f3Level) TableName() string { return "f3_level" }
+
 func createEmbeddedValueTables(t *testing.T, db *relica.DB, dialect string) {
 	t.Helper()
 	ctx := context.Background()
-	_, err := db.ExecContext(ctx, "DROP TABLE IF EXISTS f3_note")
+	for _, table := range []string{"f3_note", "f3_level"} {
+		_, err := db.ExecContext(ctx, "DROP TABLE IF EXISTS "+table)
+		require.NoError(t, err)
+	}
+	_, err := db.ExecContext(ctx, `CREATE TABLE f3_level (id INTEGER PRIMARY KEY, level VARCHAR(20) NOT NULL)`)
 	require.NoError(t, err)
 	ts := "TIMESTAMP"
 	if dialect == dialectMySQL {
@@ -87,7 +119,11 @@ func createEmbeddedValueTables(t *testing.T, db *relica.DB, dialect string) {
 func runEmbeddedValueTests(t *testing.T, db *relica.DB, dialect string) {
 	t.Helper()
 	createEmbeddedValueTables(t, db, dialect)
-	defer func() { _, _ = db.ExecContext(context.Background(), "DROP TABLE IF EXISTS f3_note") }()
+	defer func() {
+		for _, table := range []string{"f3_note", "f3_level"} {
+			_, _ = db.ExecContext(context.Background(), "DROP TABLE IF EXISTS "+table)
+		}
+	}()
 
 	at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 
@@ -134,6 +170,29 @@ func runEmbeddedValueTests(t *testing.T, db *relica.DB, dialect string) {
 		assert.Equal(t, "bye", got.NullString.String)
 		assert.True(t, got.Time.Equal(at))
 		assert.Equal(t, orig.Meta, got.Meta)
+	})
+
+	t.Run("PointerReceiverValuer", func(t *testing.T) {
+		in := f3Level{ID: 1, Level: 3}
+		require.NoError(t, db.Model(&in).Insert())
+		// By value, not addressable: the field is copied and passed as *Level.
+		_, err := db.InsertStruct("f3_level", f3Level{ID: 2, Level: 4}).Execute()
+		require.NoError(t, err)
+
+		var stored []string
+		require.NoError(t, db.Select("level").From("f3_level").OrderBy("id").Column(&stored))
+		assert.Equal(t, []string{"level-3", "level-4"}, stored)
+
+		var got f3Level
+		require.NoError(t, db.Select().From("f3_level").Where(relica.Eq("id", 1)).One(&got))
+		assert.Equal(t, in, got)
+
+		changed := got
+		changed.Level = 5
+		require.NoError(t, db.Model(&changed).UpdateChanged(&got))
+		var level string
+		require.NoError(t, db.Select("level").From("f3_level").Where(relica.Eq("id", 1)).Row(&level))
+		assert.Equal(t, "level-5", level)
 	})
 
 	t.Run("SingleValueIsNotARow", func(t *testing.T) {
