@@ -97,6 +97,9 @@ func (mi *modelInfo) walk(owner reflect.Type, prefix []int, naming Naming) error
 	for i := 0; i < owner.NumField(); i++ {
 		f := owner.Field(i)
 		if !f.IsExported() && !isEmbeddedStruct(f) {
+			if err := mi.checkUnexported(f); err != nil {
+				return err
+			}
 			continue
 		}
 		index := append(append([]int{}, prefix...), i)
@@ -117,6 +120,23 @@ func (mi *modelInfo) walk(owner reflect.Type, prefix []int, naming Naming) error
 		if err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// checkUnexported rejects an unexported field the code marked as a column.
+// reflect can neither read nor write it, so it is no column — fine for an
+// untagged field, which is not data, but a db tag (a `db:",pk"` key included)
+// or an embedded single value (its Scan/Value say "store me as one value")
+// asked for a column and would be dropped without a word.
+func (mi *modelInfo) checkUnexported(f reflect.StructField) error {
+	if tagText, ok := f.Tag.Lookup("db"); ok && util.ParseDBTagFull(tagText).Column != "-" {
+		return fmt.Errorf("relica: %s: unexported field %s has a db tag but cannot be read or written: "+
+			"export it or drop the tag", mi.typ, f.Name)
+	}
+	if f.Anonymous && isValueType(f.Type) {
+		return fmt.Errorf("relica: %s embeds unexported %s, a single value Relica cannot read or write: "+
+			"export the type or make it an exported field", mi.typ, f.Type)
 	}
 	return nil
 }
