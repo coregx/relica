@@ -1852,12 +1852,24 @@ func (sq *SelectQuery) aggregateQuery(sqlStr string, params []any) *Query {
 
 // ToSQL returns the SQL string and parameters without executing the query.
 // This is useful for debugging, logging, or passing the query to another layer.
+// A query with a construction error (a bad Where, a nil branch, an OrderBy
+// that is not a column, placeholders that do not match the args) returns ""
+// and nil, as UpdateQuery and DeleteQuery do; running it returns the error.
+// Rules about where a statement may run (row locks need a transaction) are
+// checked when it runs, not here.
 //
 // Example:
 //
 //	sql, params := db.Select().From("users").Where(relica.Eq("id", 1)).ToSQL()
 func (sq *SelectQuery) ToSQL() (string, []any) {
-	return sq.buildSQL(sq.builder.db.dialect)
+	if sq.err() != nil {
+		return "", nil
+	}
+	sqlStr, params := sq.buildSQL(sq.builder.db.dialect)
+	if sq.buildErr != nil {
+		return "", nil
+	}
+	return sqlStr, params
 }
 
 // Explain analyzes the query execution plan without executing the query.

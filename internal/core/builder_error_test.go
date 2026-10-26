@@ -494,3 +494,23 @@ func TestSelectQuery_Explain_BuildError(t *testing.T) {
 		t.Errorf("Explain err = %v, want the nested Where() error", err)
 	}
 }
+
+// TestSelectQuery_ToSQL_BuildError verifies F5: like UpdateQuery and
+// DeleteQuery, SelectQuery.ToSQL returns "" and no params when the query
+// cannot be built, instead of SQL that no statement will ever send (and a
+// WarmCache key that is never hit).
+func TestSelectQuery_ToSQL_BuildError(t *testing.T) {
+	qb := &QueryBuilder{db: mockDB("postgres")}
+	for name, sq := range map[string]*SelectQuery{
+		"bad Where":   qb.Select("id").From("t").Where(42),
+		"nil branch":  qb.Select("id").From("t").Union(nil),
+		"bad OrderBy": qb.Select("id").From("t").OrderBy("a, b"),
+	} {
+		if sqlStr, params := sq.ToSQL(); sqlStr != "" || params != nil {
+			t.Errorf("%s: ToSQL = %q, %v; want \"\", nil", name, sqlStr, params)
+		}
+	}
+	if sqlStr, _ := qb.Select("id").From("t").ToSQL(); sqlStr != `SELECT "id" FROM "t"` {
+		t.Errorf("valid query: ToSQL = %q", sqlStr)
+	}
+}

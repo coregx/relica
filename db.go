@@ -2262,6 +2262,8 @@ func (sq *SelectQuery) Exists() (bool, error) {
 
 // ToSQL returns the SQL string and parameters without executing the query.
 // This is useful for debugging, logging, or passing the query to another layer.
+// A query with a construction error returns "" and nil (running it returns
+// the error); the transaction rule for row locks is checked when it runs.
 //
 // Example:
 //

@@ -318,9 +318,16 @@ func TestSelect_CrossJoin(t *testing.T) {
 func TestSelect_SelectExpr(t *testing.T) {
 	db := openTestDB(t)
 	sql, _ := db.Select("id").
-		SelectExpr("(SELECT COUNT(*) FROM orders WHERE orders.user_id = users.id)", "cnt").
+		SelectExpr("(SELECT COUNT(*) FROM orders WHERE orders.user_id = users.id) AS cnt").
 		From("users").ToSQL()
-	assertNotEmpty(t, sql, "SelectExpr sql")
+	assertContains(t, sql, "(SELECT COUNT(*) FROM orders WHERE orders.user_id = users.id) AS cnt FROM")
+
+	// The alias belongs inside the expression: as an argument it is a bind
+	// value with no placeholder, and the query cannot be built.
+	sql, _ = db.Select("id").SelectExpr("(SELECT 1)", "cnt").From("users").ToSQL()
+	if sql != "" {
+		t.Errorf("SelectExpr with an extra arg: ToSQL = %q, want \"\"", sql)
+	}
 }
 
 func TestSelect_AndSelect(t *testing.T) {
