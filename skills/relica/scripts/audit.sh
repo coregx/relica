@@ -172,6 +172,22 @@ column_args() {
 # at depth 0 — not inside an argument). cont = 1 when s continues a chain
 # whose previous line ended with the dot: its first call counts too.
 awk_scan='
+	# nocomment(s) is s without a // comment (outside strings): a chain opens
+	# only on code, so a comment that quotes a bad chain is not a finding.
+	function nocomment(s,   i, n, c, instr) {
+		n = length(s); instr = 0
+		for (i = 1; i <= n; i++) {
+			c = substr(s, i, 1)
+			if (instr) {
+				if (c == "\\") i++
+				else if (c == "\"") instr = 0
+				continue
+			}
+			if (c == "\"") instr = 1
+			else if (c == "/" && substr(s, i + 1, 1) == "/") return substr(s, 1, i - 1)
+		}
+		return s
+	}
 	function scan(s, cont,   i, n, c, instr, rest) {
 		n = length(s); instr = 0; ended = 0; cut = n; calls = ""
 		if (cont && depth == 0 && match(s, /^[ \t]*[A-Za-z_][A-Za-z0-9_]*\(/)) {
@@ -209,9 +225,10 @@ whole_table() {
 		FNR == 1 { open = 0 }
 		{
 			text = $0
-			if (!open && match($0, /(^|[^A-Za-z0-9_])(Update|Delete)\("[^"]*"\)/)) {
+			line = nocomment($0)
+			if (!open && match(line, /(^|[^A-Za-z0-9_])(Update|Delete)\("[^"]*"\)/)) {
 				open = 1; start = FNR; code = $0; seen = 0; depth = 0
-				text = substr($0, RSTART)
+				text = substr(line, RSTART)
 			}
 			if (open) {
 				scan(text)
@@ -239,10 +256,11 @@ setop_then_order() {
 		FNR == 1 { finish() }
 		{
 			text = $0
+			line = nocomment($0)
 			# The dot may end the previous line of the chain.
-			if (!open && match($0, /(^|[.[:space:]])(Union|UnionAll|Intersect|Except)\(/)) {
+			if (!open && match(line, /(^|[.[:space:]])(Union|UnionAll|Intersect|Except)\(/)) {
 				open = 1; start = FNR; loc = FILENAME ":" FNR ":" $0; depth = 0; hit = 0
-				text = substr($0, RSTART)
+				text = substr(line, RSTART)
 			}
 			if (open) {
 				scan(text, FNR > start)
@@ -425,8 +443,12 @@ cat <<'EOF'
 == Not greppable — check by reading the code
   - struct reads (One/All into a struct) whose query does not return a column for every field fail since
     v0.20.0 (ScanRequireFields): list the columns, tag the field db:"-", or use ScanLenient
+  - a column named in Select("id", "email") that no struct field takes, and two result columns for one
+    field (Select() over a join where both tables have id) are errors since v0.20.0: alias or list columns
   - Update/Delete conditions assembled from optional filters (relica.And(conds...) with no conds) render
     empty and are an error since v0.20.0
+  - V4/V11 follow one expression: q := db.Delete("t") ... q.Execute(), or c := a.Union(b) ... c.OrderBy(x),
+    split over statements, are not reported — read such variables' uses
   - ForUpdate/ForShare/ForUpdateSkipLocked run on tx or With(ctx) inside Transactional
   - no Begin/Transactional nested inside another transaction (join it)
   - no HTTP calls, e-mails or publishing inside a transaction or a retried function
