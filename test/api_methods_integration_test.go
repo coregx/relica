@@ -353,7 +353,6 @@ func TestForShare_SQLite_NoError(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = tx.Rollback() }()
 
-
 	type row struct {
 		ID    int64  `db:"id"`
 		Label string `db:"label"`

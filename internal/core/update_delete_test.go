@@ -159,7 +159,7 @@ func TestUpdateQuery_NoWhere(t *testing.T) {
 	query := qb.Update("users").
 		Set(map[string]interface{}{
 			"last_check": "2025-01-01",
-		})
+		}).AllRows()
 
 	q := query.Build()
 	if q == nil {
@@ -400,7 +400,7 @@ func TestDeleteQuery_NoWhere(t *testing.T) {
 	db := mockDB("postgres")
 	qb := &QueryBuilder{db: db}
 
-	query := qb.Delete("users")
+	query := qb.Delete("users").AllRows()
 
 	q := query.Build()
 	if q == nil {

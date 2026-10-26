@@ -2331,11 +2331,26 @@ func (uq *UpdateQuery) Set(values map[string]any) *UpdateQuery {
 
 // Where adds a WHERE condition to the UPDATE query.
 //
+// An UPDATE needs Where or AllRows: without either, or with a condition that
+// renders empty (And(), HashExp{}, Like with no values), Execute returns an
+// error and nothing is sent (ADR-020).
+//
 // Example:
 //
 //	Update("users").Set(...).Where("id = ?", 123)
 func (uq *UpdateQuery) Where(condition any, params ...any) *UpdateQuery {
 	uq.uq.Where(coreArg(condition), params...)
+	return uq
+}
+
+// AllRows updates every row of the table on purpose. It cannot be combined
+// with Where.
+//
+// Example:
+//
+//	db.Update("settings").Set(map[string]any{"dirty": false}).AllRows().Execute()
+func (uq *UpdateQuery) AllRows() *UpdateQuery {
+	uq.uq.AllRows()
 	return uq
 }
 
@@ -2412,11 +2427,26 @@ func (dq *DeleteQuery) WithContext(ctx context.Context) *DeleteQuery {
 
 // Where adds a WHERE condition to the DELETE query.
 //
+// A DELETE needs Where or AllRows: without either, or with a condition that
+// renders empty (And(), HashExp{}, Like with no values), Execute returns an
+// error and nothing is sent (ADR-020).
+//
 // Example:
 //
 //	Delete("users").Where("id = ?", 123)
 func (dq *DeleteQuery) Where(condition any, params ...any) *DeleteQuery {
 	dq.dq.Where(coreArg(condition), params...)
+	return dq
+}
+
+// AllRows deletes every row of the table on purpose. It cannot be combined
+// with Where.
+//
+// Example:
+//
+//	db.Delete("sessions").AllRows().Execute()
+func (dq *DeleteQuery) AllRows() *DeleteQuery {
+	dq.dq.AllRows()
 	return dq
 }
 

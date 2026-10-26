@@ -485,8 +485,6 @@ func (sq *SelectQuery) AndWhere(condition any, params ...any) *SelectQuery {
 // Expression example:
 //
 //	OrWhere(relica.Eq("status", "admin"))
-//
-//nolint:dupl // OrWhere on SelectQuery/UpdateQuery/DeleteQuery share structure but operate on different receiver types; a generic helper would require any gymnastics.
 func (sq *SelectQuery) OrWhere(condition any, params ...any) *SelectQuery {
 	if len(sq.where) == 0 {
 		// No existing WHERE clause - just add it.
@@ -1977,6 +1975,9 @@ type UpdateQuery struct {
 	params   []any
 	ctx      context.Context // context for this specific query
 	buildErr error           // stored programming error (replaces panic in fluent chain)
+
+	whereCalled bool // Where/AndWhere/OrWhere was called (ADR-020)
+	allRows     bool // AllRows(): the statement may touch every row
 }
 
 // WithContext sets the context for this UPDATE query.
@@ -2019,8 +2020,13 @@ func (uq *UpdateQuery) Set(values map[string]any) *UpdateQuery {
 //
 //	Where(relica.Eq("status", 1))
 func (uq *UpdateQuery) Where(condition any, params ...any) *UpdateQuery {
+	uq.whereCalled = true
 	switch cond := condition.(type) {
 	case string:
+		if strings.TrimSpace(cond) == "" {
+			uq.setBuildErr(errEmptyCondition)
+			return uq
+		}
 		resolved, resolvedArgs, err := resolveNamedParams(cond, params)
 		if err != nil {
 			uq.buildErr = err
@@ -2035,10 +2041,12 @@ func (uq *UpdateQuery) Where(condition any, params ...any) *UpdateQuery {
 			return uq
 		}
 		sqlStr, args := cond.Build(uq.builder.db.dialect)
-		if sqlStr != "" {
-			uq.where = append(uq.where, sqlStr)
-			uq.params = append(uq.params, args...)
+		if sqlStr == "" {
+			uq.setBuildErr(errEmptyCondition)
+			return uq
 		}
+		uq.where = append(uq.where, sqlStr)
+		uq.params = append(uq.params, args...)
 
 	default:
 		uq.buildErr = fmt.Errorf("relica: Where() expects string or Expression, got %T", condition)
@@ -2089,6 +2097,10 @@ func (uq *UpdateQuery) OrWhere(condition any, params ...any) *UpdateQuery {
 	switch cond := condition.(type) {
 	case string:
 		var err error
+		if strings.TrimSpace(cond) == "" {
+			uq.setBuildErr(errEmptyCondition)
+			return uq
+		}
 		newSQL, newArgs, err = resolveNamedParams(cond, params)
 		if err != nil {
 			uq.buildErr = err
@@ -2102,6 +2114,7 @@ func (uq *UpdateQuery) OrWhere(condition any, params ...any) *UpdateQuery {
 		}
 		newSQL, newArgs = cond.Build(uq.builder.db.dialect)
 		if newSQL == "" {
+			uq.setBuildErr(errEmptyCondition)
 			return uq
 		}
 
@@ -2132,6 +2145,9 @@ func (uq *UpdateQuery) Build() *Query {
 		ctx = uq.builder.ctx
 	}
 
+	if uq.buildErr == nil {
+		uq.buildErr = wholeTableError(uq.whereCalled, uq.allRows)
+	}
 	if uq.buildErr != nil {
 		return &Query{
 			prepErr: uq.buildErr,
@@ -2230,6 +2246,9 @@ type DeleteQuery struct {
 	params   []any
 	ctx      context.Context // context for this specific query
 	buildErr error           // stored programming error (replaces panic in fluent chain)
+
+	whereCalled bool // Where/AndWhere/OrWhere was called (ADR-020)
+	allRows     bool // AllRows(): the statement may touch every row
 }
 
 // WithContext sets the context for this DELETE query.
@@ -2259,8 +2278,13 @@ func (qb *QueryBuilder) Delete(table string) *DeleteQuery {
 //
 //	Where(relica.Eq("id", 123))
 func (dq *DeleteQuery) Where(condition any, params ...any) *DeleteQuery {
+	dq.whereCalled = true
 	switch cond := condition.(type) {
 	case string:
+		if strings.TrimSpace(cond) == "" {
+			dq.setBuildErr(errEmptyCondition)
+			return dq
+		}
 		resolved, resolvedArgs, err := resolveNamedParams(cond, params)
 		if err != nil {
 			dq.buildErr = err
@@ -2275,10 +2299,12 @@ func (dq *DeleteQuery) Where(condition any, params ...any) *DeleteQuery {
 			return dq
 		}
 		sqlStr, args := cond.Build(dq.builder.db.dialect)
-		if sqlStr != "" {
-			dq.where = append(dq.where, sqlStr)
-			dq.params = append(dq.params, args...)
+		if sqlStr == "" {
+			dq.setBuildErr(errEmptyCondition)
+			return dq
 		}
+		dq.where = append(dq.where, sqlStr)
+		dq.params = append(dq.params, args...)
 
 	default:
 		dq.buildErr = fmt.Errorf("relica: Where() expects string or Expression, got %T", condition)
@@ -2329,6 +2355,10 @@ func (dq *DeleteQuery) OrWhere(condition any, params ...any) *DeleteQuery {
 	switch cond := condition.(type) {
 	case string:
 		var err error
+		if strings.TrimSpace(cond) == "" {
+			dq.setBuildErr(errEmptyCondition)
+			return dq
+		}
 		newSQL, newArgs, err = resolveNamedParams(cond, params)
 		if err != nil {
 			dq.buildErr = err
@@ -2342,6 +2372,7 @@ func (dq *DeleteQuery) OrWhere(condition any, params ...any) *DeleteQuery {
 		}
 		newSQL, newArgs = cond.Build(dq.builder.db.dialect)
 		if newSQL == "" {
+			dq.setBuildErr(errEmptyCondition)
 			return dq
 		}
 
@@ -2372,6 +2403,9 @@ func (dq *DeleteQuery) Build() *Query {
 		ctx = dq.builder.ctx
 	}
 
+	if dq.buildErr == nil {
+		dq.buildErr = wholeTableError(dq.whereCalled, dq.allRows)
+	}
 	if dq.buildErr != nil {
 		return &Query{
 			prepErr: dq.buildErr,
@@ -2774,3 +2808,45 @@ func (sq *SelectQuery) lockError() error {
 // errLockWithAggregate is returned by Count and Exists on a locking query.
 var errLockWithAggregate = errors.New("relica: a row lock (ForUpdate/ForShare/ForUpdateSkipLocked) cannot be " +
 	"combined with Count() or Exists(): lock the rows with All/One, or drop the lock")
+
+// AllRows lets the statement touch every row of the table. Without it an
+// UPDATE with no Where is a build error (ADR-020).
+func (uq *UpdateQuery) AllRows() *UpdateQuery {
+	uq.allRows = true
+	return uq
+}
+
+func (uq *UpdateQuery) setBuildErr(err error) {
+	if uq.buildErr == nil {
+		uq.buildErr = err
+	}
+}
+
+// AllRows lets the statement touch every row of the table. Without it an
+// DELETE with no Where is a build error (ADR-020).
+func (dq *DeleteQuery) AllRows() *DeleteQuery {
+	dq.allRows = true
+	return dq
+}
+
+func (dq *DeleteQuery) setBuildErr(err error) {
+	if dq.buildErr == nil {
+		dq.buildErr = err
+	}
+}
+
+// errEmptyCondition: a Where condition that renders no SQL (And(), HashExp{},
+// Like with no values, "") would drop the WHERE and hit the whole table.
+var errEmptyCondition = errors.New("relica: the UPDATE/DELETE condition renders empty (And(), Or(), HashExp{}, " +
+	"Like with no values, \"\"), which would affect every row; use AllRows() without Where to do that on purpose")
+
+// wholeTableError enforces ADR-020 rule 1.
+func wholeTableError(whereCalled, allRows bool) error {
+	switch {
+	case allRows && whereCalled:
+		return errors.New("relica: AllRows() together with Where: choose one")
+	case !allRows && !whereCalled:
+		return errors.New("relica: UPDATE/DELETE without Where would affect every row; call AllRows() to do that on purpose")
+	}
+	return nil
+}
