@@ -1,0 +1,11 @@
+// Fixture: ozzo-dbx code next to Relica code. The same method names mean
+// ozzo-dbx's rules here (it passes a pre-quoted name through), so the
+// Relica-specific checks must skip this file.
+package legacy
+
+import dbx "github.com/go-ozzo/ozzo-dbx"
+
+func list(db *dbx.DB) {
+	db.Select("1").From("t").OrderBy("`id` ASC", "a DESC, b").All(nil)
+	db.Delete("t", nil).Execute()
+}
