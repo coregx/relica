@@ -798,6 +798,16 @@ db.Select().From("users").
     All(&users)
 ```
 
+**Select takes column names, SelectExpr takes expressions.** `Select` quotes each argument as a column
+(`"t.col"`, `"col AS alias"`; an argument with `(` such as `"COUNT(*) AS n"` is passed as is). Literals and arithmetic
+without parentheses must go through `SelectExpr`, with the alias inside the string and `?` args bound:
+
+```go
+db.Select("e.id", "e.name").SelectExpr("h.level + 1 AS level").   // not Select("h.level + 1") → "h"."level + 1"
+db.Select("id").SelectExpr("1 AS depth").                         // not Select("1 as depth") → "1" AS "depth"
+db.Select("id").SelectExpr("price * ? AS gross", 1.2).            // not SelectExpr("price * 1.2", "gross")
+```
+
 ---
 
 ## Primary Key Configuration

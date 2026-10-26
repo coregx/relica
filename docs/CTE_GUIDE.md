@@ -252,12 +252,12 @@ Recursive CTEs traverse hierarchical data structures like organizational charts,
 // Traverse employee hierarchy from CEO down
 func GetOrgChart(db *relica.DB) ([]Employee, error) {
     // Anchor: Top-level employees (no manager)
-    anchor := db.Select("id", "name", "manager_id", "1 as level").
+    anchor := db.Select("id", "name", "manager_id").SelectExpr("1 AS level").
         From("employees").
         Where("manager_id IS NULL")
 
     // Recursive: Employees with managers
-    recursive := db.Select("e.id", "e.name", "e.manager_id", "h.level + 1").
+    recursive := db.Select("e.id", "e.name", "e.manager_id").SelectExpr("h.level + 1").
         From("employees e").
         InnerJoin("hierarchy h", "e.manager_id = h.id")
 
@@ -283,20 +283,21 @@ func GetOrgChart(db *relica.DB) ([]Employee, error) {
 }
 ```
 
-**Generated SQL**:
+**Generated SQL** (PostgreSQL; MySQL is the same with backticks, SQLite writes the two branches without the
+parentheses):
 ```sql
 WITH RECURSIVE "hierarchy" AS (
     -- Anchor: Start with top-level employees
-    SELECT "id", "name", "manager_id", 1 as level
+    (SELECT "id", "name", "manager_id", 1 AS level
     FROM "employees"
-    WHERE manager_id IS NULL
+    WHERE manager_id IS NULL)
 
     UNION ALL
 
     -- Recursive: Join with hierarchy to get subordinates
-    SELECT "e"."id", "e"."name", "e"."manager_id", "h"."level" + 1
+    (SELECT "e"."id", "e"."name", "e"."manager_id", h.level + 1
     FROM "employees" AS "e"
-    INNER JOIN "hierarchy" AS "h" ON e.manager_id = h.id
+    INNER JOIN "hierarchy" AS "h" ON e.manager_id = h.id)
 )
 SELECT * FROM "hierarchy"
 ORDER BY "level", "name"
@@ -315,12 +316,12 @@ ORDER BY "level", "name"
 // Traverse category hierarchy
 func GetCategoryTree(db *relica.DB, rootID int) ([]Category, error) {
     // Anchor: Root category
-    anchor := db.Select("id", "name", "parent_id", "1 as depth", "name as path").
+    anchor := db.Select("id", "name", "parent_id").SelectExpr("1 AS depth, name AS path").
         From("categories").
         Where("id = ?", rootID)
 
     // Recursive: Child categories
-    recursive := db.Select("c.id", "c.name", "c.parent_id", "t.depth + 1", "t.path || '/' || c.name").
+    recursive := db.Select("c.id", "c.name", "c.parent_id").SelectExpr("t.depth + 1, t.path || '/' || c.name").
         From("categories c").
         InnerJoin("category_tree t", "c.parent_id = t.id")
 
@@ -361,12 +362,12 @@ Depth  Path
 // Calculate total cost of product including all components
 func GetBillOfMaterials(db *relica.DB, productID int) ([]BOM, error) {
     // Anchor: Top-level product
-    anchor := db.Select("id", "name", "cost", "1 as quantity", "1 as level").
+    anchor := db.Select("id", "name", "cost").SelectExpr("1 AS quantity, 1 AS level").
         From("parts").
         Where("id = ?", productID)
 
     // Recursive: Components
-    recursive := db.Select("p.id", "p.name", "p.cost", "bom.quantity * c.quantity", "bom.level + 1").
+    recursive := db.Select("p.id", "p.name", "p.cost").SelectExpr("bom.quantity * c.quantity, bom.level + 1").
         From("parts p").
         InnerJoin("components c", "p.id = c.part_id").
         InnerJoin("bom", "c.assembly_id = bom.id")
@@ -397,12 +398,12 @@ func GetBillOfMaterials(db *relica.DB, productID int) ([]BOM, error) {
 ```go
 // Prevent infinite recursion with depth limit
 func GetCategoryTreeLimited(db *relica.DB, rootID int, maxDepth int) ([]Category, error) {
-    anchor := db.Select("id", "name", "parent_id", "1 as depth").
+    anchor := db.Select("id", "name", "parent_id").SelectExpr("1 AS depth").
         From("categories").
         Where("id = ?", rootID)
 
     // Add depth limit in recursive part
-    recursive := db.Select("c.id", "c.name", "c.parent_id", "t.depth + 1").
+    recursive := db.Select("c.id", "c.name", "c.parent_id").SelectExpr("t.depth + 1").
         From("categories c").
         InnerJoin("category_tree t", "c.parent_id = t.id").
         Where("t.depth < ?", maxDepth)  // Stop at max depth
@@ -425,12 +426,12 @@ func GetCategoryTreeLimited(db *relica.DB, rootID int, maxDepth int) ([]Category
 // Detect cycles in hierarchical data
 func FindCycles(db *relica.DB) ([]Cycle, error) {
     // Anchor: Start nodes
-    anchor := db.Select("id", "parent_id", "ARRAY[id] as path", "false as is_cycle").
+    anchor := db.Select("id", "parent_id").SelectExpr("ARRAY[id] AS path, false AS is_cycle").
         From("nodes").
         Where("parent_id IS NULL")
 
     // Recursive: Traverse with cycle detection
-    recursive := db.Select("n.id", "n.parent_id", "t.path || n.id", "n.id = ANY(t.path)").
+    recursive := db.Select("n.id", "n.parent_id").SelectExpr("t.path || n.id, n.id = ANY(t.path)").
         From("nodes n").
         InnerJoin("tree t", "n.parent_id = t.id").
         Where("NOT t.is_cycle")  // Stop traversing cycles
@@ -752,11 +753,11 @@ func TransformCustomerData(db *relica.DB) ([]CustomerMetrics, error) {
 // Calculate total sales for each department and all subdepartments
 func GetDepartmentSalesRollup(db *relica.DB) ([]DeptSales, error) {
     // Recursive: Traverse department hierarchy
-    anchor := db.Select("id", "parent_id", "name", "0 as level").
+    anchor := db.Select("id", "parent_id", "name").SelectExpr("0 AS level").
         From("departments").
         Where("parent_id IS NULL")
 
-    recursive := db.Select("d.id", "d.parent_id", "d.name", "dh.level + 1").
+    recursive := db.Select("d.id", "d.parent_id", "d.name").SelectExpr("dh.level + 1").
         From("departments d").
         InnerJoin("dept_hierarchy dh", "d.parent_id = dh.id")
 

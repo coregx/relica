@@ -1750,14 +1750,17 @@ func (sq *SelectQuery) FromSelect(subquery *SelectQuery, alias string) *SelectQu
 	return sq
 }
 
-// SelectExpr adds a raw SQL expression to the SELECT clause.
+// SelectExpr adds a raw SQL expression to the SELECT clause, used as is: an
+// alias is part of expr ("price * qty AS total"), and args bind the ? in expr.
 //
-// Useful for scalar subqueries, window functions, or complex expressions.
+// Select quotes its arguments as column names ("t.col", "col AS alias"), so
+// literals and arithmetic belong here: Select("1 as level") renders the
+// identifier "1", Select("h.level + 1") the identifier "h"."level + 1".
 //
 // Example:
 //
 //	db.Builder().Select("id", "name").
-//	    SelectExpr("(SELECT COUNT(*) FROM orders WHERE orders.user_id = users.id)", "order_count").
+//	    SelectExpr("(SELECT COUNT(*) FROM orders WHERE orders.user_id = users.id) AS order_count").
 //	    From("users").All(&results)
 func (sq *SelectQuery) SelectExpr(expr string, args ...any) *SelectQuery {
 	sq.sq.SelectExpr(expr, args...)
@@ -2131,9 +2134,9 @@ func (sq *SelectQuery) With(name string, query *SelectQuery) *SelectQuery {
 //
 // Example:
 //
-//	anchor := db.Builder().Select("id", "name", "manager_id", "1 as level").
+//	anchor := db.Builder().Select("id", "name", "manager_id").SelectExpr("1 AS level").
 //	    From("employees").Where("manager_id IS NULL")
-//	recursive := db.Builder().Select("e.id", "e.name", "e.manager_id", "h.level + 1").
+//	recursive := db.Builder().Select("e.id", "e.name", "e.manager_id").SelectExpr("h.level + 1").
 //	    From("employees e").InnerJoin("hierarchy h", "e.manager_id = h.id")
 //	cte := anchor.UnionAll(recursive)
 //	db.Builder().Select("*").WithRecursive("hierarchy", cte).

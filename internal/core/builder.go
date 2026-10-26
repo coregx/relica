@@ -377,13 +377,13 @@ func (sq *SelectQuery) AndSelect(cols ...string) *SelectQuery {
 //
 //	db.Builder().
 //	    Select("id", "name").
-//	    SelectExpr("(SELECT COUNT(*) FROM orders WHERE orders.user_id = users.id)", "order_count").
+//	    SelectExpr("(SELECT COUNT(*) FROM orders WHERE orders.user_id = users.id) AS order_count").
 //	    From("users").
 //	    All(&results)
 //
 // Generates:
 //
-//	SELECT id, name, (SELECT COUNT(*) FROM orders WHERE orders.user_id = users.id) AS order_count
+//	SELECT "id", "name", (SELECT COUNT(*) FROM orders WHERE orders.user_id = users.id) AS order_count
 //	FROM users
 //
 // Note: The SQL expression is used as-is. You're responsible for proper quoting and SQL injection prevention.
@@ -814,13 +814,13 @@ func (sq *SelectQuery) With(name string, query *SelectQuery) *SelectQuery {
 //
 // Example (organizational hierarchy):
 //
-//	anchor := db.Builder().Select("id", "name", "manager_id", "1 as level").
+//	anchor := db.Builder().Select("id", "name", "manager_id").SelectExpr("1 AS level").
 //	    From("employees").
 //	    Where("manager_id IS NULL")
 //
-//	recursive := db.Builder().Select("e.id", "e.name", "e.manager_id", "h.level + 1").
+//	recursive := db.Builder().Select("e.id", "e.name", "e.manager_id").SelectExpr("h.level + 1").
 //	    From("employees e").
-//	    Join("INNER JOIN hierarchy h ON e.manager_id = h.id")
+//	    InnerJoin("hierarchy h", "e.manager_id = h.id")
 //
 //	cte := anchor.UnionAll(recursive)
 //
@@ -833,9 +833,9 @@ func (sq *SelectQuery) With(name string, query *SelectQuery) *SelectQuery {
 // Generates:
 //
 //	WITH RECURSIVE "hierarchy" AS (
-//	    SELECT id, name, manager_id, 1 as level FROM "employees" WHERE manager_id IS NULL
+//	    SELECT "id", "name", "manager_id", 1 AS level FROM "employees" WHERE manager_id IS NULL
 //	    UNION ALL
-//	    SELECT e.id, e.name, e.manager_id, h.level + 1 FROM "employees" AS "e" INNER JOIN hierarchy h ON e.manager_id = h.id
+//	    SELECT "e"."id", "e"."name", "e"."manager_id", h.level + 1 FROM "employees" AS "e" INNER JOIN hierarchy h ON e.manager_id = h.id
 //	)
 //	SELECT * FROM "hierarchy" ORDER BY "level", "name"
 //
