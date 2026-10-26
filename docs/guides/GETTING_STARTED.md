@@ -822,10 +822,10 @@ db.QueryRowContext(ctx,
 
 ### Explore Features
 
-- **JOINs**: [JOIN Guide](../docs/dev/reports/JOIN_GUIDE.md)
+- **JOINs**: [AGENTS.md › JOIN Operations](../../AGENTS.md#join-operations)
 - **Subqueries**: [Subquery Guide](../SUBQUERY_GUIDE.md)
 - **CTEs**: [CTE Guide](../CTE_GUIDE.md)
-- **Transactions**: [Transaction Guide](../docs/reports/TRANSACTION_IMPLEMENTATION_REPORT.md)
+- **Transactions**: [AGENTS.md › Transactions](../../AGENTS.md#transactions)
 
 ### Community
 

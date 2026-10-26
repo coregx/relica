@@ -13,9 +13,9 @@
 > **🤖 AI Agents**: Before generating code, read **[AGENTS.md](AGENTS.md)** for correct API patterns. Use `Model()` API for CRUD, `Expression API` for WHERE conditions. Avoid `map[string]interface{}`.
 >
 > **Agent skill**: [`skills/relica/`](skills/relica/SKILL.md) (Agent Skills format) — version-exact docs, an audit
-> script for a project's Relica code, the upgrade procedure. In Claude Code:
+> script for a project's Relica code, the upgrade procedure. In Claude Code (v2.1.275+):
 > `/plugin install relica --marketplace coregx/relica` (or `/plugin marketplace add coregx/relica`, then
-> `/plugin install relica@relica`). Other agents: read `<module Dir>/skills/relica/SKILL.md` at your version
+> `/plugin install relica@relica`; the shell form `claude plugin install` needs v2.1.292+). Other agents: read `<module Dir>/skills/relica/SKILL.md` at your version
 > (`go list -m -f '{{.Dir}}' github.com/coregx/relica`).
 
 ## ✨ Features
@@ -222,6 +222,18 @@ db.Insert("users", map[string]interface{}{
 user := User{Name: dynamicData["name"].(string)}
 db.Model(&user).Insert()
 ```
+
+#### UPDATE / DELETE need Where (v0.20.0+)
+
+A builder `Update` or `Delete` without a condition — or with one that renders empty, such as `relica.HashExp{}` —
+is an error instead of a statement that hits every row. Say so when you mean the whole table:
+
+```go
+db.Delete("sessions").Where(relica.LessThan("expires_at", now)).Execute()
+db.Delete("sessions").AllRows().Execute() // the whole table, on purpose
+```
+
+`db.Model(&m).Update()` / `Delete()` always use the primary key and are unaffected.
 
 ### Expression API
 
@@ -1203,6 +1215,22 @@ db, err := relica.Open("postgres", dsn,
     relica.WithStmtCacheCapacity(1000),
 )
 ```
+
+### Table and Column Names, Struct Scanning (v0.20.0+)
+
+An untagged field maps to the snake_case of its name (`CreatedAt` → `created_at`), a type without `TableName()`
+to its snake_case singular name (`UserProfile` → `user_profile`), and embedded structs are flattened — the
+ozzo-dbx rules. `db:"col"` and `TableName()` override them; `relica.WithNaming` changes them per DB:
+
+```go
+db, err := relica.Open("postgres", dsn,
+    relica.WithNaming(relica.Snake(relica.Initialisms(relica.GoInitialisms()...)))) // HTTPLog → http_log
+```
+
+Reading into a struct, a field with no column in the result is an error by default (`relica.ScanRequireFields`)
+instead of a silent zero value. `relica.WithScanMode(relica.ScanLenient)` restores the ozzo-dbx behaviour per DB,
+`.ScanMode(...)` per query; `relica.ScanStrict` also rejects result columns that have no field. Details: AGENTS.md ›
+Table and Column Names.
 
 ### Connection Management
 

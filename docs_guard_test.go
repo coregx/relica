@@ -99,6 +99,32 @@ func exportedNames(t *testing.T) map[string]bool {
 	return names
 }
 
+// TestDocs_ExportedNamesAreDocumented keeps the agent and user docs complete:
+// every package-level exported name of package relica appears in AGENTS.md
+// or README.md (CLAUDE.md "Public Files Checklist"). An API nobody can find
+// in the docs is one an agent reinvents or misuses.
+func TestDocs_ExportedNamesAreDocumented(t *testing.T) {
+	var docs strings.Builder
+	for _, f := range []string{"AGENTS.md", "README.md"} {
+		data, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		docs.Write(data)
+	}
+	text := docs.String()
+	var missing []string
+	for name := range exportedNames(t) {
+		if !regexp.MustCompile(`\b` + name + `\b`).MatchString(text) {
+			missing = append(missing, name)
+		}
+	}
+	sort.Strings(missing)
+	for _, name := range missing {
+		t.Errorf("relica.%s is in neither AGENTS.md nor README.md", name)
+	}
+}
+
 // relicaRef matches relica.X; a trailing * (relica.Is*) names a family of
 // functions, not one, and is skipped.
 var relicaRef = regexp.MustCompile(`\brelica\.([A-Z][A-Za-z0-9_]*)(\*?)`)
@@ -341,6 +367,64 @@ func TestDocs_SelectExprArgsAreParameters(t *testing.T) {
 			}
 			t.Errorf("%s:%d SelectExpr binds its later arguments as parameters; put the alias in the expression: %s",
 				file, n+1, strings.TrimSpace(line))
+		}
+	}
+}
+
+var (
+	// mdLink is a Markdown link target: [text](target) or [text](target#anchor).
+	mdLink = regexp.MustCompile(`\[[^\]\n]*\]\(([^)\s#]*)(#[^)\s]*)?\)`)
+	// repoPath is a path into the repository written as code: `examples/x.go`,
+	// `docs/examples/`. A file extension or a trailing slash tells it from a
+	// branch name such as `docs/update-readme`.
+	repoPath = regexp.MustCompile("`((?:examples|docs)/[^`\\s*]+(?:\\.[a-z]+|/))`")
+	// inlineCode is a `code span`; links are not looked for inside one
+	// (relica.One[T](query) is Go, not a link).
+	inlineCode = regexp.MustCompile("`[^`]*`")
+)
+
+// TestDocs_LocalLinksResolve keeps the public docs from pointing at files that
+// do not exist — or exist only in the gitignored docs/dev/, which users never
+// get: relative links and `examples/…`, `docs/…` paths outside code blocks.
+func TestDocs_LocalLinksResolve(t *testing.T) {
+	for _, file := range publicDocs(t) {
+		if file == "CHANGELOG.md" {
+			continue // history: it names files as they were
+		}
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		inCode := false
+		for i, line := range strings.Split(string(data), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "```") {
+				inCode = !inCode
+				continue
+			}
+			if inCode {
+				continue
+			}
+			var targets []string
+			for _, m := range mdLink.FindAllStringSubmatch(inlineCode.ReplaceAllString(line, ""), -1) {
+				target := m[1]
+				if target == "" || strings.Contains(target, ":") || strings.ContainsAny(target, `("'`) {
+					continue // anchor only, URL or mailto, or code that looks like a link
+				}
+				targets = append(targets, filepath.Join(filepath.Dir(file), target))
+			}
+			for _, m := range repoPath.FindAllStringSubmatch(line, -1) {
+				targets = append(targets, strings.TrimSuffix(m[1], "/"))
+			}
+			for _, target := range targets {
+				slash := filepath.ToSlash(target)
+				if strings.HasPrefix(slash, "docs/dev/") || strings.Contains(slash, "/docs/dev/") {
+					t.Errorf("%s:%d points into docs/dev/, which is not published: %s", file, i+1, slash)
+					continue
+				}
+				if _, err := os.Stat(target); err != nil {
+					t.Errorf("%s:%d points at a missing file: %s", file, i+1, slash)
+				}
+			}
 		}
 	}
 }

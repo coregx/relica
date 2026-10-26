@@ -54,6 +54,16 @@ if relica.IsDeadlock(err) || relica.IsSerializationFailure(err) { /* retry the w
 // DO NOT use map[string]interface{} for CRUD!
 ```
 
+## v0.20.0 rules (silent results became errors)
+
+- `Select("col")`/`GroupBy`/`OrderBy` take column names; expressions and literals go through `SelectExpr`/`GroupByExpr`/`OrderByExpr` with the alias inside the string (`SelectExpr("COUNT(*) AS n")`); `OrderBy` takes "column [ASC|DESC]" only
+- Builder `Update`/`Delete` need `Where`; `AllRows()` for the whole table on purpose
+- Builder `Upsert`/`OnConflict` need exactly one of `DoUpdate`/`DoUpdateAll`/`DoNothing`
+- Row locks (`ForUpdate`/`ForShare`) need a transaction
+- Untagged fields map to snake_case columns, tables without `TableName()` to the snake_case singular type name (`relica.WithNaming` changes it); a struct field with no column in the result is an error (`relica.WithScanMode(relica.ScanLenient)` restores ozzo-dbx behaviour)
+- `OrderBy`/`Limit`/`Offset` after `Union`/`Intersect`/`Except` apply to the combined result; a set-operation chain reads left to right on every database
+- `Count()`/`Exists()` follow what `All` returns (GroupBy: number of groups)
+
 ## Transactions: rules that prevent data loss
 
 Read AGENTS.md "Transactions" before writing code that changes more than one row. In short:

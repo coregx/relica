@@ -444,8 +444,6 @@ import (
 - **Clear Documentation**: pkg.go.dev shows only public API
 - **Go Best Practice**: Standard pattern for Go libraries (used by GORM, stdlib packages, etc.)
 
-See [docs/reports/INTERNAL_VS_NO_INTERNAL_2025.md](docs/reports/INTERNAL_VS_NO_INTERNAL_2025.md) for detailed analysis.
-
 ---
 
 ## 🎯 Release Process
