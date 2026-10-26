@@ -283,7 +283,7 @@ func GetOrgChart(db *relica.DB) ([]Employee, error) {
 }
 ```
 
-**Generated SQL** (PostgreSQL; MySQL is the same with backticks, SQLite writes the two branches without the
+**Generated SQL** (PostgreSQL; MySQL and SQLite quote with backticks, and SQLite writes the two branches without the
 parentheses):
 ```sql
 WITH RECURSIVE "hierarchy" AS (

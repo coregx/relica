@@ -34,7 +34,7 @@ func insertSQL(t *testing.T, db *relica.DB, model any) string {
 
 func TestNaming_DefaultSnake(t *testing.T) {
 	got := insertSQL(t, wrapWith(t), &namingAccount{AccountID: 1})
-	want := `INSERT INTO "t" ("account_id", "display_name", "httpstatus", "memo") VALUES (?, ?, ?, ?)`
+	want := "INSERT INTO `t` (`account_id`, `display_name`, `httpstatus`, `memo`) VALUES (?, ?, ?, ?)"
 	if got != want {
 		t.Fatalf("got  %s\nwant %s", got, want)
 	}
@@ -42,14 +42,14 @@ func TestNaming_DefaultSnake(t *testing.T) {
 
 func TestNaming_SnakeOptionsAndCustom(t *testing.T) {
 	split := wrapWith(t, relica.WithNaming(relica.Snake(relica.Initialisms(relica.GoInitialisms()...))))
-	if got := insertSQL(t, split, &namingAccount{AccountID: 1}); !strings.Contains(got, `"http_status"`) {
+	if got := insertSQL(t, split, &namingAccount{AccountID: 1}); !strings.Contains(got, "`http_status`") {
 		t.Fatalf("Initialisms: %s", got)
 	}
 	// Keep v0.19 column names (the Go field name) while migrating.
 	legacy := wrapWith(t, relica.WithNaming(relica.Naming{
 		Column: func(c relica.ColumnSource) string { return c.Field.Name },
 	}))
-	if got := insertSQL(t, legacy, &namingAccount{AccountID: 1}); !strings.Contains(got, `"DisplayName"`) || !strings.Contains(got, `"memo"`) {
+	if got := insertSQL(t, legacy, &namingAccount{AccountID: 1}); !strings.Contains(got, "`DisplayName`") || !strings.Contains(got, "`memo`") {
 		t.Fatalf("custom Naming: %s", got)
 	}
 	// A refusing Naming turns a missing tag into an error.

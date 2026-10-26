@@ -328,7 +328,7 @@ func TestProcessSQL_QuotingTableNames(t *testing.T) {
 			name:     "SQLite single table",
 			dialect:  "sqlite3",
 			sql:      "SELECT * FROM {{users}}",
-			expected: `SELECT * FROM "users"`,
+			expected: "SELECT * FROM `users`",
 		},
 		{
 			name:     "PostgreSQL schema.table",
@@ -393,7 +393,7 @@ func TestProcessSQL_QuotingColumnNames(t *testing.T) {
 			name:     "SQLite single column",
 			dialect:  "sqlite3",
 			sql:      "SELECT [[name]] FROM users",
-			expected: `SELECT "name" FROM users`,
+			expected: "SELECT `name` FROM users",
 		},
 		{
 			name:     "Multiple columns",
@@ -461,7 +461,7 @@ func TestProcessSQL_CombinedQuotingAndParams(t *testing.T) {
 			name:           "SQLite with schema",
 			dialect:        "sqlite3",
 			sql:            "SELECT [[name]] FROM {{public.users}} WHERE [[id]]={:id}",
-			expectedSQL:    `SELECT "name" FROM "public"."users" WHERE "id"=?`,
+			expectedSQL:    "SELECT `name` FROM `public`.`users` WHERE `id`=?",
 			expectedParams: []string{"id"},
 		},
 		{
@@ -594,13 +594,13 @@ func TestQuoteIdentifier(t *testing.T) {
 			name:       "SQLite simple",
 			dialect:    "sqlite3",
 			identifier: "users",
-			expected:   `"users"`,
+			expected:   "`users`",
 		},
 		{
 			name:       "SQLite schema.table",
 			dialect:    "sqlite3",
 			identifier: "main.users",
-			expected:   `"main"."users"`,
+			expected:   "`main`.`users`",
 		},
 		{
 			name:       "Identifier with spaces",

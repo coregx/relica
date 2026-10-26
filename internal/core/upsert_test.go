@@ -185,20 +185,20 @@ func TestUpsertQuery_SQLite_DoUpdate(t *testing.T) {
 	}
 
 	sql := q.sql
-	if !strings.Contains(sql, `INSERT INTO "users"`) {
-		t.Errorf("%q does not contain %q", sql, `INSERT INTO "users"`)
+	if !strings.Contains(sql, "INSERT INTO `users`") {
+		t.Errorf("%q does not contain %q", sql, "INSERT INTO `users`")
 	}
-	if !strings.Contains(sql, `ON CONFLICT ("id")`) {
-		t.Errorf("%q does not contain %q", sql, `ON CONFLICT ("id")`)
+	if !strings.Contains(sql, "ON CONFLICT (`id`)") {
+		t.Errorf("%q does not contain %q", sql, "ON CONFLICT (`id`)")
 	}
 	if !strings.Contains(sql, "DO UPDATE SET") {
 		t.Errorf("%q does not contain %q", sql, "DO UPDATE SET")
 	}
-	if !strings.Contains(sql, `"name" = excluded."name"`) {
-		t.Errorf("%q does not contain %q", sql, `"name" = excluded."name"`)
+	if !strings.Contains(sql, "`name` = excluded.`name`") {
+		t.Errorf("%q does not contain %q", sql, "`name` = excluded.`name`")
 	}
-	if !strings.Contains(sql, `"email" = excluded."email"`) {
-		t.Errorf("%q does not contain %q", sql, `"email" = excluded."email"`)
+	if !strings.Contains(sql, "`email` = excluded.`email`") {
+		t.Errorf("%q does not contain %q", sql, "`email` = excluded.`email`")
 	}
 }
 
@@ -217,11 +217,11 @@ func TestUpsertQuery_SQLite_DoNothing(t *testing.T) {
 	}
 
 	sql := q.sql
-	if !strings.Contains(sql, `INSERT INTO "users"`) {
-		t.Errorf("%q does not contain %q", sql, `INSERT INTO "users"`)
+	if !strings.Contains(sql, "INSERT INTO `users`") {
+		t.Errorf("%q does not contain %q", sql, "INSERT INTO `users`")
 	}
-	if !strings.Contains(sql, `ON CONFLICT ("id") DO NOTHING`) {
-		t.Errorf("%q does not contain %q", sql, `ON CONFLICT ("id") DO NOTHING`)
+	if !strings.Contains(sql, "ON CONFLICT (`id`) DO NOTHING") {
+		t.Errorf("%q does not contain %q", sql, "ON CONFLICT (`id`) DO NOTHING")
 	}
 	if strings.Contains(sql, "UPDATE") {
 		t.Errorf("%q should not contain %q", sql, "UPDATE")
@@ -242,7 +242,7 @@ func TestUpsertQuery_MultipleConflictColumns(t *testing.T) {
 		{
 			name:        "SQLite",
 			dialectName: "sqlite",
-			expectSQL:   []string{`ON CONFLICT ("email", "username")`, "DO UPDATE SET", `"name" = excluded."name"`},
+			expectSQL:   []string{"ON CONFLICT (`email`, `username`)", "DO UPDATE SET", "`name` = excluded.`name`"},
 		},
 	}
 

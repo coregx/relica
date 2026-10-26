@@ -96,7 +96,7 @@ Prefer the Expression API over hand-written condition strings: there is no SQL t
 
 ## Identifier Quoting
 
-The builder quotes table and column names for the dialect (`"users"` on PostgreSQL and SQLite, `` `users` `` on MySQL), including schema-qualified names (`"public"."users"`).
+The builder quotes table and column names for the dialect (`"users"` on PostgreSQL, `` `users` `` on MySQL and SQLite), including schema-qualified names (`"public"."users"`). SQLite gets backticks because it reads an unknown double-quoted name as a string literal, which would turn a misspelled column into a constant instead of an error.
 
 In raw SQL, write `{{table}}` and `[[column]]`:
 

@@ -107,7 +107,7 @@ func TestHashExp_Build(t *testing.T) {
 			name:     "single value sqlite",
 			dialect:  "sqlite",
 			hash:     HashExp{"status": 1},
-			wantSQL:  `"status" = ?`,
+			wantSQL:  "`status` = ?",
 			wantArgs: []interface{}{1},
 		},
 		{
@@ -219,7 +219,7 @@ func TestCompareExp_Build(t *testing.T) {
 			name:     "Eq sqlite",
 			dialect:  "sqlite",
 			exp:      Eq("status", 1),
-			wantSQL:  `"status" = ?`,
+			wantSQL:  "`status` = ?",
 			wantArgs: []interface{}{1},
 		},
 		{
@@ -261,7 +261,7 @@ func TestCompareExp_Build(t *testing.T) {
 			name:     "GreaterOrEqual sqlite",
 			dialect:  "sqlite",
 			exp:      GreaterOrEqual("score", 80),
-			wantSQL:  `"score" >= ?`,
+			wantSQL:  "`score` >= ?",
 			wantArgs: []interface{}{80},
 		},
 		{
@@ -369,7 +369,7 @@ func TestInExp_Build(t *testing.T) {
 			name:     "NOT IN single NULL sqlite",
 			dialect:  "sqlite",
 			exp:      NotIn("deleted_at", nil),
-			wantSQL:  `"deleted_at" IS NOT NULL`,
+			wantSQL:  "`deleted_at` IS NOT NULL",
 			wantArgs: nil,
 		},
 	}
@@ -421,7 +421,7 @@ func TestBetweenExp_Build(t *testing.T) {
 			name:     "NOT BETWEEN sqlite",
 			dialect:  "sqlite",
 			exp:      NotBetween("score", 0, 50),
-			wantSQL:  `"score" NOT BETWEEN ? AND ?`,
+			wantSQL:  "`score` NOT BETWEEN ? AND ?",
 			wantArgs: []interface{}{0, 50},
 		},
 	}
@@ -480,7 +480,7 @@ func TestLikeExp_Build(t *testing.T) {
 			name:     "NOT LIKE sqlite",
 			dialect:  "sqlite",
 			exp:      NotLike("email", "spam"),
-			wantSQL:  `"email" NOT LIKE ? ESCAPE '\'`, // SQLite has no default LIKE escape
+			wantSQL:  "`email` NOT LIKE ? ESCAPE '\\'", // SQLite has no default LIKE escape
 			wantArgs: []interface{}{"%spam%"},
 		},
 		{
@@ -660,7 +660,7 @@ func TestNotExp_Build(t *testing.T) {
 				Eq("deleted", false),
 				GreaterThan("age", 18),
 			)),
-			wantSQL:  `NOT (("deleted" = ?) AND ("age" > ?))`,
+			wantSQL:  "NOT ((`deleted` = ?) AND (`age` > ?))",
 			wantArgs: []interface{}{false, 18},
 		},
 	}
@@ -748,10 +748,10 @@ func TestQuoteColumn(t *testing.T) {
 	}{
 		{"simple column postgres", "postgres", "name", `"name"`},
 		{"simple column mysql", "mysql", "name", "`name`"},
-		{"simple column sqlite", "sqlite", "name", `"name"`},
+		{"simple column sqlite", "sqlite", "name", "`name`"},
 		{"table.column postgres", "postgres", "u.name", `"u"."name"`},
 		{"table.column mysql", "mysql", "u.name", "`u`.`name`"},
-		{"table.column sqlite", "sqlite", "u.name", `"u"."name"`},
+		{"table.column sqlite", "sqlite", "u.name", "`u`.`name`"},
 		{"schema.table postgres", "postgres", "public.users", `"public"."users"`},
 		{"schema.table.column postgres", "postgres", "public.users.id", `"public"."users"."id"`},
 		{"schema.table.column mysql", "mysql", "mydb.users.id", "`mydb`.`users`.`id`"},
@@ -830,7 +830,7 @@ func TestCompareExp_TableAlias(t *testing.T) {
 			name:     "LessOrEqual table.column",
 			dialect:  "sqlite",
 			exp:      LessOrEqual("t.score", 50),
-			wantSQL:  `"t"."score" <= ?`,
+			wantSQL:  "`t`.`score` <= ?",
 			wantArgs: []interface{}{50},
 		},
 		{
@@ -1183,7 +1183,7 @@ func TestHashExp_AllDialects(t *testing.T) {
 		},
 		{
 			dialectName: "sqlite",
-			wantSQL:     `"age" IN (?, ?, ?) AND "status" = ?`,
+			wantSQL:     "`age` IN (?, ?, ?) AND `status` = ?",
 		},
 	}
 

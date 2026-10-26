@@ -218,7 +218,7 @@ func runDBOpsTests(t *testing.T, db *relica.DB, dialect string) {
 
 	t.Run("Quote_GenerateParamName_Strings", func(t *testing.T) {
 		switch dialect {
-		case "mysql":
+		case "mysql", "sqlite":
 			assert.Equal(t, "`ops_item`", db.QuoteTableName("ops_item"))
 			assert.Equal(t, "`s`.`ops_item`", db.QuoteTableName("s.ops_item"))
 			assert.Equal(t, "`name`", db.QuoteColumnName("name"))
@@ -228,21 +228,15 @@ func runDBOpsTests(t *testing.T, db *relica.DB, dialect string) {
 			for _, i := range []int{1, 2, 10} {
 				assert.Equal(t, "?", db.GenerateParamName(i))
 			}
-		default: // postgres, sqlite
+		default: // postgres
 			assert.Equal(t, `"ops_item"`, db.QuoteTableName("ops_item"))
 			assert.Equal(t, `"s"."ops_item"`, db.QuoteTableName("s.ops_item"))
 			assert.Equal(t, `"name"`, db.QuoteColumnName("name"))
 			assert.Equal(t, `"i"."name"`, db.QuoteColumnName("i.name"))
 			assert.Equal(t, `"a""b"`, db.QuoteColumnName(`a"b`))
-			if dialect == "postgres" {
-				assert.Equal(t, "$1", db.GenerateParamName(1))
-				assert.Equal(t, "$2", db.GenerateParamName(2))
-				assert.Equal(t, "$10", db.GenerateParamName(10))
-			} else {
-				for _, i := range []int{1, 2, 10} {
-					assert.Equal(t, "?", db.GenerateParamName(i))
-				}
-			}
+			assert.Equal(t, "$1", db.GenerateParamName(1))
+			assert.Equal(t, "$2", db.GenerateParamName(2))
+			assert.Equal(t, "$10", db.GenerateParamName(10))
 		}
 	})
 

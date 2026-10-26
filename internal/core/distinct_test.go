@@ -366,12 +366,12 @@ func TestSelectQuery_Distinct_SQLite(t *testing.T) {
 		t.Fatal("expected non-nil")
 	}
 
-	// SQLite uses double quotes (like PostgreSQL)
-	if !strings.Contains(q.sql, `SELECT DISTINCT "color"`) {
-		t.Errorf("%q does not contain %q", q.sql, `SELECT DISTINCT "color"`)
+	// SQLite uses backticks (like MySQL)
+	if !strings.Contains(q.sql, "SELECT DISTINCT `color`") {
+		t.Errorf("%q does not contain %q", q.sql, "SELECT DISTINCT `color`")
 	}
-	if !strings.Contains(q.sql, `FROM "items"`) {
-		t.Errorf("%q does not contain %q", q.sql, `FROM "items"`)
+	if !strings.Contains(q.sql, "FROM `items`") {
+		t.Errorf("%q does not contain %q", q.sql, "FROM `items`")
 	}
 }
 

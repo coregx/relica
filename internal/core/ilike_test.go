@@ -26,9 +26,9 @@ func TestILike_SQLPerDialect(t *testing.T) {
 		{"mysql ILike", "mysql", ILike("name", "al"), "LOWER(`name`) LIKE LOWER(?)"},
 		{"mysql NotILike", "mysql", NotILike("name", "al"), "LOWER(`name`) NOT LIKE LOWER(?)"},
 		{"mysql qualified", "mysql", ILike("h.cpu_model", "xeon"), "LOWER(`h`.`cpu_model`) LIKE LOWER(?)"},
-		{"sqlite ILike", "sqlite", ILike("name", "al"), `LOWER("name") LIKE LOWER(?) ESCAPE '\'`},
+		{"sqlite ILike", "sqlite", ILike("name", "al"), "LOWER(`name`) LIKE LOWER(?) ESCAPE '\\'"},
 		{"sqlite OrNotILike", "sqlite", OrNotILike("name", "al", "be"),
-			`LOWER("name") NOT LIKE LOWER(?) ESCAPE '\' OR LOWER("name") NOT LIKE LOWER(?) ESCAPE '\'`},
+			"LOWER(`name`) NOT LIKE LOWER(?) ESCAPE '\\' OR LOWER(`name`) NOT LIKE LOWER(?) ESCAPE '\\'"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -202,7 +202,7 @@ func TestIsNull_Column_Quoting(t *testing.T) {
 	}{
 		{"postgres", "deleted_at", `"deleted_at" IS NULL`},
 		{"mysql", "deleted_at", "`deleted_at` IS NULL"},
-		{"sqlite", "deleted_at", `"deleted_at" IS NULL`},
+		{"sqlite", "deleted_at", "`deleted_at` IS NULL"},
 	}
 
 	for _, tt := range tests {
@@ -230,7 +230,7 @@ func TestGreaterOrEqualCol_SQL(t *testing.T) {
 	}{
 		{"postgres", "price", "min_price", `"price" >= "min_price"`},
 		{"mysql", "price", "min_price", "`price` >= `min_price`"},
-		{"sqlite", "price", "min_price", `"price" >= "min_price"`},
+		{"sqlite", "price", "min_price", "`price` >= `min_price`"},
 	}
 
 	for _, tt := range tests {
@@ -259,7 +259,7 @@ func TestLessOrEqualCol_SQL(t *testing.T) {
 	}{
 		{"postgres", "score", "max_score", `"score" <= "max_score"`},
 		{"mysql", "score", "max_score", "`score` <= `max_score`"},
-		{"sqlite", "score", "max_score", `"score" <= "max_score"`},
+		{"sqlite", "score", "max_score", "`score` <= `max_score`"},
 	}
 
 	for _, tt := range tests {
@@ -632,9 +632,9 @@ func TestFormatSelectColumn_TableDotStar(t *testing.T) {
 		expected string
 	}{
 		{"*", "*"},
-		{"n.*", `"n".*`},
-		{"name", `"name"`},
-		{"t.name", `"t"."name"`},
+		{"n.*", "`n`.*"},
+		{"name", "`name`"},
+		{"t.name", "`t`.`name`"},
 	}
 
 	for _, tt := range tests {
@@ -652,23 +652,23 @@ func TestQuoteColumn_WildcardSQL(t *testing.T) {
 	db := openCovDB(t)
 	defer db.Close()
 
-	// Verify SQL generation — n.* must produce "n".* not "n"."*"
+	// Verify SQL generation — n.* must produce `n`.* not `n`.`*`
 	sq := db.Builder().Select("n.*").From("nodes n")
 	sql := sq.Build().SQL()
-	if strings.Contains(sql, `"*"`) {
+	if strings.Contains(sql, "`*`") {
 		t.Fatalf("wildcard quoted as identifier: %s", sql)
 	}
-	if !strings.Contains(sql, `"n".*`) {
-		t.Fatalf("expected \"n\".* in SQL, got: %s", sql)
+	if !strings.Contains(sql, "`n`.*") {
+		t.Fatalf("expected `n`.* in SQL, got: %s", sql)
 	}
 
 	// schema.table.* pattern
 	sq2 := db.Builder().Select("public.users.*").From("public.users")
 	sql2 := sq2.Build().SQL()
-	if strings.Contains(sql2, `"*"`) {
+	if strings.Contains(sql2, "`*`") {
 		t.Fatalf("schema wildcard quoted: %s", sql2)
 	}
-	if !strings.Contains(sql2, `"public"."users".*`) {
-		t.Fatalf("expected \"public\".\"users\".* in SQL, got: %s", sql2)
+	if !strings.Contains(sql2, "`public`.`users`.*") {
+		t.Fatalf("expected `public`.`users`.* in SQL, got: %s", sql2)
 	}
 }

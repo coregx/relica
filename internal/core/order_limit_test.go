@@ -448,12 +448,12 @@ func TestSelectQuery_OrderBy_SQLite_Quoting(t *testing.T) {
 		t.Fatal("expected non-nil")
 	}
 
-	// SQLite uses double quotes (like PostgreSQL)
-	if !strings.Contains(q.sql, `"users"`) {
-		t.Errorf("%q does not contain %q", q.sql, `"users"`)
+	// SQLite uses backticks (like MySQL)
+	if !strings.Contains(q.sql, "`users`") {
+		t.Errorf("%q does not contain %q", q.sql, "`users`")
 	}
-	if !strings.Contains(q.sql, `"age"`) {
-		t.Errorf("%q does not contain %q", q.sql, `"age"`)
+	if !strings.Contains(q.sql, "`age`") {
+		t.Errorf("%q does not contain %q", q.sql, "`age`")
 	}
 }
 

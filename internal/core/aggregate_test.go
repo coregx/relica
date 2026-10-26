@@ -591,12 +591,12 @@ func TestSelectQuery_Aggregate_SQLite_Quoting(t *testing.T) {
 		t.Fatal("expected non-nil")
 	}
 
-	// SQLite uses double quotes for identifiers and ? for placeholders
-	if !strings.Contains(q.sql, `"user_id"`) {
-		t.Errorf("%q does not contain %q", q.sql, `"user_id"`)
+	// SQLite uses backticks for identifiers and ? for placeholders
+	if !strings.Contains(q.sql, "`user_id`") {
+		t.Errorf("%q does not contain %q", q.sql, "`user_id`")
 	}
-	if !strings.Contains(q.sql, `"messages"`) {
-		t.Errorf("%q does not contain %q", q.sql, `"messages"`)
+	if !strings.Contains(q.sql, "`messages`") {
+		t.Errorf("%q does not contain %q", q.sql, "`messages`")
 	}
 	if !strings.Contains(q.sql, "?") {
 		t.Errorf("%q does not contain %q", q.sql, "?")

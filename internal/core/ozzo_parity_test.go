@@ -20,7 +20,7 @@ func TestSelectAliasQuoting_SimpleAlias(t *testing.T) {
 	}{
 		{"postgres simple", "postgres", "status AS order_status", `"status" AS "order_status"`},
 		{"mysql simple", "mysql", "status AS order_status", "`status` AS `order_status`"},
-		{"sqlite simple", "sqlite", "status AS order_status", `"status" AS "order_status"`},
+		{"sqlite simple", "sqlite", "status AS order_status", "`status` AS `order_status`"},
 	}
 
 	for _, tt := range tests {

@@ -265,8 +265,8 @@ func TestGreatest_SQLite_FallbackToMAX(t *testing.T) {
 	sql, args := expr.Build(dialect)
 
 	// SQLite doesn't have GREATEST, so we use MAX
-	if sql != `MAX("col1", "col2") AS "max_val"` {
-		t.Errorf("got %v, want %v", sql, `MAX("col1", "col2") AS "max_val"`)
+	if sql != "MAX(`col1`, `col2`) AS `max_val`" {
+		t.Errorf("got %v, want %v", sql, "MAX(`col1`, `col2`) AS `max_val`")
 	}
 	if len(args) != 0 {
 		t.Errorf("expected empty, got %d", len(args))
@@ -294,8 +294,8 @@ func TestLeast_SQLite_FallbackToMIN(t *testing.T) {
 	sql, args := expr.Build(dialect)
 
 	// SQLite doesn't have LEAST, so we use MIN
-	if sql != `MIN("col1", "col2")` {
-		t.Errorf("got %v, want %v", sql, `MIN("col1", "col2")`)
+	if sql != "MIN(`col1`, `col2`)" {
+		t.Errorf("got %v, want %v", sql, "MIN(`col1`, `col2`)")
 	}
 	if len(args) != 0 {
 		t.Errorf("expected empty, got %d", len(args))
@@ -368,8 +368,8 @@ func TestConcat_SQLite(t *testing.T) {
 	sql, args := expr.Build(dialect)
 
 	// SQLite uses || operator
-	if sql != `"a" || "b" || "c"` {
-		t.Errorf("got %v, want %v", sql, `"a" || "b" || "c"`)
+	if sql != "`a` || `b` || `c`" {
+		t.Errorf("got %v, want %v", sql, "`a` || `b` || `c`")
 	}
 	if len(args) != 0 {
 		t.Errorf("expected empty, got %d", len(args))
@@ -430,7 +430,7 @@ func TestCase_MultipleDialects(t *testing.T) {
 	}{
 		{"postgres", "postgres", `CASE "status" WHEN ? THEN CAST(? AS INTEGER) END`},
 		{"mysql", "mysql", "CASE `status` WHEN ? THEN ? END"},
-		{"sqlite", "sqlite", `CASE "status" WHEN ? THEN ? END`},
+		{"sqlite", "sqlite", "CASE `status` WHEN ? THEN ? END"},
 	}
 
 	for _, tt := range tests {
@@ -470,7 +470,7 @@ func TestCase_TableAlias(t *testing.T) {
 			"sqlite table.column",
 			"sqlite",
 			"t.category",
-			`CASE "t"."category" WHEN ? THEN ? WHEN ? THEN ? END`,
+			"CASE `t`.`category` WHEN ? THEN ? WHEN ? THEN ? END",
 		},
 	}
 

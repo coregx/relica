@@ -310,37 +310,37 @@ func TestSQLiteDialect_QuoteIdentifier(t *testing.T) {
 		{
 			name:  "simple identifier",
 			input: "users",
-			want:  `"users"`,
+			want:  "`users`",
 		},
 		{
 			name:  "identifier with space",
 			input: "user name",
-			want:  `"user name"`,
+			want:  "`user name`",
 		},
 		{
-			name:  "identifier with double quote",
+			name:  "identifier with double quote (not escaped)",
 			input: `user"name`,
-			want:  `"user""name"`,
+			want:  "`user\"name`",
 		},
 		{
-			name:  "identifier with multiple double quotes",
+			name:  "identifier with multiple double quotes (not escaped)",
 			input: `a"b"c`,
-			want:  `"a""b""c"`,
+			want:  "`a\"b\"c`",
 		},
 		{
 			name:  "empty string",
 			input: "",
-			want:  `""`,
+			want:  "``",
 		},
 		{
 			name:  "reserved word",
 			input: "table",
-			want:  `"table"`,
+			want:  "`table`",
 		},
 		{
-			name:  "identifier with backtick (not escaped)",
+			name:  "identifier with backtick",
 			input: "my`col",
-			want:  `"my` + "`" + `col"`,
+			want:  "`my``col`",
 		},
 	}
 
@@ -415,8 +415,8 @@ func TestPlaceholder_DialectDifferences(t *testing.T) {
 // Cross-dialect: QuoteIdentifier consistency
 // ---------------------------------------------------------------------------
 
-// TestQuoteIdentifier_DialectDifferences checks that postgres and sqlite both
-// use double quotes while mysql uses backticks.
+// TestQuoteIdentifier_DialectDifferences checks that postgres uses double
+// quotes while mysql and sqlite use backticks.
 func TestQuoteIdentifier_DialectDifferences(t *testing.T) {
 	tests := []struct {
 		dialectKey string
@@ -427,8 +427,8 @@ func TestQuoteIdentifier_DialectDifferences(t *testing.T) {
 		{"postgres", "users", '"', '"'},
 		{"postgresql", "orders", '"', '"'},
 		{"mysql", "users", '`', '`'},
-		{"sqlite", "users", '"', '"'},
-		{"sqlite3", "orders", '"', '"'},
+		{"sqlite", "users", '`', '`'},
+		{"sqlite3", "orders", '`', '`'},
 	}
 
 	for _, tt := range tests {

@@ -112,7 +112,7 @@ func TestQuoteTableName_UsesDialect(t *testing.T) {
 	}{
 		{"postgres", "users", '"'},
 		{"mysql", "users", '`'},
-		{"sqlite", "users", '"'},
+		{"sqlite", "users", '`'},
 	}
 	for _, tt := range tests {
 		t.Run(tt.dialect, func(t *testing.T) {

@@ -16,8 +16,8 @@ func TestLikeExp_EscapeClausePerDialect(t *testing.T) {
 		exp     *LikeExp
 		want    string
 	}{
-		{"sqlite", Like("note", "50%"), `"note" LIKE ? ESCAPE '\'`},
-		{"sqlite", OrNotLike("note", "a", "b"), `"note" NOT LIKE ? ESCAPE '\' OR "note" NOT LIKE ? ESCAPE '\'`},
+		{"sqlite", Like("note", "50%"), "`note` LIKE ? ESCAPE '\\'"},
+		{"sqlite", OrNotLike("note", "a", "b"), "`note` NOT LIKE ? ESCAPE '\\' OR `note` NOT LIKE ? ESCAPE '\\'"},
 		{"postgres", Like("note", "50%"), `"note" LIKE ?`},
 		{"mysql", Like("note", "50%"), "`note` LIKE ?"},
 	}

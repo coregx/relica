@@ -75,7 +75,7 @@ func TestSelectSub_ScalarSubquery_MySQL(t *testing.T) {
 	}
 }
 
-// TestSelectSub_ScalarSubquery_SQLite tests a scalar subquery with SQLite double-quote quoting.
+// TestSelectSub_ScalarSubquery_SQLite tests a scalar subquery with SQLite backtick quoting.
 func TestSelectSub_ScalarSubquery_SQLite(t *testing.T) {
 	db := mockDB("sqlite3")
 	qb := &QueryBuilder{db: db}
@@ -88,17 +88,17 @@ func TestSelectSub_ScalarSubquery_SQLite(t *testing.T) {
 		t.Fatal("expected non-nil")
 	}
 
-	if !strings.Contains(query.sql, `"id"`) {
-		t.Errorf("%q does not contain %q", query.sql, `"id"`)
+	if !strings.Contains(query.sql, "`id`") {
+		t.Errorf("%q does not contain %q", query.sql, "`id`")
 	}
-	if !strings.Contains(query.sql, `"name"`) {
-		t.Errorf("%q does not contain %q", query.sql, `"name"`)
+	if !strings.Contains(query.sql, "`name`") {
+		t.Errorf("%q does not contain %q", query.sql, "`name`")
 	}
-	if !strings.Contains(query.sql, `(SELECT COUNT(*) FROM "orders" WHERE user_id = ?) AS "order_count"`) {
-		t.Errorf("%q does not contain %q", query.sql, `(SELECT COUNT(*) FROM "orders" WHERE user_id = ?) AS "order_count"`)
+	if !strings.Contains(query.sql, "(SELECT COUNT(*) FROM `orders` WHERE user_id = ?) AS `order_count`") {
+		t.Errorf("%q does not contain %q", query.sql, "(SELECT COUNT(*) FROM `orders` WHERE user_id = ?) AS `order_count`")
 	}
-	if !strings.Contains(query.sql, `FROM "users"`) {
-		t.Errorf("%q does not contain %q", query.sql, `FROM "users"`)
+	if !strings.Contains(query.sql, "FROM `users`") {
+		t.Errorf("%q does not contain %q", query.sql, "FROM `users`")
 	}
 	want := []interface{}{42}
 	if len(query.params) != len(want) || query.params[0] != want[0] {
@@ -302,7 +302,7 @@ func TestEqCol_SimpleColumns(t *testing.T) {
 			dialect: "sqlite",
 			col1:    "id",
 			col2:    "user_id",
-			wantSQL: `"id" = "user_id"`,
+			wantSQL: "`id` = `user_id`",
 		},
 	}
 
@@ -350,7 +350,7 @@ func TestEqCol_TableAliasedColumns(t *testing.T) {
 			dialect: "sqlite",
 			col1:    "o.user_id",
 			col2:    "u.id",
-			wantSQL: `"o"."user_id" = "u"."id"`,
+			wantSQL: "`o`.`user_id` = `u`.`id`",
 		},
 		{
 			name:    "postgres schema.table.column",
@@ -405,7 +405,7 @@ func TestNotEqCol_AllDialects(t *testing.T) {
 			dialect: "sqlite",
 			col1:    "a.status",
 			col2:    "b.status",
-			wantSQL: `"a"."status" <> "b"."status"`,
+			wantSQL: "`a`.`status` <> `b`.`status`",
 		},
 	}
 
@@ -590,11 +590,11 @@ func TestSelectSub_CorrelatedSubquery_SQLite(t *testing.T) {
 		t.Fatal("expected non-nil")
 	}
 
-	if !strings.Contains(query.sql, `(SELECT COUNT(*) FROM "orders" WHERE "orders"."user_id" = "users"."id") AS "order_count"`) {
-		t.Errorf("%q does not contain %q", query.sql, `(SELECT COUNT(*) FROM "orders" WHERE "orders"."user_id" = "users"."id") AS "order_count"`)
+	if !strings.Contains(query.sql, "(SELECT COUNT(*) FROM `orders` WHERE `orders`.`user_id` = `users`.`id`) AS `order_count`") {
+		t.Errorf("%q does not contain %q", query.sql, "(SELECT COUNT(*) FROM `orders` WHERE `orders`.`user_id` = `users`.`id`) AS `order_count`")
 	}
-	if !strings.Contains(query.sql, `FROM "users"`) {
-		t.Errorf("%q does not contain %q", query.sql, `FROM "users"`)
+	if !strings.Contains(query.sql, "FROM `users`") {
+		t.Errorf("%q does not contain %q", query.sql, "FROM `users`")
 	}
 }
 

@@ -79,10 +79,10 @@ func TestBatchInsert_OnConflict_DoUpdate_SQLite(t *testing.T) {
 		DoUpdate("name", "label"))
 
 	checks := []string{
-		`INSERT INTO "nodes"`,
-		`ON CONFLICT ("project_id", "qualified_name") DO UPDATE SET`,
-		`"name" = excluded."name"`,
-		`"label" = excluded."label"`,
+		"INSERT INTO `nodes`",
+		"ON CONFLICT (`project_id`, `qualified_name`) DO UPDATE SET",
+		"`name` = excluded.`name`",
+		"`label` = excluded.`label`",
 	}
 	for _, c := range checks {
 		if !strings.Contains(sql, c) {
@@ -125,7 +125,7 @@ func TestBatchInsert_OnConflict_DoNothing_SQLite(t *testing.T) {
 		OnConflict("id").
 		DoNothing())
 
-	if !strings.Contains(sql, `ON CONFLICT ("id") DO NOTHING`) {
+	if !strings.Contains(sql, "ON CONFLICT (`id`) DO NOTHING") {
 		t.Errorf("missing DO NOTHING: %s", sql)
 	}
 }

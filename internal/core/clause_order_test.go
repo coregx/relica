@@ -27,7 +27,7 @@ func TestOrderBy_CallOrder(t *testing.T) {
 			want: map[string]string{
 				"postgres": ` ORDER BY CASE WHEN t.due_date IS NULL THEN $1 ELSE $2 END, "t"."created_at" DESC`,
 				"mysql":    " ORDER BY CASE WHEN t.due_date IS NULL THEN ? ELSE ? END, `t`.`created_at` DESC",
-				"sqlite":   ` ORDER BY CASE WHEN t.due_date IS NULL THEN ? ELSE ? END, "t"."created_at" DESC`,
+				"sqlite":   " ORDER BY CASE WHEN t.due_date IS NULL THEN ? ELSE ? END, `t`.`created_at` DESC",
 			},
 			wantArgs: []any{"z", "a"},
 		},
@@ -41,7 +41,7 @@ func TestOrderBy_CallOrder(t *testing.T) {
 			want: map[string]string{
 				"postgres": ` ORDER BY CASE WHEN due_date < CURRENT_DATE THEN 0 ELSE 1 END, "due_date" ASC`,
 				"mysql":    " ORDER BY CASE WHEN due_date < CURRENT_DATE THEN 0 ELSE 1 END, `due_date` ASC",
-				"sqlite":   ` ORDER BY CASE WHEN due_date < CURRENT_DATE THEN 0 ELSE 1 END, "due_date" ASC`,
+				"sqlite":   " ORDER BY CASE WHEN due_date < CURRENT_DATE THEN 0 ELSE 1 END, `due_date` ASC",
 			},
 		},
 		{
@@ -57,7 +57,7 @@ func TestOrderBy_CallOrder(t *testing.T) {
 			want: map[string]string{
 				"postgres": ` ORDER BY CASE WHEN done THEN $2 ELSE $3 END, "priority" DESC, COALESCE(due, $4), "id"`,
 				"mysql":    " ORDER BY CASE WHEN done THEN ? ELSE ? END, `priority` DESC, COALESCE(due, ?), `id`",
-				"sqlite":   ` ORDER BY CASE WHEN done THEN ? ELSE ? END, "priority" DESC, COALESCE(due, ?), "id"`,
+				"sqlite":   " ORDER BY CASE WHEN done THEN ? ELSE ? END, `priority` DESC, COALESCE(due, ?), `id`",
 			},
 			wantArgs: []any{7, "z", "a", "x"},
 		},
@@ -94,7 +94,7 @@ func TestGroupBy_CallOrderAndParamsBeforeHaving(t *testing.T) {
 	want := map[string]string{
 		"postgres": ` GROUP BY DATE_TRUNC($1, created_at), "status", CASE WHEN total > 100 THEN $2 ELSE $3 END HAVING COUNT(*) > $4`,
 		"mysql":    " GROUP BY DATE_TRUNC(?, created_at), `status`, CASE WHEN total > 100 THEN ? ELSE ? END HAVING COUNT(*) > ?",
-		"sqlite":   ` GROUP BY DATE_TRUNC(?, created_at), "status", CASE WHEN total > 100 THEN ? ELSE ? END HAVING COUNT(*) > ?`,
+		"sqlite":   " GROUP BY DATE_TRUNC(?, created_at), `status`, CASE WHEN total > 100 THEN ? ELSE ? END HAVING COUNT(*) > ?",
 	}
 	// GROUP BY precedes HAVING in the statement, so its parameters must be
 	// bound first even though Having is called last.
