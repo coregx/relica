@@ -6,12 +6,9 @@ name: Tests
 # - Multi-database support: PostgreSQL, MySQL, SQLite
 # - Zero production dependencies
 #
-# Branch Strategy:
-# - main branch: Production-ready code only (protected)
-# - develop branch: Active development (default for PRs)
-# - release/* branches: Release candidates (must pass CI before merge to main)
-# - hotfix/* branches: Emergency fixes for production (must pass CI)
-# - Pull requests: Must pass all tests before merge
+# Branch Strategy (GitHub Flow):
+# - main branch: the only long-lived branch (protected by a ruleset)
+# - feature/fix branches: merged into main through pull requests that pass CI
 
 on:
   push:
@@ -22,12 +19,11 @@ on:
   pull_request:
     branches:
       - main
-      - develop
 
 # CI Strategy (2025 best practice):
 # - push: only main branch and tags (post-merge validation)
-# - pull_request: all PRs to main/develop (pre-merge validation)
-# - feature/hotfix/release branches tested via PR, no duplicate runs
+# - pull_request: all PRs to main (pre-merge validation)
+# - feature/fix branches tested via PR, no duplicate runs
 # Reference: https://adamj.eu/tech/2025/05/14/github-actions-avoid-simple-on/
 
 jobs:
@@ -61,6 +57,19 @@ jobs:
       with:
         version: latest
         args: --timeout=5m
+
+    # The integration test module is a separate module behind the
+    # "integration" build tag: vet and lint it too (CHORE-001).
+    - name: Run go vet on the integration test module
+      working-directory: test
+      run: go vet -tags=integration ./...
+
+    - name: Run golangci-lint on the integration test module
+      uses: golangci/golangci-lint-action@v8
+      with:
+        version: latest
+        working-directory: test
+        args: --timeout=5m --build-tags=integration
 
     - name: Check code formatting
       run: |
@@ -173,8 +182,43 @@ jobs:
       working-directory: test
       env:
         RELICA_TEST_DB: ${{ matrix.database }}
+      # Every test starts its own container: the default 10m test timeout
+      # is too short for the whole suite.
       run: |
-        go test -v -count=1 -tags=integration ./...
+        go test -v -count=1 -timeout=45m -tags=integration ./...
+
+  # Upsert and the rest of the MySQL suite on the newest MySQL release
+  # (ADR-019): the day a server rejects VALUES() in ON DUPLICATE KEY UPDATE,
+  # this job fails before users do. Not a required check: a new MySQL
+  # release must not block merges, but the failure is visible.
+  integration-tests-mysql-latest:
+    name: Integration Tests - mysql (latest release)
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25'
+        cache: true
+        cache-dependency-path: "test/go.sum"
+
+    - name: Download integration test dependencies
+      working-directory: test
+      run: |
+        go mod download
+        go mod verify
+
+    - name: Run MySQL integration tests on mysql:latest
+      working-directory: test
+      env:
+        RELICA_TEST_DB: mysql
+        RELICA_MYSQL_IMAGE: mysql:latest
+      run: |
+        go test -v -count=1 -timeout=45m -tags=integration ./...
 
   # Integration tests - SQLite (embedded, no container needed)
   integration-tests-sqlite:
