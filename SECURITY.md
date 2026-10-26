@@ -70,7 +70,7 @@ db.Select().
 
 // ❌ BAD - String concatenation (VULNERABLE!)
 query := "SELECT * FROM users WHERE email = '" + userEmail + "'"
-db.DB().Query(query)  // UNSAFE!
+db.QueryContext(ctx, query)  // UNSAFE!
 
 // ❌ BAD - Direct string interpolation
 db.Select().

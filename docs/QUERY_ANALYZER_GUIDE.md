@@ -193,7 +193,7 @@ planBefore, _ := db.Select().
     Explain()
 
 // Create index
-db.Exec("CREATE INDEX users_status_idx ON users(status)")
+db.ExecContext(ctx, "CREATE INDEX users_status_idx ON users(status)")
 
 // After optimization
 planAfter, _ := db.Select().
