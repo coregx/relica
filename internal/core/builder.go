@@ -2509,8 +2509,21 @@ func (biq *BatchInsertQuery) Values(values ...any) *BatchInsertQuery {
 
 // ValuesMap adds a row from a map of column names to values.
 // Values are extracted in the order of columns specified in BatchInsert.
-// Missing columns will have nil values.
+// Missing columns will have nil values; a key that is not one of the batch
+// columns is an error (it used to be dropped silently).
 func (biq *BatchInsertQuery) ValuesMap(values map[string]any) *BatchInsertQuery {
+	known := make(map[string]bool, len(biq.columns))
+	for _, col := range biq.columns {
+		known[col] = true
+	}
+	for _, key := range getKeys(values) {
+		if !known[key] {
+			if biq.buildErr == nil {
+				biq.buildErr = fmt.Errorf("relica: BatchInsert.ValuesMap key %q is not one of the batch columns %v", key, biq.columns)
+			}
+			return biq
+		}
+	}
 	row := make([]any, len(biq.columns))
 	for i, col := range biq.columns {
 		row[i] = values[col]

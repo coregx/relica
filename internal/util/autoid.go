@@ -2,6 +2,7 @@ package util
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 )
@@ -27,21 +28,22 @@ func RegisterIDGenerator(name string, fn func() string) {
 }
 
 // GenerateAutoID generates a full ID string with optional prefix using the named generator.
-// Empty genName uses the default UUID v7 generator.
-func GenerateAutoID(prefix, genName string) string {
+// Empty genName uses the default UUID v7 generator. An unregistered name is an
+// error (it used to fall back to UUID v7 silently).
+func GenerateAutoID(prefix, genName string) (string, error) {
 	generatorsMu.RLock()
 	gen, ok := generators[genName]
 	generatorsMu.RUnlock()
 
 	if !ok {
-		gen = GenerateUUIDv7
+		return "", fmt.Errorf("autoid generator %q is not registered: call relica.RegisterIDGenerator(%q, fn) before inserting", genName, genName)
 	}
 
 	id := gen()
 	if prefix != "" {
-		return prefix + "_" + id
+		return prefix + "_" + id, nil
 	}
-	return id
+	return id, nil
 }
 
 // ParseAutoID splits a prefixed ID into prefix and body.

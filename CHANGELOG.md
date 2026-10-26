@@ -38,6 +38,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A lock combined with UNION/INTERSECT/EXCEPT (in any branch), GROUP BY, DISTINCT, `Count()` or `Exists()` is an error** — PostgreSQL rejects these, MySQL and SQLite accepted or silently dropped the lock
 - SQLite is recognised by its dialect, not by the driver name (`sqlite`/`sqlite3`), when deciding to omit the lock clause
 
+### Changed (breaking) — names Relica cannot find are errors
+
+- **`Model(&m).Insert(fields...)`, `Update(fields...)` and `Exclude(names...)`** skipped a name that is not a column of the model (a typo silently inserted or updated the wrong set of columns); it is now an error and nothing is sent. Names are column names (the `db` tag)
+- **`BatchInsert(...).ValuesMap(m)`** dropped keys that are not batch columns (a typo wrote NULL); such a key is now an error
+- **`autoid` tag with `gen=<name>` that is not registered** fell back to UUID v7 silently; it is now an error naming the generator — register it with `RegisterIDGenerator` before inserting
+
 ### Added
 
 - **`WithNaming(Naming)`** — how a DB derives names: `Naming{Table, Column}` funcs over `TableSource` / `ColumnSource` (model, declaring struct, field, index path). Built-in `Snake(...)` with `SplitAcronyms()` (`HTTPLog` → `http_log`), `Initialisms(GoInitialisms()...)` (`IPv4Address` → `ipv4_address`, whole tokens only), `TablePrefix`, `PluralTables`; `SnakeCase` for custom rules

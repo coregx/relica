@@ -558,7 +558,6 @@ func runDBOpsTests(t *testing.T, db *relica.DB, dialect string) {
 	})
 
 	t.Run("BatchInsert_ValuesMap_UnknownKey", func(t *testing.T) {
-		t.Skip("BUG: BatchInsertQuery.ValuesMap silently drops map keys that are not in the column list (a typo writes NULL)")
 		clearBatch(t)
 		_, err := db.BatchInsert("ops_batch", []string{"id", "name", "note"}).
 			ValuesMap(map[string]any{"id": 30, "name": "x", "note_typo": "lost"}).

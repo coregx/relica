@@ -128,7 +128,7 @@ func TestModelQuery_FilterFields_OnlySpecified(t *testing.T) {
 		"email": "alice@example.com",
 	}
 
-	result := mq.filterFields(data, []string{"name", "email"})
+	result, _ := mq.filterFields("Insert", data, []string{"name", "email"})
 
 	if len(result) != 2 {
 		t.Errorf("Should have 2 fields: got %v, want %v", len(result), 2)
@@ -161,7 +161,7 @@ func TestModelQuery_FilterFields_AllExceptExcluded(t *testing.T) {
 		"created_at": time.Now(),
 	}
 
-	result := mq.filterFields(data, nil)
+	result, _ := mq.filterFields("Insert", data, nil)
 
 	if len(result) != 3 {
 		t.Errorf("Should have 3 fields: got %v, want %v", len(result), 3)
@@ -198,7 +198,7 @@ func TestModelQuery_FilterFields_OnlyWithExclude(t *testing.T) {
 	}
 
 	// Only takes precedence, but excluded fields still filtered.
-	result := mq.filterFields(data, []string{"name", "email"})
+	result, _ := mq.filterFields("Insert", data, []string{"name", "email"})
 
 	if len(result) != 1 {
 		t.Errorf("Should have 1 field: got %v, want %v", len(result), 1)

@@ -107,8 +107,13 @@ func (mq *ModelQuery) getPrimaryKeys() ([]string, []any, error) {
 	return pkInfo.Columns, values, nil
 }
 
-// filterFields applies only/exclude filters.
-func (mq *ModelQuery) filterFields(data map[string]any, only []string) map[string]any {
+// filterFields applies only/exclude filters. op names the operation in errors.
+// A name in only or Exclude that is not a column of the model is an error
+// (it used to be skipped silently).
+func (mq *ModelQuery) filterFields(op string, data map[string]any, only []string) (map[string]any, error) {
+	if err := mq.checkFieldNames(op, data, only); err != nil {
+		return nil, err
+	}
 	result := make(map[string]any)
 
 	// If only specified - take only those.
@@ -118,7 +123,7 @@ func (mq *ModelQuery) filterFields(data map[string]any, only []string) map[strin
 				result[field] = v
 			}
 		}
-		return result
+		return result, nil
 	}
 
 	// Otherwise take all except excluded.
@@ -127,8 +132,22 @@ func (mq *ModelQuery) filterFields(data map[string]any, only []string) map[strin
 			result[k] = v
 		}
 	}
+	return result, nil
+}
 
-	return result
+// checkFieldNames rejects Exclude names and field names that are not columns.
+func (mq *ModelQuery) checkFieldNames(op string, data map[string]any, only []string) error {
+	for _, name := range sortedKeys(mq.exclude) {
+		if _, ok := data[name]; !ok {
+			return fmt.Errorf("model: Exclude name %q is not a column of the model", name)
+		}
+	}
+	for _, field := range only {
+		if _, ok := data[field]; !ok {
+			return fmt.Errorf("model: %s field %q is not a column of the model", op, field)
+		}
+	}
+	return nil
 }
 
 // Table overrides the table name.
@@ -163,18 +182,18 @@ func (mq *ModelQuery) callBeforeInsert() error {
 
 // populateAutoIDFields generates IDs for autoid-tagged fields that are empty.
 // Must be called before StructToMap so generated values are included in the INSERT.
-func (mq *ModelQuery) populateAutoIDFields() {
+func (mq *ModelQuery) populateAutoIDFields() error {
 	v := reflect.ValueOf(mq.model)
 	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
 
 	if v.Kind() != reflect.Struct {
-		return
+		return nil
 	}
 	fields, err := mq.db.autoIDFields(v.Type())
 	if err != nil {
-		return // the struct error surfaces from the operation itself
+		return err
 	}
 
 	for _, f := range fields {
@@ -182,8 +201,13 @@ func (mq *ModelQuery) populateAutoIDFields() {
 		if fv.Kind() != reflect.String || fv.String() != "" {
 			continue
 		}
-		fv.SetString(util.GenerateAutoID(f.prefix, f.generator))
+		id, err := util.GenerateAutoID(f.prefix, f.generator)
+		if err != nil {
+			return fmt.Errorf("model: field %s: %w", f.column, err)
+		}
+		fv.SetString(id)
 	}
+	return nil
 }
 
 // Insert inserts the model into the table.
@@ -200,7 +224,9 @@ func (mq *ModelQuery) Insert(attrs ...string) error {
 		return err
 	}
 
-	mq.populateAutoIDFields()
+	if err := mq.populateAutoIDFields(); err != nil {
+		return err
+	}
 
 	// Convert struct to map.
 	dataMap, err := mq.db.structValues(mq.model)
@@ -209,25 +235,13 @@ func (mq *ModelQuery) Insert(attrs ...string) error {
 	}
 
 	// Apply filters.
-	filtered := mq.filterFields(dataMap, attrs)
-
-	// Get primary key info.
-	v := reflect.ValueOf(mq.model)
-	if v.Kind() == reflect.Pointer {
-		v = v.Elem()
+	filtered, err := mq.filterFields("Insert", dataMap, attrs)
+	if err != nil {
+		return err
 	}
 
-	pkInfo, _ := mq.db.primaryKey(v)
-
-	// Handle PK removal for auto-increment.
-	// For single PK with zero value: remove from INSERT (auto-increment).
-	// For composite PK: keep all values (no auto-increment support).
-	if pkInfo != nil && pkInfo.IsSingle() {
-		if util.IsPrimaryKeyZero(pkInfo.Values[0]) {
-			// Remove zero single PK from INSERT.
-			delete(filtered, pkInfo.Columns[0])
-		}
-	}
+	// A zero single-column PK is left out (auto-increment); composite PKs are kept.
+	mq.removeZeroPK(filtered)
 
 	// Create builder with transaction/query context if applicable.
 	qb := &QueryBuilder{
@@ -428,7 +442,10 @@ func (mq *ModelQuery) Update(attrs ...string) error {
 	}
 
 	// Apply filters.
-	filtered := mq.filterFields(dataMap, attrs)
+	filtered, err := mq.filterFields("Update", dataMap, attrs)
+	if err != nil {
+		return err
+	}
 
 	// Get primary keys for WHERE.
 	pkCols, pkValues, err := mq.getPrimaryKeys()
@@ -494,7 +511,9 @@ func (mq *ModelQuery) Upsert(fields ...string) error {
 		return err
 	}
 
-	mq.populateAutoIDFields()
+	if err := mq.populateAutoIDFields(); err != nil {
+		return err
+	}
 
 	q, err := mq.buildUpsert(nil, fields)
 	if err != nil {
@@ -524,7 +543,9 @@ func (mq *ModelQuery) UpsertOn(conflictColumns []string, fields ...string) error
 		return err
 	}
 
-	mq.populateAutoIDFields()
+	if err := mq.populateAutoIDFields(); err != nil {
+		return err
+	}
 
 	q, err := mq.buildUpsert(conflictColumns, fields)
 	if err != nil {
