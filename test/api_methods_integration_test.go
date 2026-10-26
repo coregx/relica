@@ -293,8 +293,19 @@ func TestForUpdate_SQLite_NoError(t *testing.T) {
 	_, err = db.ExecContext(ctx, `INSERT INTO forupdate_test (value) VALUES (42)`)
 	require.NoError(t, err)
 
-	// Inspect the SQL without executing to verify "FOR UPDATE" is absent.
-	sql, _ := db.Select("id", "value").From("forupdate_test").ForUpdate().ToSQL()
+	// ADR-020: outside a transaction a row lock is an error on every dialect.
+	var outside []struct {
+		ID int64 `db:"id"`
+	}
+	err = db.Select("id").From("forupdate_test").ForUpdate().All(&outside)
+	require.ErrorContains(t, err, "require a transaction")
+
+	tx, err := db.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback() }()
+
+	// Inside a transaction SQLite drops the clause (database-level locking).
+	sql, _ := tx.Select("id", "value").From("forupdate_test").ForUpdate().ToSQL()
 	assert.False(t, strings.Contains(sql, "FOR UPDATE"),
 		"SQLite: FOR UPDATE must be omitted; got SQL: %s", sql)
 
@@ -304,7 +315,7 @@ func TestForUpdate_SQLite_NoError(t *testing.T) {
 		Value int   `db:"value"`
 	}
 	var rows []row
-	err = db.Select("id", "value").
+	err = tx.Select("id", "value").
 		From("forupdate_test").
 		ForUpdate().
 		All(&rows)
@@ -331,12 +342,24 @@ func TestForShare_SQLite_NoError(t *testing.T) {
 	_, err = db.ExecContext(ctx, `INSERT INTO forshare_test (label) VALUES (?)`, "shared")
 	require.NoError(t, err)
 
+	// ADR-020: outside a transaction a row lock is an error on every dialect.
+	var outside []struct {
+		ID int64 `db:"id"`
+	}
+	err = db.Select("id").From("forshare_test").ForUpdate().All(&outside)
+	require.ErrorContains(t, err, "require a transaction")
+
+	tx, err := db.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback() }()
+
+
 	type row struct {
 		ID    int64  `db:"id"`
 		Label string `db:"label"`
 	}
 	var rows []row
-	err = db.Select("id", "label").
+	err = tx.Select("id", "label").
 		From("forshare_test").
 		ForShare().
 		All(&rows)

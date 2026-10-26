@@ -717,3 +717,14 @@ The rule (ozzo-dbx, `regexp ([^A-Z_])([A-Z])` → `${1}_$2`, lower case) and its
 [AGENTS.md](../AGENTS.md#table-and-column-names-v0200-adr-018) and on `relica.Snake`.
 
 `relica.WrapDB(sqlDB, driver, opts...)` now accepts the same options as `Open`; existing calls compile unchanged.
+
+## Row locks (ADR-020)
+
+| v0.19 code | v0.20.0 | Change your code to |
+|---|---|---|
+| `db.Select()...ForUpdate()` (any lock) on `*relica.DB` | error "require a transaction" (every database) | run it in `db.Transactional(ctx, func(tx *relica.Tx) error { ... })` or on a `*relica.Tx` |
+| lock + `Union`/`Intersect`/`Except`/`GroupBy`/`Distinct` | error | lock the base rows in a separate query |
+| lock + `Count()` / `Exists()` | error (the lock was dropped) | `All`/`One` with the lock, or no lock |
+
+**Find affected code:** `grep -rn "ForUpdate\|ForShare\|ForUpdateSkipLocked" --include=*.go .` and check that each
+runs on a transaction. A `*relica.DB` from a `dbcontext.With(ctx)` helper outside a transaction errors too.

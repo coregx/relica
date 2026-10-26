@@ -286,21 +286,26 @@ type clauseItem struct {
 }
 
 // ForUpdate adds FOR UPDATE clause for pessimistic row-level locking.
-// Silently ignored for SQLite (uses database-level locking).
+//
+// Row locks need a transaction: outside one the lock ends with the statement,
+// so Build returns an error on every dialect (ADR-020). A lock combined with
+// UNION/INTERSECT/EXCEPT, GROUP BY, DISTINCT, Count() or Exists() is an error
+// too. Inside a transaction SQLite drops the clause (database-level locking).
 func (sq *SelectQuery) ForUpdate() *SelectQuery {
 	sq.lockClause = "FOR UPDATE"
 	return sq
 }
 
-// ForShare adds FOR SHARE clause for shared row-level locking.
-// Silently ignored for SQLite.
+// ForShare adds FOR SHARE clause for shared row-level locking. Same rules as
+// ForUpdate. MySQL 8.0+ only: MariaDB has no FOR SHARE (it uses LOCK IN SHARE MODE).
 func (sq *SelectQuery) ForShare() *SelectQuery {
 	sq.lockClause = "FOR SHARE"
 	return sq
 }
 
-// ForUpdateSkipLocked adds FOR UPDATE SKIP LOCKED for non-blocking lock acquisition.
-// Useful for job queue patterns. Silently ignored for SQLite.
+// ForUpdateSkipLocked adds FOR UPDATE SKIP LOCKED for non-blocking lock
+// acquisition (job queues). Same rules as ForUpdate: outside a transaction two
+// workers would claim the same row, so it is a build error.
 func (sq *SelectQuery) ForUpdateSkipLocked() *SelectQuery {
 	sq.lockClause = "FOR UPDATE SKIP LOCKED"
 	return sq
@@ -1346,8 +1351,7 @@ func (sq *SelectQuery) renderSQL(dialect dialects.Dialect) (string, []any) {
 	// 12. Build lock clause (FOR UPDATE/FOR SHARE — skip for SQLite)
 	lockClause := ""
 	if sq.lockClause != "" && sq.builder != nil {
-		dn := sq.builder.db.DriverName()
-		if dn != "sqlite" && dn != "sqlite3" {
+		if _, isSQLite := sq.builder.db.dialect.(*dialects.SQLiteDialect); !isSQLite {
 			lockClause = " " + sq.lockClause
 		}
 	}
@@ -1428,6 +1432,10 @@ func (sq *SelectQuery) Build() *Query {
 	ctx := sq.ctx
 	if ctx == nil {
 		ctx = sq.builder.ctx
+	}
+
+	if sq.buildErr == nil {
+		sq.buildErr = sq.lockError()
 	}
 
 	// Return a Query that carries the build error; all execution methods check prepErr.
@@ -1585,6 +1593,9 @@ func (sq *SelectQuery) Column(slice any) error {
 //
 //	count, err := db.Select().From("users").Where(relica.Eq("status", 1)).Count()
 func (sq *SelectQuery) Count() (int64, error) {
+	if sq.lockClause != "" {
+		return 0, errLockWithAggregate
+	}
 	var count int64
 	if err := sq.countQuery().Build().Row(&count); err != nil {
 		return 0, err
@@ -1622,6 +1633,9 @@ func (sq *SelectQuery) countQuery() *SelectQuery {
 //
 //	exists, err := db.Select().From("users").Where(relica.Eq("email", email)).Exists()
 func (sq *SelectQuery) Exists() (bool, error) {
+	if sq.lockClause != "" {
+		return false, errLockWithAggregate
+	}
 	// Build the inner query as SELECT 1 FROM ... WHERE ...
 	// Use selectExprs to emit raw "1" without quoting.
 	innerQuery := &SelectQuery{
@@ -2734,3 +2748,29 @@ func (buq *BatchUpdateQuery) Build() *Query {
 func (buq *BatchUpdateQuery) Execute() (any, error) {
 	return buq.Build().Execute()
 }
+
+// lockError enforces ADR-020 rules 3 and 4 for row locks.
+func (sq *SelectQuery) lockError() error {
+	locked := sq.lockClause != ""
+	for _, u := range sq.unions {
+		if u.query != nil && u.query.lockClause != "" {
+			locked = true
+		}
+	}
+	if !locked {
+		return nil
+	}
+	if len(sq.unions) > 0 || len(sq.groupBy) > 0 || sq.distinct {
+		return errors.New("relica: a row lock (ForUpdate/ForShare/ForUpdateSkipLocked) cannot be combined with " +
+			"UNION/INTERSECT/EXCEPT, GROUP BY or DISTINCT: the result rows are not table rows")
+	}
+	if sq.builder.tx == nil {
+		return errors.New("relica: ForUpdate/ForShare/ForUpdateSkipLocked require a transaction: " +
+			"outside one the lock ends with the statement")
+	}
+	return nil
+}
+
+// errLockWithAggregate is returned by Count and Exists on a locking query.
+var errLockWithAggregate = errors.New("relica: a row lock (ForUpdate/ForShare/ForUpdateSkipLocked) cannot be " +
+	"combined with Count() or Exists(): lock the rows with All/One, or drop the lock")
