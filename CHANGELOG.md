@@ -51,6 +51,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`Exists()` dropped `GroupBy`, `Having`, `Distinct`, set operations and CTEs** (it sent `SELECT 1` with only FROM, JOIN and WHERE), so a `Having` that filtered every group still returned true and a match in a later `Union` branch returned false. It now sends the query itself inside `SELECT EXISTS(...)`
 - `OrderBy`, `Limit` and `Offset` stay ignored by both (a paginated query reports its total); in a set operation they belong to the first branch and are kept
 
+### Changed (breaking) — `OrderBy` takes "column [ASC|DESC]" only
+
+- **`OrderBy` kept the first word and the direction and dropped the rest silently**: `OrderBy("salary + 1 DESC")` ran `ORDER BY "salary"`, `"created_at DESC NULLS LAST"` lost NULLS LAST, `"age DESC, name"` lost `name`, `"name COLLATE NOCASE"` lost the collation — a different order, no error, on every database. Each argument is now `"column"` or `"column ASC|DESC"` (any case); an argument containing `(` (a function call) is used as is; anything else, and an empty argument, is an error returned when the query runs. Use `OrderByExpr` for expressions, NULLS FIRST/LAST and COLLATE, and one argument per column. (ozzo-dbx quoted the whole text before the direction as one name, which at least failed in the database.)
+
 ### Removed
 
 - **`relica.NewDB`** (deprecated since v0.12.0) — use `relica.Open(driver, dsn, opts...)`, same arguments

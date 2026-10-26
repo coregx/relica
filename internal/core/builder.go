@@ -626,11 +626,46 @@ func (sq *SelectQuery) CrossJoin(table string) *SelectQuery {
 //	OrderBy("age DESC")                    // Single column descending
 //	OrderBy("status ASC", "created_at")    // Multiple columns (created_at defaults to ASC)
 //	OrderBy("name").OrderBy("age DESC")    // Chained calls
+//
+// Each argument is "column" or "column ASC|DESC"; an argument containing "("
+// (a function call) is used as is. Anything else — arithmetic, NULLS
+// FIRST/LAST, COLLATE, several columns in one string — is a build error: use
+// OrderByExpr, or one argument per column.
 func (sq *SelectQuery) OrderBy(columns ...string) *SelectQuery {
 	for _, col := range columns {
-		sq.orderBy = append(sq.orderBy, clauseItem{column: col})
+		item, err := orderByItem(col)
+		if err != nil {
+			if sq.buildErr == nil {
+				sq.buildErr = err
+			}
+			continue
+		}
+		sq.orderBy = append(sq.orderBy, item)
 	}
 	return sq
+}
+
+// orderByItem parses one OrderBy argument. The parser it replaces kept the
+// first word and the direction and dropped the rest without a word:
+// "salary + 1 DESC" became ORDER BY "salary", and NULLS LAST, COLLATE or a
+// second column after a comma vanished. ozzo-dbx quotes everything before the
+// direction as one name, which at least fails in the database; Relica rejects
+// it before anything is sent.
+func orderByItem(col string) (clauseItem, error) {
+	if strings.Contains(col, "(") {
+		// A function call or expression, used as is like everywhere a column
+		// name may contain "(" (quoteColumn).
+		return clauseItem{raw: &RawExp{SQL: strings.TrimSpace(col)}}, nil
+	}
+	fields := strings.Fields(col)
+	switch {
+	case len(fields) == 1:
+		return clauseItem{column: fields[0]}, nil
+	case len(fields) == 2 && (strings.EqualFold(fields[1], "ASC") || strings.EqualFold(fields[1], "DESC")):
+		return clauseItem{column: fields[0] + " " + strings.ToUpper(fields[1])}, nil
+	}
+	return clauseItem{}, fmt.Errorf("relica: OrderBy(%q) takes \"column\" or \"column ASC|DESC\"; "+
+		"use OrderByExpr for expressions, NULLS FIRST/LAST, COLLATE, and one argument per column", col)
 }
 
 // OrderByExpr adds a raw SQL expression to the ORDER BY clause.

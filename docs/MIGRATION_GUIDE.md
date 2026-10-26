@@ -772,6 +772,20 @@ Code that used `Count()` on a grouped query to get the size of one group should 
 **Find affected code:** `grep -rn "\.Count()\|\.Exists()" --include=*.go .` and check the chains that also call
 `GroupBy`, `Having`, `Distinct`, `Union`/`Intersect`/`Except` or `With`.
 
+## `OrderBy`: one column and an optional direction per argument
+
+| v0.19 code | v0.19 result | v0.20.0 | Change your code to |
+|---|---|---|---|
+| `OrderBy("salary + 1 DESC")` | `ORDER BY "salary"` (expression and direction dropped) | error | `OrderByExpr("salary + 1 DESC")` |
+| `OrderBy("created_at DESC NULLS LAST")` | NULLS LAST dropped | error | `OrderByExpr("created_at DESC NULLS LAST")` |
+| `OrderBy("age DESC, name")` | `name` dropped | error | `OrderBy("age DESC", "name")` |
+| `OrderBy("name COLLATE NOCASE")` | collation dropped | error | `OrderByExpr("name COLLATE NOCASE")` |
+| `OrderBy("")` (e.g. an empty sort parameter) | ignored | error | call `OrderBy` only when there is a column |
+
+`OrderBy("LOWER(name) DESC")` and other arguments with `(` keep working (used as is).
+
+**Find affected code:** `grep -rnE 'OrderBy\("[^"]* [^"]* ' --include=*.go .` and every `OrderBy(` whose argument is built at run time.
+
 ## Errors inside subqueries, set operations and CTEs
 
 A construction error inside a `FromSelect` subquery, a `Union`/`UnionAll`/`Intersect`/`Except` branch or a CTE used
