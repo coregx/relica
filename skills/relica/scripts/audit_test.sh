@@ -56,7 +56,7 @@ expect "$bad" HIGH V4 2
 expect "$bad" HIGH V5 2
 expect "$bad" MEDIUM V6 1
 expect "$bad" MEDIUM V7 1
-expect "$bad" MEDIUM V8 2
+expect "$bad" INFO V8 2
 expect "$bad" INFO V9 1
 expect "$bad" MEDIUM V10 1
 expect "$bad" INFO I5 1
