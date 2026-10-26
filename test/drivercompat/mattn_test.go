@@ -17,7 +17,7 @@ import (
 // locked", so the snapshot case passes only when the code is read.
 func TestMattnSQLite_ExtendedCode(t *testing.T) {
 	dsn := "file:" + filepath.Join(t.TempDir(), "m.db") + "?_foreign_keys=1&_journal_mode=WAL&_busy_timeout=200"
-	db, err := relica.NewDB("sqlite3", dsn)
+	db, err := relica.Open("sqlite3", dsn)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -498,7 +498,7 @@ func TestPublicTypes_MySQL(t *testing.T) {
 func TestPublicTypes_SQLite(t *testing.T) {
 	requireDB(t, "sqlite")
 	path := filepath.Join(t.TempDir(), "public_types.db")
-	db, err := relica.NewDB("sqlite", path)
+	db, err := relica.Open("sqlite", path)
 	require.NoError(t, err)
 	ds := &DatabaseSetup{DB: db, Dialect: "sqlite", DSN: path}
 	defer ds.Close()

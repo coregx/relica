@@ -503,7 +503,7 @@ func TestExecutor_MySQL(t *testing.T) {
 // leak) could not run. A file in t.TempDir() behaves like production SQLite.
 func TestExecutor_SQLite(t *testing.T) {
 	requireDB(t, "sqlite")
-	db, err := relica.NewDB("sqlite", filepath.Join(t.TempDir(), "executor.db"))
+	db, err := relica.Open("sqlite", filepath.Join(t.TempDir(), "executor.db"))
 	require.NoError(t, err)
 	ds := &DatabaseSetup{DB: db, Dialect: "sqlite"}
 	defer ds.Close()

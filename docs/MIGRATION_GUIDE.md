@@ -754,3 +754,12 @@ conditions assembled from optional filters (`relica.And(conds...)` where `conds`
 
 Column names in SQL (`Select("col")`, `Where`/`HashExp` keys, `OrderBy`) are not checked by Relica — the database
 rejects unknown columns itself.
+
+## Removed
+
+| Removed | Use |
+|---|---|
+| `relica.NewDB(driver, dsn)` | `relica.Open(driver, dsn)` — same arguments, plus options |
+| `query.QueryParams()` | `query.Params()` |
+
+`relica.Open` with a driver name that has no SQL dialect returns an error instead of panicking.

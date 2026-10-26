@@ -51,7 +51,7 @@ func TestPostgresIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	// Connect to database
-	db, err := relica.NewDB("postgres", dsn)
+	db, err := relica.Open("postgres", dsn)
 	require.NoError(t, err)
 	defer db.Close() //nolint:errcheck // Test cleanup
 

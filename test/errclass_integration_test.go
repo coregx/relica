@@ -348,7 +348,7 @@ func TestErrorClassification_PostgreSQL_LibPQ(t *testing.T) {
 func TestErrorClassification_PostgreSQL_Pgx(t *testing.T) {
 	ds := SetupPostgreSQLTestDB(t)
 	defer ds.Close()
-	db, err := relica.NewDB("pgx", ds.DSN)
+	db, err := relica.Open("pgx", ds.DSN)
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 
@@ -384,7 +384,7 @@ func TestErrorClassification_SQLite(t *testing.T) {
 	// A file database in WAL mode: the lock scenarios need two connections.
 	dsn := filepath.Join(t.TempDir(), "errclass.db") +
 		"?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(200)"
-	db, err := relica.NewDB("sqlite", dsn)
+	db, err := relica.Open("sqlite", dsn)
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 	setupErrClassTables(t, db)

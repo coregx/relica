@@ -117,7 +117,7 @@ func TestTransactionalErrors_MySQL(t *testing.T) {
 
 func TestTransactionalErrors_SQLite(t *testing.T) {
 	requireDB(t, "sqlite")
-	db, err := relica.NewDB("sqlite", filepath.Join(t.TempDir(), "tx.db"))
+	db, err := relica.Open("sqlite", filepath.Join(t.TempDir(), "tx.db"))
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 	runTransactionalTests(t, db)

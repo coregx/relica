@@ -160,7 +160,7 @@ func TestILike_MySQL(t *testing.T) {
 
 func TestILike_SQLite(t *testing.T) {
 	requireDB(t, "sqlite")
-	db, err := relica.NewDB("sqlite", filepath.Join(t.TempDir(), "ilike.db"))
+	db, err := relica.Open("sqlite", filepath.Join(t.TempDir(), "ilike.db"))
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 	runILikeTests(t, db, "sqlite")

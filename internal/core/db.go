@@ -184,13 +184,17 @@ func WithQueryHook(hook QueryHook) Option {
 }
 
 // NewDB creates a new DB instance.
+// An unknown driver name is an error, checked before the pool is opened.
 func NewDB(driverName, dsn string) (*DB, error) {
+	dialect, err := dialects.LookupDialect(driverName)
+	if err != nil {
+		return nil, err
+	}
 	sqlDB, err := sql.Open(driverName, dsn)
 	if err != nil {
 		return nil, err
 	}
 
-	dialect := dialects.GetDialect(driverName)
 	return &DB{
 		sqlDB:      sqlDB,
 		driverName: driverName,

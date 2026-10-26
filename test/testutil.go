@@ -95,7 +95,7 @@ func SetupPostgreSQLTestDB(t *testing.T) *DatabaseSetup {
 
 	// Check for manual DSN first (allows testing without Docker)
 	if dsn := os.Getenv("POSTGRES_TEST_DSN"); dsn != "" {
-		db, err := relica.NewDB("postgres", dsn)
+		db, err := relica.Open("postgres", dsn)
 		require.NoError(t, err)
 		return &DatabaseSetup{DB: db, Dialect: "postgres", DSN: dsn}
 	}
@@ -122,7 +122,7 @@ func SetupPostgreSQLTestDB(t *testing.T) *DatabaseSetup {
 	dsn, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
 	require.NoError(t, err)
 
-	db, err := relica.NewDB("postgres", dsn)
+	db, err := relica.Open("postgres", dsn)
 	require.NoError(t, err)
 
 	return &DatabaseSetup{
@@ -149,7 +149,7 @@ func SetupMySQLTestDB(t *testing.T) *DatabaseSetup {
 				dsn += "?parseTime=true"
 			}
 		}
-		db, err := relica.NewDB("mysql", dsn)
+		db, err := relica.Open("mysql", dsn)
 		require.NoError(t, err)
 		return &DatabaseSetup{DB: db, Dialect: "mysql", DSN: dsn}
 	}
@@ -180,7 +180,7 @@ func SetupMySQLTestDB(t *testing.T) *DatabaseSetup {
 	// See: https://github.com/go-sql-driver/mysql#parsetime
 	dsn += "?parseTime=true"
 
-	db, err := relica.NewDB("mysql", dsn)
+	db, err := relica.Open("mysql", dsn)
 	require.NoError(t, err)
 
 	return &DatabaseSetup{
@@ -195,7 +195,7 @@ func SetupMySQLTestDB(t *testing.T) *DatabaseSetup {
 // Always works, no external dependencies.
 func SetupSQLiteTestDB(t *testing.T) *DatabaseSetup {
 	requireDB(t, "sqlite")
-	db, err := relica.NewDB("sqlite", ":memory:")
+	db, err := relica.Open("sqlite", ":memory:")
 	require.NoError(t, err)
 
 	return &DatabaseSetup{
