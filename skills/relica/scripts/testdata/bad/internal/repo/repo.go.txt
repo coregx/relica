@@ -83,8 +83,21 @@ func v4(db *relica.DB) {
 		Execute()
 }
 
+func v4more(db *relica.DB) error {
+	// V4 ×2 more: a multi-line argument inside the chain, and a chain in an if
+	db.Update("u").
+		Set(map[string]any{
+			"a": 1,
+		}).
+		Execute()
+	if _, err := db.Delete("v").Execute(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func v5(q *relica.Query) {
-	// V5 ×2
+	// V5 ×1 (QueryParams is left to the compiler)
 	relica.NewDB("postgres", "dsn")
 	_ = q.QueryParams()
 }

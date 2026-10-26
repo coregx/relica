@@ -151,21 +151,53 @@ column_args() {
 }
 
 # UPDATE/DELETE builder chains (Update("t") / Delete("t")) that reach
-# .Execute() with no Where/AllRows in between, across up to 15 lines.
+# .Execute() with no Where/AllRows in between, across up to 15 lines. The
+# chain is one expression: it ends at a ";" or an unbalanced closing bracket,
+# or at a line that closes all its brackets without a trailing "." (Go puts
+# the dot at the end of the line). So Model(u).Update("col") — the Model API,
+# keyed by the primary key — never borrows a later statement's Execute().
 whole_table() {
 	awk_files relicafiles '
+		# scan(s): walks the code of s, outside strings and // comments, keeping
+		# the bracket depth; sets cut (length of the code part of s) and ended
+		# (1 if the expression ends inside s).
+		function scan(s,   i, n, c, instr) {
+			n = length(s); instr = 0; ended = 0; cut = n
+			for (i = 1; i <= n; i++) {
+				c = substr(s, i, 1)
+				if (instr) {
+					if (c == "\\") i++
+					else if (c == "\"") instr = 0
+					continue
+				}
+				if (c == "\"") instr = 1
+				else if (c == "/" && substr(s, i + 1, 1) == "/") { cut = i - 1; return }
+				else if (c == "(" || c == "[" || c == "{") depth++
+				else if (c == ")" || c == "]" || c == "}") {
+					if (--depth < 0) { cut = i; ended = 1; return }
+				} else if (c == ";" && depth == 0) { cut = i; ended = 1; return }
+			}
+		}
 		FNR == 1 { open = 0 }
 		{
+			text = $0
 			if (!open && match($0, /(^|[^A-Za-z0-9_])(Update|Delete)\("[^"]*"\)/)) {
-				open = 1; start = FNR; code = $0; seen = 0
+				open = 1; start = FNR; code = $0; seen = 0; depth = 0
+				text = substr($0, RSTART)
 			}
 			if (open) {
-				# A chain may put the dot at the end of the previous line.
-				if ($0 ~ /(^|[^A-Za-z0-9_])(Where|AndWhere|OrWhere|AllRows)\(/) seen = 1
-				if ($0 ~ /(^|[^A-Za-z0-9_])Execute\(\)/) {
+				scan(text)
+				part = substr(text, 1, cut)
+				if (part ~ /(^|[^A-Za-z0-9_])(Where|AndWhere|OrWhere|AllRows)\(/) seen = 1
+				if (part ~ /(^|[^A-Za-z0-9_])Execute\(\)/) {
 					if (!seen) print FILENAME ":" start ":" code
 					open = 0
-				} else if (FNR - start > 15) open = 0
+				} else if (ended) open = 0
+				else {
+					sub(/[ \t\r]+$/, "", part)
+					if (depth == 0 && part !~ /\.$/) open = 0
+					else if (FNR - start > 15) open = 0
+				}
 			}
 		}'
 }
@@ -289,9 +321,11 @@ report HIGH V3 'Expression in GroupBy — quoted as a column name; use GroupByEx
 report HIGH V4 'UPDATE/DELETE chain reaching Execute() without Where — an error since v0.20.0 (use AllRows() for the whole table on purpose)' \
 	'AGENTS.md › UPDATE / DELETE need Where' \
 	< <(whole_table)
-report HIGH V5 'Removed in v0.20.0 — does not compile: relica.NewDB (use Open), Query.QueryParams (use Params)' \
+# Query.QueryParams (removed too, use Params) is left to the compiler: a grep
+# cannot tell Relica's Query from echo.Context, whose QueryParams() is common.
+report HIGH V5 'Removed in v0.20.0 — does not compile: relica.NewDB (use Open); the compiler also reports Query.QueryParams (use Params)' \
 	'MIGRATION_GUIDE › Removed' \
-	< <(g gofiles "\\b($relica_names)\\.NewDB\\(|(^|[^A-Za-z0-9_])QueryParams\\(\\)")
+	< <(g gofiles "\\b($relica_names)\\.NewDB\\(")
 report MEDIUM V6 'Builder Upsert / OnConflict — needs exactly one of DoUpdate, DoUpdateAll, DoNothing since v0.20.0 (a missing action is an error; check the whole chain)' \
 	'AGENTS.md › Upsert; MIGRATION_GUIDE › Upsert' \
 	< <(upsert_without_action)

@@ -1,0 +1,42 @@
+// Fixture for audit_test.sh: code that resembles Relica patterns but is not
+// one. The audit must report nothing here. Not compiled.
+package handler
+
+import (
+	"github.com/coregx/relica"
+	"github.com/labstack/echo/v4"
+)
+
+type Handler struct{ db *relica.DB }
+
+// Echo's Context.QueryParams is not Relica's removed Query.QueryParams.
+func (h *Handler) List(c echo.Context) error {
+	_ = c.QueryParams()
+	return nil
+}
+
+// The Model API takes column names and always uses the primary key: no Where,
+// even when an unrelated chain below reaches Execute().
+func (h *Handler) Rename(u *User) error {
+	if err := h.db.Model(u).Update("name"); err != nil {
+		return err
+	}
+	_, err := h.db.NewQuery("ANALYZE users").Execute()
+	return err
+}
+
+func (h *Handler) RenameVar(u *User) error {
+	mq := h.db.Model(u)
+	if err := mq.Update("name"); err != nil {
+		return err
+	}
+	_, err := h.db.NewQuery("ANALYZE users").Execute()
+	return err
+}
+
+type User struct {
+	ID   int    `db:"id"`
+	Name string `db:"name"`
+}
+
+func (User) TableName() string { return "users" }
