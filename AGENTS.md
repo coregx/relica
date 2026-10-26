@@ -932,6 +932,11 @@ page := db.Select().From("orders").Where(relica.Eq("user_id", id)).OrderBy("id D
 total, err := page.Count() // all of the user's orders, not 20
 ```
 
+A grouped, distinct, compound or expression-list query is counted as a derived table
+(`SELECT COUNT(*) FROM (...) AS relica_count`). MySQL rejects a derived table with two columns of the same name
+(error 1060), which `Select()` (`*`) over a join produces: list the columns (`Select("e.id", "d.name")`) for such a
+`Count()` on MySQL.
+
 ### ToSQL (Query Preview)
 
 ```go
