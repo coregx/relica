@@ -717,38 +717,20 @@ func (db *DB) hookRaw(ctx context.Context, query string, args []any, start time.
 	})
 }
 
-// detectOperation attempts to detect the SQL operation type from a query string.
-// Returns the operation type (INSERT, UPDATE, DELETE, SELECT, etc.) for audit logging.
+// detectOperation classifies a statement for the audit log: the
+// SELECT/INSERT/UPDATE/DELETE of DetectOperation (CTEs and leading comments
+// handled), else the leading DDL keyword. One classifier, so the audit log
+// and QueryEvent.Operation agree.
 func detectOperation(query string) string {
-	// Convert to uppercase for matching
-	upper := strings.ToUpper(strings.TrimSpace(query))
-
-	// Match common operations
-	if strings.HasPrefix(upper, opInsert) {
-		return opInsert
+	if op := DetectOperation(query); op != opUnknown {
+		return op
 	}
-	if strings.HasPrefix(upper, opUpdate) {
-		return opUpdate
+	upper := strings.ToUpper(query)
+	i := skipSpace(upper, 0)
+	for _, kw := range []string{"CREATE", "DROP", "ALTER", "TRUNCATE"} {
+		if hasWord(upper, i, kw) {
+			return kw
+		}
 	}
-	if strings.HasPrefix(upper, opDelete) {
-		return opDelete
-	}
-	if strings.HasPrefix(upper, opSelect) {
-		return opSelect
-	}
-	if strings.HasPrefix(upper, "CREATE") {
-		return "CREATE"
-	}
-	if strings.HasPrefix(upper, "DROP") {
-		return "DROP"
-	}
-	if strings.HasPrefix(upper, "ALTER") {
-		return "ALTER"
-	}
-	if strings.HasPrefix(upper, "TRUNCATE") {
-		return "TRUNCATE"
-	}
-
-	// Unknown operation
 	return opUnknown
 }

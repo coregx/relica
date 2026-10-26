@@ -68,12 +68,15 @@ func DetectOperation(sql string) string {
 }
 
 // skipSpaceAndParens returns the index of the first byte at or after i that
-// is neither white space nor an opening parenthesis.
+// is neither white space, a comment nor an opening parenthesis.
 func skipSpaceAndParens(s string, i int) int {
-	for i < len(s) && (s[i] == '(' || isSQLSpace(s[i])) {
+	for {
+		i = skipSpace(s, i)
+		if i >= len(s) || s[i] != '(' {
+			return i
+		}
 		i++
 	}
-	return i
 }
 
 func isSQLSpace(c byte) bool {
@@ -144,9 +147,23 @@ func skipCTE(s string, i int) int {
 	return skipBalanced(s, i)
 }
 
+// skipSpace skips white space and -- / /* */ comments (query tags such as
+// sqlcommenter's are written as leading comments). An unterminated comment
+// runs to the end of the text.
 func skipSpace(s string, i int) int {
-	for i < len(s) && isSQLSpace(s[i]) {
-		i++
+	for i < len(s) {
+		switch {
+		case isSQLSpace(s[i]):
+			i++
+		case strings.HasPrefix(s[i:], "--"), strings.HasPrefix(s[i:], "/*"):
+			next, _ := skipLiteralOrComment(s, i)
+			if next < 0 {
+				return len(s)
+			}
+			i = next
+		default:
+			return i
+		}
 	}
 	return i
 }
