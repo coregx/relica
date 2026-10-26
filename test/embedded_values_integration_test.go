@@ -94,14 +94,34 @@ type f3Level struct {
 
 func (f3Level) TableName() string { return "f3_level" }
 
+// Audit gets Scan and Value only by promotion from sql.NullString. It is a
+// plain struct: flattened to null_string and x. Taken as one value (promoted
+// methods counting), it was written through NullString.Value alone and X was
+// never written or read.
+type Audit struct {
+	sql.NullString
+	X int
+}
+
+type f3Audit struct {
+	ID int `db:"id,pk"`
+	Audit
+}
+
+func (f3Audit) TableName() string { return "f3_audit" }
+
+var embeddedValueTables = []string{"f3_note", "f3_level", "f3_audit"}
+
 func createEmbeddedValueTables(t *testing.T, db *relica.DB, dialect string) {
 	t.Helper()
 	ctx := context.Background()
-	for _, table := range []string{"f3_note", "f3_level"} {
+	for _, table := range embeddedValueTables {
 		_, err := db.ExecContext(ctx, "DROP TABLE IF EXISTS "+table)
 		require.NoError(t, err)
 	}
 	_, err := db.ExecContext(ctx, `CREATE TABLE f3_level (id INTEGER PRIMARY KEY, level VARCHAR(20) NOT NULL)`)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `CREATE TABLE f3_audit (id INTEGER PRIMARY KEY, null_string VARCHAR(50) NULL, x INTEGER NOT NULL)`)
 	require.NoError(t, err)
 	ts := "TIMESTAMP"
 	if dialect == dialectMySQL {
@@ -120,12 +140,25 @@ func runEmbeddedValueTests(t *testing.T, db *relica.DB, dialect string) {
 	t.Helper()
 	createEmbeddedValueTables(t, db, dialect)
 	defer func() {
-		for _, table := range []string{"f3_note", "f3_level"} {
+		for _, table := range embeddedValueTables {
 			_, _ = db.ExecContext(context.Background(), "DROP TABLE IF EXISTS "+table)
 		}
 	}()
 
 	at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+
+	t.Run("PromotedMethodsDoNotDropFields", func(t *testing.T) {
+		in := f3Audit{ID: 1, Audit: Audit{NullString: sql.NullString{String: "s", Valid: true}, X: 42}}
+		require.NoError(t, db.Model(&in).Insert())
+
+		var got f3Audit
+		require.NoError(t, db.Select().From("f3_audit").Where(relica.Eq("id", 1)).One(&got))
+		assert.Equal(t, in, got)
+
+		var x int
+		require.NoError(t, db.Select("x").From("f3_audit").Where(relica.Eq("id", 1)).Row(&x))
+		assert.Equal(t, 42, x, "X is written, not dropped")
+	})
 
 	t.Run("RoundTrip", func(t *testing.T) {
 		in := f3Note{ID: 1, NullString: sql.NullString{String: "hello", Valid: true}, Time: at,

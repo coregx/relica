@@ -104,7 +104,7 @@ func scanInto(rows *sql.Rows, v reflect.Value, plan []*modelField) error {
 // driver.Valuer) as a row: walked as a struct it matched no column and came
 // back zero with no error.
 func checkRowType(t reflect.Type) error {
-	if isValueRow(t) {
+	if isValueType(t) {
 		return fmt.Errorf("relica: %s is a single value, not a row: use Row(&v) or Column(&[]v)", t)
 	}
 	return nil

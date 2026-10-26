@@ -51,9 +51,45 @@ type EvScannerOnly struct{ A, B int }
 
 func (s *EvScannerOnly) Scan(any) error { return nil }
 
-// EvBase gets Scan and Value promoted from sql.NullString, so Go sees it as
-// one value.
+// EvBase gets Scan and Value only by promotion from sql.NullString: a plain
+// struct, flattened to its NullString (column null_string).
 type EvBase struct{ sql.NullString }
+
+// EvPromoted is the trap promotion set: Scan and Value promoted from
+// NullString, and a field X. Taken as one value it wrote only the NullString
+// and never X; flattened, both are columns.
+type EvPromoted struct {
+	sql.NullString
+	X int
+}
+
+// EvDate declares its own Scan and Value and embeds time.Time, which has
+// neither: the methods cannot be promoted, so EvDate is one value written
+// through its own Value.
+type EvDate struct{ time.Time }
+
+func (d *EvDate) Scan(src any) error {
+	t, ok := src.(time.Time)
+	if !ok {
+		return fmt.Errorf("EvDate: cannot scan %T", src)
+	}
+	d.Time = t
+	return nil
+}
+
+func (d EvDate) Value() (driver.Value, error) { return d.Format(time.DateOnly), nil }
+
+// EvShadow declares Scan and Value and embeds NullString, which has both:
+// reflect cannot tell declared from promoted, so it is taken as a plain
+// struct and flattened (null_string, extra); a wrong guess fails on a missing
+// column instead of dropping Extra.
+type EvShadow struct {
+	sql.NullString
+	Extra int
+}
+
+func (s *EvShadow) Scan(src any) error          { return s.NullString.Scan(src) }
+func (s EvShadow) Value() (driver.Value, error) { return s.NullString.Value() }
 
 // EvAudit is a plain struct whose fields are value types: flattened, each
 // field one column.
@@ -140,6 +176,23 @@ type (
 		sql.NullString `db:"code,pk"`
 		Name           string
 	}
+	evPromotedModel struct {
+		ID int
+		EvPromoted
+	}
+	evDateModel struct {
+		ID int
+		EvDate
+	}
+	evShadowModel struct {
+		ID int
+		EvShadow
+	}
+	evNested struct { // promotion through two levels: EvBase → NullString
+		ID int
+		evNestedBase
+	}
+	evNestedBase struct{ EvBase }
 )
 
 func TestEmbeddedValue_Columns(t *testing.T) {
@@ -157,7 +210,11 @@ func TestEmbeddedValue_Columns(t *testing.T) {
 		{&evMetaModel{}, "ev_meta,id"},
 		{&evValuerOnly{}, "ev_valuer_only,id"},
 		{&evScannerOnly{}, "ev_scanner_only,id"},
-		{&evBaseModel{}, "ev_base,id"},
+		{&evBaseModel{}, "id,null_string"}, // promoted Scan/Value do not make EvBase one value
+		{&evPromotedModel{}, "id,null_string,x"},
+		{&evDateModel{}, "ev_date,id"}, // its own Scan/Value: one column
+		{&evShadowModel{}, "extra,id,null_string"},
+		{&evNested{}, "id,null_string"},
 		{&evPtrNull{}, "id,null_string"},
 		{&evPtrTime{}, "id,time"},
 		{&evUnexported{}, "id"},                                 // skipped like any unexported field
@@ -341,5 +398,54 @@ func TestEmbeddedValue_RequireFieldsNamesColumn(t *testing.T) {
 	}
 	if errors.Is(err, sql.ErrNoRows) {
 		t.Fatal("not a missing-row error")
+	}
+}
+
+// evPromotedRow embeds EvPromoted: both of its fields must be written and read.
+type evPromotedRow struct {
+	ID int `db:"id,pk"`
+	EvPromoted
+}
+
+func TestEmbeddedValue_PromotedMethodsDoNotDropFields(t *testing.T) {
+	db := evDB(t)
+	if _, err := db.ExecContext(context.Background(), `CREATE TABLE ev_promoted (id INTEGER, null_string TEXT, x INTEGER)`); err != nil {
+		t.Fatal(err)
+	}
+	in := evPromotedRow{ID: 1, EvPromoted: EvPromoted{NullString: sql.NullString{String: "s", Valid: true}, X: 42}}
+	if err := db.Model(&in).Table("ev_promoted").Insert(); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	var got evPromotedRow
+	if err := db.Builder().Select().From("ev_promoted").Where(Eq("id", 1)).One(&got); err != nil {
+		t.Fatalf("one: %v", err)
+	}
+	if got != in {
+		t.Fatalf("round trip = %+v, want %+v", got, in)
+	}
+}
+
+func TestEmbeddedValue_DeclaredMethodsOnTimeWrapper(t *testing.T) {
+	db := mockDB("postgres")
+	at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	q := db.Builder().InsertStruct("t", &evDateModel{ID: 1, EvDate: EvDate{at}})
+	if q.prepErr != nil {
+		t.Fatal(q.prepErr)
+	}
+	if want := `INSERT INTO "t" ("ev_date", "id") VALUES ($1, $2)`; q.sql != want {
+		t.Fatalf("sql = %s, want %s", q.sql, want)
+	}
+	valuer, ok := q.params[0].(driver.Valuer)
+	if !ok {
+		t.Fatalf("ev_date param = %T, want the EvDate value", q.params[0])
+	}
+	if v, err := valuer.Value(); err != nil || v != "2026-01-02" {
+		t.Fatalf("ev_date writes %v, %v; want its own Value 2026-01-02", v, err)
+	}
+	// As a whole row it is a single value.
+	var d EvDate
+	err := evDB(t).Builder().Select("at").From("ev_rows").One(&d)
+	if err == nil || err.Error() != "relica: core.EvDate is a single value, not a row: use Row(&v) or Column(&[]v)" {
+		t.Fatalf("One(&EvDate) = %v", err)
 	}
 }
