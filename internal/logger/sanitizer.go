@@ -39,8 +39,11 @@ func NewSanitizer(sensitiveFields []string) *Sanitizer {
 	// Compile patterns for efficient matching
 	patterns := make([]*regexp.Regexp, 0, len(sensitiveFields))
 	for _, field := range sensitiveFields {
-		// Match field name in SQL (case-insensitive, with word boundaries)
-		pattern := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(field) + `\b`)
+		// Match the field name as a word or as a part of a snake_case name
+		// (password_hash, access_token): "_" separates parts here, while \b
+		// would treat it as a letter and miss them. Over-masking a column such
+		// as auth_method is the safe failure.
+		pattern := regexp.MustCompile(`(?i)(?:^|[^a-z0-9])` + regexp.QuoteMeta(field) + `(?:[^a-z0-9]|$)`)
 		patterns = append(patterns, pattern)
 	}
 

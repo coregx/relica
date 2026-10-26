@@ -145,6 +145,8 @@ var defaultSanitizer = logger.NewSanitizer(nil)
 // MaskArgs masks sensitive parameter values (passwords, tokens, API keys) in query args.
 // If the SQL references a sensitive column (password, token, api_key, etc.), ALL parameters
 // of that statement are masked — not just the sensitive one. This is a conservative heuristic.
+// A name counts as a word or as a part of a snake_case column: password_hash and
+// access_token are sensitive, author and tokenizer are not.
 // Use this in custom QueryHook implementations to safely log parameters.
 //
 // Example:
