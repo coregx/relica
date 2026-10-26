@@ -806,6 +806,55 @@ func runSelectFeatureTests(t *testing.T, db *relica.DB, dialect string) {
 		assert.Zero(t, n)
 	})
 
+	// Count is the number of rows All would return, and Exists whether there
+	// is one; ORDER BY, LIMIT and OFFSET are ignored (pagination keeps its
+	// total). Data: dept 1 = Alice, Bob; dept 2 = Carol; NULL = Dave.
+	t.Run("CountMethod_FollowsWhatAllReturns", func(t *testing.T) {
+		count := func(q *relica.SelectQuery) int64 {
+			t.Helper()
+			n, err := q.Count()
+			require.NoError(t, err)
+			return n
+		}
+		emp := func(cols ...string) *relica.SelectQuery { return db.Select(cols...).From("sf_emp") }
+
+		assert.Equal(t, int64(3), count(emp("dept_id").GroupBy("dept_id")), "GROUP BY: number of groups")
+		assert.Equal(t, int64(1), count(emp("dept_id").GroupBy("dept_id").Having("COUNT(*) > ?", 1)), "HAVING")
+		assert.Equal(t, int64(3), count(emp("dept_id").Distinct()), "DISTINCT")
+		assert.Equal(t, int64(2), count(emp("id").Where(relica.Eq("dept_id", 1)).OrderBy("id").Limit(1).Offset(1)),
+			"LIMIT/OFFSET ignored")
+		assert.Equal(t, int64(2), count(emp("id").SelectExpr("salary + ?", 1).Where(relica.Eq("dept_id", 1))),
+			"select-list params do not shift the WHERE params")
+		assert.Equal(t, int64(2), count(db.Select().
+			With("sf_hi", emp("id").Where(relica.GreaterThan("salary", 75))).From("sf_hi")), "CTE")
+
+		skipSQLiteCompound(t)
+		assert.Equal(t, int64(3), count(lowIDs().Union(midIDs())), "UNION")
+		assert.Equal(t, int64(4), count(lowIDs().UnionAll(midIDs())), "UNION ALL")
+	})
+
+	t.Run("ExistsMethod_FollowsWhatAllReturns", func(t *testing.T) {
+		exists := func(q *relica.SelectQuery) bool {
+			t.Helper()
+			ok, err := q.Exists()
+			require.NoError(t, err)
+			return ok
+		}
+		emp := func(cols ...string) *relica.SelectQuery { return db.Select(cols...).From("sf_emp") }
+
+		assert.False(t, exists(emp("dept_id").GroupBy("dept_id").Having("COUNT(*) > ?", 5)), "HAVING filters every group")
+		assert.True(t, exists(emp("dept_id").GroupBy("dept_id").Having("COUNT(*) > ?", 1)))
+		assert.True(t, exists(emp("id").Where(relica.Eq("dept_id", 1)).Offset(5)), "OFFSET ignored")
+		assert.True(t, exists(db.Select().
+			With("sf_hi", emp("id").Where(relica.GreaterThan("salary", 75))).From("sf_hi")), "CTE")
+		assert.False(t, exists(db.Select().
+			With("sf_hi", emp("id").Where(relica.GreaterThan("salary", 500))).From("sf_hi")), "empty CTE")
+
+		skipSQLiteCompound(t)
+		none := emp("id").Where(relica.Eq("id", -1))
+		assert.True(t, exists(none.Union(emp("id").Where(relica.Eq("id", 1)))), "a later branch has rows")
+	})
+
 	// -----------------------------------------------------------------------
 	// AsExpression + Exists / NotExists (expressions)
 	// -----------------------------------------------------------------------

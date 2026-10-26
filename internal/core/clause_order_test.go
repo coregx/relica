@@ -117,21 +117,22 @@ func TestGroupBy_CallOrderAndParamsBeforeHaving(t *testing.T) {
 	}
 }
 
-// TestCount_KeepsGroupByColumnsOnly pins Count's existing behavior: it keeps
-// GROUP BY columns and drops GROUP BY expressions and ORDER BY.
-func TestCount_KeepsGroupByColumnsOnly(t *testing.T) {
+// TestCount_GroupedQueryIsDerivedTable verifies that Count counts the groups
+// of a grouped query, GROUP BY expressions included, without its ORDER BY
+// (FIX-009: it used to return the first group's count).
+func TestCount_GroupedQueryIsDerivedTable(t *testing.T) {
 	sq := (&QueryBuilder{db: mockDB("postgres")}).
 		Select("status").From("orders").
-		GroupByExpr("DATE(created_at)").
+		GroupByExpr("DATE(created_at) + ?", 1).
 		GroupBy("status").
 		OrderBy("status")
 
-	count := sq.countQuery()
-	got, _ := count.buildSQL(count.builder.db.dialect)
-	want := `SELECT COUNT(*) FROM "orders" GROUP BY "status"`
+	got, args := sq.countStatement()
+	want := `SELECT COUNT(*) FROM (SELECT "status" FROM "orders" GROUP BY DATE(created_at) + $1, "status") AS relica_count`
 	if got != want {
 		t.Errorf("got %s, want %s", got, want)
 	}
+	assertArgs(t, args, []any{1})
 }
 
 func assertArgs(t *testing.T, got, want []any) {

@@ -44,6 +44,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`BatchInsert(...).ValuesMap(m)`** dropped keys that are not batch columns (a typo wrote NULL); such a key is now an error
 - **`autoid` tag with `gen=<name>` that is not registered** fell back to UUID v7 silently; it is now an error naming the generator — register it with `RegisterIDGenerator` before inserting
 
+### Changed (breaking) — `Count()` and `Exists()` follow what `All` returns (FIX-009)
+
+- **`Count()` with `GroupBy` returned the first group's row count**; it now returns the number of groups (the rows `All` would return), as GORM does. `GroupByExpr`/`GroupBySub` items were dropped from the count while `Having` stayed; both now apply
+- **`Count()` ignored `Distinct`, set operations and CTEs**: `Distinct` counted every row, `Union`/`Intersect`/`Except` counted only the first branch, a CTE was dropped (the query failed with "no such table"). They now apply: grouped, distinct and compound queries are counted as a derived table `SELECT COUNT(*) FROM (...) AS relica_count`
+- **`Exists()` dropped `GroupBy`, `Having`, `Distinct`, set operations and CTEs** (it sent `SELECT 1` with only FROM, JOIN and WHERE), so a `Having` that filtered every group still returned true and a match in a later `Union` branch returned false. It now sends the query itself inside `SELECT EXISTS(...)`
+- `OrderBy`, `Limit` and `Offset` stay ignored by both (a paginated query reports its total); in a set operation they belong to the first branch and are kept
+
 ### Removed
 
 - **`relica.NewDB`** (deprecated since v0.12.0) — use `relica.Open(driver, dsn, opts...)`, same arguments

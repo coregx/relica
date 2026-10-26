@@ -1631,8 +1631,13 @@ func (sq *SelectQuery) Column(slice any) error {
 	return sq.Build().Column(slice)
 }
 
-// Count executes a COUNT(*) query and returns the number of matching rows.
-// Any columns specified in Select() are ignored; COUNT(*) is always used.
+// Count returns the number of rows the query would return: with GROUP BY the
+// number of groups, with DISTINCT the number of distinct rows, with a set
+// operation the rows of the compound result. ORDER BY, LIMIT and OFFSET are
+// ignored, so a paginated query reports its total. A plain query is sent as
+// SELECT COUNT(*) with its FROM, JOIN and WHERE; a query with GROUP BY, HAVING,
+// DISTINCT or a set operation is counted as a derived table. A select list that
+// aggregates without GROUP BY is replaced by COUNT(*) like any other.
 //
 // Example:
 //
@@ -1644,38 +1649,20 @@ func (sq *SelectQuery) Count() (int64, error) {
 	if sq.lockClause != "" {
 		return 0, errLockWithAggregate
 	}
+	sqlStr, params := sq.countStatement()
+	if sq.buildErr != nil {
+		return 0, sq.buildErr
+	}
 	var count int64
-	if err := sq.countQuery().Build().Row(&count); err != nil {
+	if err := sq.aggregateQuery(sqlStr, params).Row(&count); err != nil {
 		return 0, err
 	}
 	return count, nil
 }
 
-// countQuery returns a copy of this query that selects COUNT(*) instead of
-// the specified columns, with the same conditions. It keeps the GROUP BY
-// columns but not GROUP BY expressions, as Count always has.
-func (sq *SelectQuery) countQuery() *SelectQuery {
-	var groupBy []clauseItem
-	for _, item := range sq.groupBy {
-		if item.raw == nil && item.exp == nil {
-			groupBy = append(groupBy, item)
-		}
-	}
-	return &SelectQuery{
-		builder:       sq.builder,
-		columns:       []string{"COUNT(*)"},
-		fromSrc:       sq.fromSrc,
-		table:         sq.table,
-		joins:         sq.joins,
-		where:         sq.where,
-		params:        sq.params,
-		groupBy:       groupBy,
-		havingClauses: sq.havingClauses,
-		ctx:           sq.ctx,
-	}
-}
-
-// Exists executes the query wrapped in SELECT EXISTS(...) and returns true if any rows match.
+// Exists reports whether the query returns at least one row, by the same rule
+// as Count: GROUP BY, HAVING, DISTINCT, set operations and CTEs apply; ORDER BY,
+// LIMIT and OFFSET are ignored. The query is sent as SELECT EXISTS(...).
 //
 // Example:
 //
@@ -1687,47 +1674,103 @@ func (sq *SelectQuery) Exists() (bool, error) {
 	if sq.lockClause != "" {
 		return false, errLockWithAggregate
 	}
-	// Build the inner query as SELECT 1 FROM ... WHERE ...
-	// Use selectExprs to emit raw "1" without quoting.
-	innerQuery := &SelectQuery{
-		builder:     sq.builder,
-		selectExprs: []RawExp{{SQL: "1"}},
-		fromSrc:     sq.fromSrc,
-		table:       sq.table,
-		joins:       sq.joins,
-		where:       sq.where,
-		params:      sq.params,
-		ctx:         sq.ctx,
+	sqlStr, params := sq.existsStatement()
+	if sq.buildErr != nil {
+		return false, sq.buildErr
 	}
-
-	innerSQL, innerParams := innerQuery.buildSQL(sq.builder.db.dialect)
-	if innerQuery.buildErr != nil {
-		return false, innerQuery.buildErr
+	var exists bool
+	if err := sq.aggregateQuery(sqlStr, params).Row(&exists); err != nil {
+		return false, err
 	}
+	return exists, nil
+}
 
-	// Wrap in SELECT EXISTS(...)
-	existsSQL := "SELECT EXISTS(" + innerSQL + ")"
+// countAlias names the derived table Count wraps a grouped, distinct or
+// compound query in; PostgreSQL and MySQL require an alias there.
+const countAlias = "relica_count"
 
-	// Renumber placeholders for PostgreSQL: inner query uses $1, $2... but the outer
-	// query has no preceding params, so numbering is already correct.
+// countStatement renders the SQL Count sends (see Count).
+func (sq *SelectQuery) countStatement() (string, []any) {
+	src := sq.aggregateSource()
+	if len(src.groupBy) > 0 || len(src.havingClauses) > 0 || src.distinct || len(src.unions) > 0 {
+		inner, args := src.renderSQL(sq.builder.db.dialect)
+		sq.keepRenderErr(src)
+		return sq.withAggregate("SELECT COUNT(*) FROM ("+inner+") AS "+countAlias, args)
+	}
+	// The select list does not change the number of rows: drop it, and with
+	// it the parameters of SelectExpr and SelectSub.
+	src.columns = []string{"COUNT(*)"}
+	src.selectExprs = nil
+	src.subExprs = nil
+	src.distinct = false
+	body, args := src.renderSQL(sq.builder.db.dialect)
+	sq.keepRenderErr(src)
+	return sq.withAggregate(body, args)
+}
+
+// existsStatement renders the SQL Exists sends (see Exists).
+func (sq *SelectQuery) existsStatement() (string, []any) {
+	src := sq.aggregateSource()
+	inner, args := src.renderSQL(sq.builder.db.dialect)
+	sq.keepRenderErr(src)
+	return sq.withAggregate("SELECT EXISTS("+inner+")", args)
+}
+
+// aggregateSource is the query whose rows Count and Exists evaluate: a copy
+// without CTEs (withAggregate puts them in front of the whole statement) and,
+// unless it is a set operation, without ORDER BY, LIMIT and OFFSET. In a set
+// operation those belong to the first branch, so they stay.
+func (sq *SelectQuery) aggregateSource() *SelectQuery {
+	src := *sq
+	src.ctes = nil
+	if len(src.unions) == 0 {
+		src.orderBy = nil
+		src.limitValue = nil
+		src.offsetValue = nil
+	}
+	return &src
+}
+
+// keepRenderErr keeps an error renderSQL stored on the copy (an unsupported
+// JOIN ON type, for example).
+func (sq *SelectQuery) keepRenderErr(src *SelectQuery) {
+	if sq.buildErr == nil {
+		sq.buildErr = src.buildErr
+	}
+}
+
+// withAggregate prepends the query's CTEs to body and renumbers the
+// placeholders once for the dialect. A placeholder/argument mismatch is stored
+// in sq.buildErr, as buildSQL does.
+func (sq *SelectQuery) withAggregate(body string, bodyArgs []any) (string, []any) {
+	dialect := sq.builder.db.dialect
+	args := bodyArgs
+	if len(sq.ctes) > 0 {
+		withClause, withArgs := sq.buildWithClause(dialect)
+		body = withClause + " " + body
+		args = append(append([]any{}, withArgs...), bodyArgs...)
+	}
+	finalSQL, count := replacePlaceholders(body, 1, dialect)
+	if count != len(args) {
+		sq.buildErr = fmt.Errorf("relica: %d placeholders but %d args", count, len(args))
+	}
+	return finalSQL, args
+}
+
+// aggregateQuery wraps a rendered Count/Exists statement in a Query bound to
+// the query's DB or transaction and context.
+func (sq *SelectQuery) aggregateQuery(sqlStr string, params []any) *Query {
 	ctx := sq.ctx
 	if ctx == nil {
 		ctx = sq.builder.ctx
 	}
-
-	q := &Query{
-		sql:    existsSQL,
-		params: innerParams,
+	return &Query{
+		sql:    sqlStr,
+		params: params,
 		db:     sq.builder.db,
 		tx:     sq.builder.tx,
 		ctx:    ctx,
 	}
-
-	var exists bool
-	if err := q.Row(&exists); err != nil {
-		return false, err
-	}
-	return exists, nil
 }
 
 // ToSQL returns the SQL string and parameters without executing the query.
