@@ -1220,7 +1220,8 @@ db, err := relica.Open("postgres", dsn,
 
 An untagged field maps to the snake_case of its name (`CreatedAt` → `created_at`), a type without `TableName()`
 to its snake_case singular name (`UserProfile` → `user_profile`), and embedded structs are flattened — the
-ozzo-dbx rules. `db:"col"` and `TableName()` override them; `relica.WithNaming` changes them per DB:
+ozzo-dbx rules. An embedded single value (`time.Time`, `sql.NullString`, a type with its own `Scan`/`Value`) is one
+column (`null_string`); read single values with `Row`/`Column`, not `One`/`All`. `db:"col"` and `TableName()` override them; `relica.WithNaming` changes them per DB:
 
 ```go
 db, err := relica.Open("postgres", dsn,

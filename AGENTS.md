@@ -886,6 +886,7 @@ type OrderItem struct {
 | no tag | snake_case of the field name: `CreatedAt` → `created_at`, `UserID` → `user_id`, `HTTPLog` → `httplog` |
 | `db:"-"` | field skipped |
 | embedded struct (no tag) | its fields are flattened into the model |
+| embedded single value: `time.Time`, `sql.NullString`, `sql.Null[T]`, a type with its own `Scan`/`Value` | ONE column: its `db` tag, else Naming of the field name (`NullString` → `null_string`, `Time` → `time`, `Meta` → `meta`) |
 | table: `Table("x")` | `x` |
 | table: `TableName()` method (value **or pointer** receiver) | its result |
 | table: neither | snake_case singular of the type: `UserProfile` → `user_profile`, `User` → `user` (NOT `users`) |
@@ -900,6 +901,18 @@ db, err := relica.Open("postgres", dsn,
 // relica.Snake(relica.TablePrefix("app."), relica.PluralTables(f)) — prefix/plural for derived tables only
 // relica.Naming{Column: func(relica.ColumnSource) string { return "" }} — every field must have a db tag
 ```
+
+**Embedded types.** A plain embedded struct is flattened; an embedded single value is one column. Single value =
+`time.Time`, or a type that implements `sql.Scanner` or `driver.Valuer` through methods it declares itself: methods
+promoted from an embedded field do not count, so `Audit{sql.NullString; X int}` gives columns `null_string`, `x`, and
+a wrapper `Date struct{ time.Time }` with its own `Scan`/`Value` is one column `date`. Tag an embedded single value to
+name it (`` sql.NullString `db:"note"` ``; `,pk` and `-` work too); embedding `*sql.NullString` is allowed (nil writes
+NULL). A `db` tag on an embedded plain struct, an embedded pointer to one, and a struct that maps to no column at all
+are errors. A field whose `Value()` is on the pointer receiver (`func (m *Meta) Value()`) is written through `Value()`.
+
+**Single values are not rows.** `One`/`All` scan rows into structs (or `NullStringMap`); for one value use
+`Row(&v)` or `Column(&[]v)` — `One(&t)` with `t time.Time` or `sql.NullString` is an error, like `One(&n)` with an
+int. `Column` scans the first column of each row and ignores the others.
 
 **Reading (ScanMode)**: by default a struct field that has no column in the result is an **error**
 (`ScanRequireFields`) instead of a silent zero. `Select("id", "name")` requires only the listed columns;
