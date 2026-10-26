@@ -142,3 +142,32 @@ type PoolStats struct {
 	// Zero if health checks are disabled.
 	LastHealthCheck time.Time
 }
+
+// MySQLUpsertSyntax selects how MySQL upserts refer to the row proposed for
+// insertion (see WithMySQLUpsertSyntax).
+type MySQLUpsertSyntax int
+
+const (
+	// MySQLUpsertValues renders "col = VALUES(col)" (the default). Every claimed
+	// server accepts it: MySQL 5.7, 8.x, 9.x and MariaDB. MySQL deprecated VALUES()
+	// in this position in 8.0.20 (warning 1287) and announced its removal.
+	MySQLUpsertValues MySQLUpsertSyntax = iota
+	// MySQLUpsertRowAlias renders "INSERT ... VALUES (...) AS excluded ON DUPLICATE
+	// KEY UPDATE col = excluded.col". Requires MySQL 8.0.19 or later; MariaDB
+	// rejects it.
+	MySQLUpsertRowAlias
+)
+
+// WithMySQLUpsertSyntax selects the MySQL upsert syntax for DoUpdate and
+// DoUpdateAll. Both forms read the proposed row after BEFORE INSERT triggers,
+// like PostgreSQL's EXCLUDED. The choice is static: Relica never probes the
+// server version, because SQL is fixed when a query is built and ToSQL works
+// without a connection. Other dialects ignore it.
+//
+// Example:
+//
+//	db, err := relica.Open("mysql", dsn,
+//	    relica.WithMySQLUpsertSyntax(relica.MySQLUpsertRowAlias))
+func WithMySQLUpsertSyntax(s MySQLUpsertSyntax) Option {
+	return Option{core.WithMySQLUpsertSyntax(core.MySQLUpsertSyntax(s))}
+}

@@ -78,277 +78,80 @@ func newTestMQ(db *DB, model interface{}, table string) *ModelQuery {
 }
 
 // ============================================================================
-// buildUpsertUpdateCols unit tests
+// Model upsert SQL (buildUpsert; no real DB). Validation: upsert_action_test.go
 // ============================================================================
 
-func TestBuildUpsertUpdateCols_NoFieldsSpecified(t *testing.T) {
-	mq := &ModelQuery{exclude: make(map[string]bool)}
-	dataMap := map[string]interface{}{"id": 1, "name": "Alice", "email": "a@b.com"}
-	pkCols := []string{"id"}
-
-	result := mq.buildUpsertUpdateCols(dataMap, pkCols, nil)
-
-	// result should contain "name" and "email" but not "id"
-	want := map[string]bool{"name": true, "email": true}
-	if len(result) != len(want) {
-		t.Errorf("expected length %d, got %d", len(want), len(result))
+func modelUpsertSQL(t *testing.T, dialect string, model any, fields []string) string {
+	t.Helper()
+	db := upsertMockDB(dialect)
+	q, err := db.Model(model).buildUpsert(nil, fields)
+	if err != nil {
+		t.Fatalf("buildUpsert: %v", err)
 	}
-	for _, col := range result {
-		if col == "id" {
-			t.Errorf("PK should not be in update cols: expected different, both %v", col)
-		}
-	}
+	return q.sql
 }
 
-func TestBuildUpsertUpdateCols_SpecificFieldsWithPK(t *testing.T) {
-	// If caller includes the PK in fields, it must be excluded.
-	mq := &ModelQuery{exclude: make(map[string]bool)}
-	dataMap := map[string]interface{}{"id": 1, "name": "Alice", "email": "a@b.com"}
-	pkCols := []string{"id"}
-
-	result := mq.buildUpsertUpdateCols(dataMap, pkCols, []string{"name", "id"})
-
-	if len(result) != 1 || result[0] != "name" {
-		t.Errorf("got %v, want %v", result, []string{"name"})
-	}
-}
-
-func TestBuildUpsertUpdateCols_SingleSpecificField(t *testing.T) {
-	mq := &ModelQuery{exclude: make(map[string]bool)}
-	dataMap := map[string]interface{}{"id": 1, "name": "Alice", "email": "a@b.com"}
-	pkCols := []string{"id"}
-
-	result := mq.buildUpsertUpdateCols(dataMap, pkCols, []string{"email"})
-
-	if len(result) != 1 || result[0] != "email" {
-		t.Errorf("got %v, want %v", result, []string{"email"})
-	}
-}
-
-func TestBuildUpsertUpdateCols_CompositePK(t *testing.T) {
-	mq := &ModelQuery{exclude: make(map[string]bool)}
-	dataMap := map[string]interface{}{"order_id": 1, "product_id": 2, "qty": 5}
-	pkCols := []string{"order_id", "product_id"}
-
-	result := mq.buildUpsertUpdateCols(dataMap, pkCols, nil)
-
-	if len(result) != 1 || result[0] != "qty" {
-		t.Errorf("got %v, want %v", result, []string{"qty"})
-	}
-}
-
-// ============================================================================
-// Upsert SQL generation tests (no real DB, only SQL verification)
-// ============================================================================
-
-func TestModelUpsert_SQL_PostgreSQL_AllFields(t *testing.T) {
-	db := upsertMockDB("postgres")
+func TestModelUpsert_SQL_AllFields(t *testing.T) {
 	user := upsertUser{ID: 1, Name: "Alice", Email: "alice@example.com", Status: "active"}
-
-	dataMap, err := util.StructToMap(&user)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	want := map[string]string{
+		"postgres": `INSERT INTO "users" ("email", "id", "name", "status") VALUES ($1, $2, $3, $4) ON CONFLICT ("id") DO UPDATE SET "email" = EXCLUDED."email", "name" = EXCLUDED."name", "status" = EXCLUDED."status"`,
+		"mysql":    "INSERT INTO `users` (`email`, `id`, `name`, `status`) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE `email` = VALUES(`email`), `name` = VALUES(`name`), `status` = VALUES(`status`)",
+		"sqlite":   `INSERT INTO "users" ("email", "id", "name", "status") VALUES (?, ?, ?, ?) ON CONFLICT ("id") DO UPDATE SET "email" = excluded."email", "name" = excluded."name", "status" = excluded."status"`,
 	}
-
-	pkCols := []string{"id"}
-	mq := &ModelQuery{exclude: make(map[string]bool)}
-	updateCols := mq.buildUpsertUpdateCols(dataMap, pkCols, nil)
-
-	qb := &QueryBuilder{db: db}
-	q := qb.Upsert("users", dataMap).OnConflict(pkCols...).DoUpdate(updateCols...).Build()
-
-	if q == nil {
-		t.Fatal("expected non-nil")
-	}
-	if !strings.Contains(q.sql, `INSERT INTO "users"`) {
-		t.Errorf("%q does not contain %q", q.sql, `INSERT INTO "users"`)
-	}
-	if !strings.Contains(q.sql, `ON CONFLICT ("id")`) {
-		t.Errorf("%q does not contain %q", q.sql, `ON CONFLICT ("id")`)
-	}
-	if !strings.Contains(q.sql, "DO UPDATE SET") {
-		t.Errorf("%q does not contain %q", q.sql, "DO UPDATE SET")
-	}
-	if !strings.Contains(q.sql, `"name" = EXCLUDED."name"`) {
-		t.Errorf("%q does not contain %q", q.sql, `"name" = EXCLUDED."name"`)
-	}
-	if !strings.Contains(q.sql, `"email" = EXCLUDED."email"`) {
-		t.Errorf("%q does not contain %q", q.sql, `"email" = EXCLUDED."email"`)
-	}
-	if !strings.Contains(q.sql, `"status" = EXCLUDED."status"`) {
-		t.Errorf("%q does not contain %q", q.sql, `"status" = EXCLUDED."status"`)
-	}
-	if strings.Contains(q.sql, `"id" = EXCLUDED."id"`) {
-		t.Errorf("%q should not contain %q", q.sql, `"id" = EXCLUDED."id"`)
-	}
-}
-
-func TestModelUpsert_SQL_MySQL_AllFields(t *testing.T) {
-	db := upsertMockDB("mysql")
-	user := upsertUser{ID: 2, Name: "Bob", Email: "bob@example.com", Status: "pending"}
-
-	dataMap, err := util.StructToMap(&user)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	pkCols := []string{"id"}
-	mq := &ModelQuery{exclude: make(map[string]bool)}
-	updateCols := mq.buildUpsertUpdateCols(dataMap, pkCols, nil)
-
-	qb := &QueryBuilder{db: db}
-	q := qb.Upsert("users", dataMap).OnConflict(pkCols...).DoUpdate(updateCols...).Build()
-
-	if q == nil {
-		t.Fatal("expected non-nil")
-	}
-	if !strings.Contains(q.sql, "INSERT INTO `users`") {
-		t.Errorf("%q does not contain %q", q.sql, "INSERT INTO `users`")
-	}
-	if !strings.Contains(q.sql, "ON DUPLICATE KEY UPDATE") {
-		t.Errorf("%q does not contain %q", q.sql, "ON DUPLICATE KEY UPDATE")
-	}
-	if !strings.Contains(q.sql, "`name` = VALUES(`name`)") {
-		t.Errorf("%q does not contain %q", q.sql, "`name` = VALUES(`name`)")
-	}
-	if !strings.Contains(q.sql, "`email` = VALUES(`email`)") {
-		t.Errorf("%q does not contain %q", q.sql, "`email` = VALUES(`email`)")
-	}
-	if !strings.Contains(q.sql, "`status` = VALUES(`status`)") {
-		t.Errorf("%q does not contain %q", q.sql, "`status` = VALUES(`status`)")
-	}
-}
-
-func TestModelUpsert_SQL_SQLite_AllFields(t *testing.T) {
-	db := upsertMockDB("sqlite")
-	user := upsertUser{ID: 3, Name: "Carol", Email: "carol@example.com", Status: "active"}
-
-	dataMap, err := util.StructToMap(&user)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	pkCols := []string{"id"}
-	mq := &ModelQuery{exclude: make(map[string]bool)}
-	updateCols := mq.buildUpsertUpdateCols(dataMap, pkCols, nil)
-
-	qb := &QueryBuilder{db: db}
-	q := qb.Upsert("users", dataMap).OnConflict(pkCols...).DoUpdate(updateCols...).Build()
-
-	if q == nil {
-		t.Fatal("expected non-nil")
-	}
-	if !strings.Contains(q.sql, `INSERT INTO "users"`) {
-		t.Errorf("%q does not contain %q", q.sql, `INSERT INTO "users"`)
-	}
-	if !strings.Contains(q.sql, `ON CONFLICT ("id")`) {
-		t.Errorf("%q does not contain %q", q.sql, `ON CONFLICT ("id")`)
-	}
-	if !strings.Contains(q.sql, "DO UPDATE SET") {
-		t.Errorf("%q does not contain %q", q.sql, "DO UPDATE SET")
-	}
-	if !strings.Contains(q.sql, `"name" = excluded."name"`) {
-		t.Errorf("%q does not contain %q", q.sql, `"name" = excluded."name"`)
+	for d, sql := range want {
+		t.Run(d, func(t *testing.T) {
+			if got := modelUpsertSQL(t, d, &user, nil); got != sql {
+				t.Errorf("got  %s\nwant %s", got, sql)
+			}
+		})
 	}
 }
 
 func TestModelUpsert_SQL_SelectiveFields(t *testing.T) {
-	tests := []struct {
-		name        string
-		dialectName string
-		updateCol   string
-		expectSQL   string
-		notExpect   []string
-	}{
-		{
-			name:        "postgres selective",
-			dialectName: "postgres",
-			updateCol:   `"name" = EXCLUDED."name"`,
-			expectSQL:   "DO UPDATE SET",
-			notExpect:   []string{`"email" = EXCLUDED."email"`, `"status" = EXCLUDED."status"`},
-		},
-		{
-			name:        "mysql selective",
-			dialectName: "mysql",
-			updateCol:   "`name` = VALUES(`name`)",
-			expectSQL:   "ON DUPLICATE KEY UPDATE",
-			notExpect:   []string{"`email` = VALUES(`email`)", "`status` = VALUES(`status`)"},
-		},
-		{
-			name:        "sqlite selective",
-			dialectName: "sqlite",
-			updateCol:   `"name" = excluded."name"`,
-			expectSQL:   "DO UPDATE SET",
-			notExpect:   []string{`"email" = excluded."email"`, `"status" = excluded."status"`},
-		},
+	user := upsertUser{ID: 1, Name: "Alice", Email: "alice@example.com", Status: "active"}
+	want := map[string]string{
+		"postgres": `INSERT INTO "users" ("email", "id", "name", "status") VALUES ($1, $2, $3, $4) ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name"`,
+		"mysql":    "INSERT INTO `users` (`email`, `id`, `name`, `status`) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE `name` = VALUES(`name`)",
+		"sqlite":   `INSERT INTO "users" ("email", "id", "name", "status") VALUES (?, ?, ?, ?) ON CONFLICT ("id") DO UPDATE SET "name" = excluded."name"`,
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			db := upsertMockDB(tt.dialectName)
-			user := upsertUser{ID: 1, Name: "Alice", Email: "alice@example.com", Status: "active"}
-
-			dataMap, err := util.StructToMap(&user)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			pkCols := []string{"id"}
-			mq := &ModelQuery{exclude: make(map[string]bool)}
-			// Only "name" on conflict.
-			updateCols := mq.buildUpsertUpdateCols(dataMap, pkCols, []string{"name"})
-
-			qb := &QueryBuilder{db: db}
-			q := qb.Upsert("users", dataMap).OnConflict(pkCols...).DoUpdate(updateCols...).Build()
-
-			if q == nil {
-				t.Fatal("expected non-nil")
-			}
-			if !strings.Contains(q.sql, tt.updateCol) {
-				t.Errorf("%q does not contain %q", q.sql, tt.updateCol)
-			}
-			if !strings.Contains(q.sql, tt.expectSQL) {
-				t.Errorf("%q does not contain %q", q.sql, tt.expectSQL)
-			}
-			for _, ne := range tt.notExpect {
-				if strings.Contains(q.sql, ne) {
-					t.Errorf("%q should not contain %q", q.sql, ne)
-				}
+	for d, sql := range want {
+		t.Run(d, func(t *testing.T) {
+			if got := modelUpsertSQL(t, d, &user, []string{"name"}); got != sql {
+				t.Errorf("got  %s\nwant %s", got, sql)
 			}
 		})
 	}
 }
 
 func TestModelUpsert_SQL_ExplicitPKTag(t *testing.T) {
-	db := upsertMockDB("postgres")
 	post := upsertPost{PostID: 10, Content: "Hello", Views: 5}
+	want := `INSERT INTO "posts" ("content", "post_id", "views") VALUES ($1, $2, $3) ON CONFLICT ("post_id") DO UPDATE SET "content" = EXCLUDED."content", "views" = EXCLUDED."views"`
+	if got := modelUpsertSQL(t, "postgres", &post, nil); got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+}
 
-	dataMap, err := util.StructToMap(&post)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+type upsertOrderItem struct {
+	OrderID   int `db:"order_id,pk"`
+	ProductID int `db:"product_id,pk"`
+	Qty       int `db:"qty"`
+}
 
-	pkCols := []string{"post_id"}
-	mq := &ModelQuery{exclude: make(map[string]bool)}
-	updateCols := mq.buildUpsertUpdateCols(dataMap, pkCols, nil)
+func (upsertOrderItem) TableName() string { return "order_items" }
 
-	qb := &QueryBuilder{db: db}
-	q := qb.Upsert("posts", dataMap).OnConflict(pkCols...).DoUpdate(updateCols...).Build()
+func TestModelUpsert_SQL_CompositePK(t *testing.T) {
+	item := upsertOrderItem{OrderID: 1, ProductID: 2, Qty: 5}
+	want := `INSERT INTO "order_items" ("order_id", "product_id", "qty") VALUES ($1, $2, $3) ON CONFLICT ("order_id", "product_id") DO UPDATE SET "qty" = EXCLUDED."qty"`
+	if got := modelUpsertSQL(t, "postgres", &item, nil); got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+}
 
-	if q == nil {
-		t.Fatal("expected non-nil")
-	}
-	if !strings.Contains(q.sql, `ON CONFLICT ("post_id")`) {
-		t.Errorf("%q does not contain %q", q.sql, `ON CONFLICT ("post_id")`)
-	}
-	if !strings.Contains(q.sql, `"content" = EXCLUDED."content"`) {
-		t.Errorf("%q does not contain %q", q.sql, `"content" = EXCLUDED."content"`)
-	}
-	if !strings.Contains(q.sql, `"views" = EXCLUDED."views"`) {
-		t.Errorf("%q does not contain %q", q.sql, `"views" = EXCLUDED."views"`)
-	}
-	if strings.Contains(q.sql, `"post_id" = EXCLUDED."post_id"`) {
-		t.Errorf("%q should not contain %q", q.sql, `"post_id" = EXCLUDED."post_id"`)
+func TestModelUpsert_SQL_ZeroPKLeftOutOfInsert(t *testing.T) {
+	user := upsertUser{Name: "Alice", Email: "alice@example.com", Status: "active"}
+	want := `INSERT INTO "users" ("email", "name", "status") VALUES ($1, $2, $3) ON CONFLICT ("id") DO UPDATE SET "email" = EXCLUDED."email", "name" = EXCLUDED."name", "status" = EXCLUDED."status"`
+	if got := modelUpsertSQL(t, "postgres", &user, nil); got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
 	}
 }
 

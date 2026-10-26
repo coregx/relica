@@ -4,7 +4,6 @@ package dialects
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 )
 
@@ -95,7 +94,7 @@ func (s *stubDialect) Placeholder(_ int) string {
 	return s.ph
 }
 
-func (s *stubDialect) UpsertSQL(_ string, _, _ []string) string {
+func (s *stubDialect) UpsertSQL(_ Upsert) string {
 	return ""
 }
 
@@ -212,88 +211,6 @@ func TestPostgresDialect_Placeholder_Sequential(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// PostgresDialect — UpsertSQL
-// ---------------------------------------------------------------------------
-
-func TestPostgresDialect_UpsertSQL(t *testing.T) {
-	d := &PostgresDialect{}
-
-	tests := []struct {
-		name            string
-		table           string
-		conflictColumns []string
-		updateCols      []string
-		want            string
-	}{
-		{
-			name:            "do nothing with conflict columns",
-			table:           "users",
-			conflictColumns: []string{"id"},
-			updateCols:      nil,
-			want:            " ON CONFLICT (id) DO NOTHING",
-		},
-		{
-			name:            "do nothing without conflict columns",
-			table:           "users",
-			conflictColumns: []string{},
-			updateCols:      nil,
-			want:            " ON CONFLICT DO NOTHING",
-		},
-		{
-			name:            "do nothing nil conflict columns",
-			table:           "users",
-			conflictColumns: nil,
-			updateCols:      nil,
-			want:            " ON CONFLICT DO NOTHING",
-		},
-		{
-			name:            "do update single column",
-			table:           "users",
-			conflictColumns: []string{"id"},
-			updateCols:      []string{"name"},
-			want:            " ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name",
-		},
-		{
-			name:            "do update multiple columns",
-			table:           "users",
-			conflictColumns: []string{"id"},
-			updateCols:      []string{"name", "email"},
-			want:            " ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, email = EXCLUDED.email",
-		},
-		{
-			name:            "do update multiple conflict columns",
-			table:           "users",
-			conflictColumns: []string{"email", "username"},
-			updateCols:      []string{"name"},
-			want:            " ON CONFLICT (email, username) DO UPDATE SET name = EXCLUDED.name",
-		},
-		{
-			name:            "table argument is ignored",
-			table:           "orders",
-			conflictColumns: []string{"order_id"},
-			updateCols:      []string{"status"},
-			want:            " ON CONFLICT (order_id) DO UPDATE SET status = EXCLUDED.status",
-		},
-		{
-			name:            "do update empty update cols slice",
-			table:           "users",
-			conflictColumns: []string{"id"},
-			updateCols:      []string{},
-			want:            " ON CONFLICT (id) DO UPDATE SET ",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := d.UpsertSQL(tt.table, tt.conflictColumns, tt.updateCols)
-			if got != tt.want {
-				t.Errorf("got %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-// ---------------------------------------------------------------------------
 // MySQLDialect — QuoteIdentifier
 // ---------------------------------------------------------------------------
 
@@ -379,82 +296,6 @@ func TestMySQLDialect_Placeholder(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// MySQLDialect — UpsertSQL
-// ---------------------------------------------------------------------------
-
-func TestMySQLDialect_UpsertSQL(t *testing.T) {
-	d := &MySQLDialect{}
-
-	tests := []struct {
-		name            string
-		table           string
-		conflictColumns []string
-		updateCols      []string
-		want            string
-	}{
-		{
-			name:            "do nothing returns empty string",
-			table:           "users",
-			conflictColumns: []string{"id"},
-			updateCols:      nil,
-			want:            "",
-		},
-		{
-			name:            "do nothing nil conflict and update cols",
-			table:           "users",
-			conflictColumns: nil,
-			updateCols:      nil,
-			want:            "",
-		},
-		{
-			name:            "do update single column",
-			table:           "users",
-			conflictColumns: []string{"id"},
-			updateCols:      []string{"name"},
-			want:            " ON DUPLICATE KEY UPDATE name = VALUES(name)",
-		},
-		{
-			name:            "do update multiple columns",
-			table:           "users",
-			conflictColumns: []string{"id"},
-			updateCols:      []string{"name", "email"},
-			want:            " ON DUPLICATE KEY UPDATE name = VALUES(name), email = VALUES(email)",
-		},
-		{
-			name:  "conflict columns are ignored in MySQL syntax",
-			table: "users",
-			// MySQL ON DUPLICATE KEY does not reference conflict columns in the clause.
-			conflictColumns: []string{"email", "username"},
-			updateCols:      []string{"name"},
-			want:            " ON DUPLICATE KEY UPDATE name = VALUES(name)",
-		},
-		{
-			name:            "table argument is ignored",
-			table:           "products",
-			conflictColumns: []string{"sku"},
-			updateCols:      []string{"price", "stock"},
-			want:            " ON DUPLICATE KEY UPDATE price = VALUES(price), stock = VALUES(stock)",
-		},
-		{
-			name:            "do update empty update cols",
-			table:           "users",
-			conflictColumns: []string{"id"},
-			updateCols:      []string{},
-			want:            " ON DUPLICATE KEY UPDATE ",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := d.UpsertSQL(tt.table, tt.conflictColumns, tt.updateCols)
-			if got != tt.want {
-				t.Errorf("got %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-// ---------------------------------------------------------------------------
 // SQLiteDialect — QuoteIdentifier
 // ---------------------------------------------------------------------------
 
@@ -534,96 +375,6 @@ func TestSQLiteDialect_Placeholder(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// SQLiteDialect — UpsertSQL
-// ---------------------------------------------------------------------------
-
-func TestSQLiteDialect_UpsertSQL(t *testing.T) {
-	d := &SQLiteDialect{}
-
-	tests := []struct {
-		name            string
-		table           string
-		conflictColumns []string
-		updateCols      []string
-		want            string
-	}{
-		{
-			name:            "do nothing with conflict columns",
-			table:           "users",
-			conflictColumns: []string{"id"},
-			updateCols:      nil,
-			want:            " ON CONFLICT (id) DO NOTHING",
-		},
-		{
-			name:            "do nothing without conflict columns",
-			table:           "users",
-			conflictColumns: []string{},
-			updateCols:      nil,
-			want:            " ON CONFLICT DO NOTHING",
-		},
-		{
-			name:            "do nothing nil conflict columns",
-			table:           "users",
-			conflictColumns: nil,
-			updateCols:      nil,
-			want:            " ON CONFLICT DO NOTHING",
-		},
-		{
-			name:            "do update single column",
-			table:           "users",
-			conflictColumns: []string{"id"},
-			updateCols:      []string{"name"},
-			want:            " ON CONFLICT (id) DO UPDATE SET name = excluded.name",
-		},
-		{
-			name:            "do update multiple columns",
-			table:           "users",
-			conflictColumns: []string{"id"},
-			updateCols:      []string{"name", "email"},
-			want:            " ON CONFLICT (id) DO UPDATE SET name = excluded.name, email = excluded.email",
-		},
-		{
-			name:            "do update multiple conflict columns",
-			table:           "users",
-			conflictColumns: []string{"email", "username"},
-			updateCols:      []string{"name"},
-			want:            " ON CONFLICT (email, username) DO UPDATE SET name = excluded.name",
-		},
-		{
-			name:            "table argument is ignored",
-			table:           "events",
-			conflictColumns: []string{"event_id"},
-			updateCols:      []string{"payload"},
-			want:            " ON CONFLICT (event_id) DO UPDATE SET payload = excluded.payload",
-		},
-		{
-			name:  "sqlite uses lowercase excluded unlike postgres EXCLUDED",
-			table: "users",
-			// SQLite uses lowercase "excluded", Postgres uses uppercase "EXCLUDED"
-			conflictColumns: []string{"id"},
-			updateCols:      []string{"score"},
-			want:            " ON CONFLICT (id) DO UPDATE SET score = excluded.score",
-		},
-		{
-			name:            "do update empty update cols",
-			table:           "users",
-			conflictColumns: []string{"id"},
-			updateCols:      []string{},
-			want:            " ON CONFLICT (id) DO UPDATE SET ",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := d.UpsertSQL(tt.table, tt.conflictColumns, tt.updateCols)
-			if got != tt.want {
-				t.Errorf("got %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-// ---------------------------------------------------------------------------
 // Cross-dialect: Placeholder distinctness
 // ---------------------------------------------------------------------------
 
@@ -692,113 +443,6 @@ func TestQuoteIdentifier_DialectDifferences(t *testing.T) {
 			}
 			if got[len(got)-1] != tt.wantSuffix {
 				t.Errorf("wrong closing quote character: got %v, want %v", got[len(got)-1], tt.wantSuffix)
-			}
-		})
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Cross-dialect: UpsertSQL — DO NOTHING semantics
-// ---------------------------------------------------------------------------
-
-// TestUpsertSQL_DoNothingSemantics checks dialect-specific DO NOTHING behavior.
-func TestUpsertSQL_DoNothingSemantics(t *testing.T) {
-	conflictCols := []string{"id"}
-
-	t.Run("postgres do nothing", func(t *testing.T) {
-		d := GetDialect("postgres")
-		got := d.UpsertSQL("t", conflictCols, nil)
-		if got != " ON CONFLICT (id) DO NOTHING" {
-			t.Errorf("got %v, want %v", got, " ON CONFLICT (id) DO NOTHING")
-		}
-	})
-
-	t.Run("sqlite do nothing", func(t *testing.T) {
-		d := GetDialect("sqlite")
-		got := d.UpsertSQL("t", conflictCols, nil)
-		if got != " ON CONFLICT (id) DO NOTHING" {
-			t.Errorf("got %v, want %v", got, " ON CONFLICT (id) DO NOTHING")
-		}
-	})
-
-	t.Run("mysql do nothing returns empty", func(t *testing.T) {
-		d := GetDialect("mysql")
-		got := d.UpsertSQL("t", conflictCols, nil)
-		if got != "" {
-			t.Errorf("mysql has no native DO NOTHING support: got %v, want %v", got, "")
-		}
-	})
-}
-
-// ---------------------------------------------------------------------------
-// Cross-dialect: EXCLUDED vs excluded keyword
-// ---------------------------------------------------------------------------
-
-// TestUpsertSQL_ExcludedKeywordCase verifies that postgres uses uppercase
-// EXCLUDED while sqlite uses lowercase excluded.
-func TestUpsertSQL_ExcludedKeywordCase(t *testing.T) {
-	conflictCols := []string{"id"}
-	updateCols := []string{"name"}
-
-	t.Run("postgres uses EXCLUDED uppercase", func(t *testing.T) {
-		d := GetDialect("postgres")
-		got := d.UpsertSQL("t", conflictCols, updateCols)
-		if !strings.Contains(got, "EXCLUDED.name") {
-			t.Errorf("postgres must use uppercase EXCLUDED: %q does not contain %q", got, "EXCLUDED.name")
-		}
-		if strings.Contains(got, "excluded.name") {
-			t.Errorf("%q should not contain %q", got, "excluded.name")
-		}
-	})
-
-	t.Run("sqlite uses excluded lowercase", func(t *testing.T) {
-		d := GetDialect("sqlite")
-		got := d.UpsertSQL("t", conflictCols, updateCols)
-		if !strings.Contains(got, "excluded.name") {
-			t.Errorf("sqlite must use lowercase excluded: %q does not contain %q", got, "excluded.name")
-		}
-		if strings.Contains(got, "EXCLUDED.name") {
-			t.Errorf("%q should not contain %q", got, "EXCLUDED.name")
-		}
-	})
-}
-
-// ---------------------------------------------------------------------------
-// buildUpdateSet (internal helper — tested via UpsertSQL output)
-// ---------------------------------------------------------------------------
-
-// TestBuildUpdateSet_ViaPostgresUpsert verifies the internal buildUpdateSet
-// helper produces correct col = EXCLUDED.col pairs via the public API.
-func TestBuildUpdateSet_ViaPostgresUpsert(t *testing.T) {
-	d := &PostgresDialect{}
-
-	tests := []struct {
-		name       string
-		updateCols []string
-		want       string
-	}{
-		{
-			name:       "single column",
-			updateCols: []string{"name"},
-			want:       " ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name",
-		},
-		{
-			name:       "two columns",
-			updateCols: []string{"name", "email"},
-			want:       " ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, email = EXCLUDED.email",
-		},
-		{
-			name:       "three columns",
-			updateCols: []string{"a", "b", "c"},
-			want:       " ON CONFLICT (id) DO UPDATE SET a = EXCLUDED.a, b = EXCLUDED.b, c = EXCLUDED.c",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := d.UpsertSQL("users", []string{"id"}, tt.updateCols)
-			if got != tt.want {
-				t.Errorf("got %v, want %v", got, tt.want)
 			}
 		})
 	}

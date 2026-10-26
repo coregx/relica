@@ -9,7 +9,26 @@ import "fmt"
 type Dialect interface {
 	QuoteIdentifier(string) string
 	Placeholder(int) string
-	UpsertSQL(string, []string, []string) string
+	// UpsertSQL renders the conflict clause appended to an INSERT ... VALUES
+	// statement. The caller has validated u (ADR-019); the dialect only renders.
+	UpsertSQL(u Upsert) string
+}
+
+// Upsert describes a validated conflict clause. Every column name is already
+// quoted by the dialect's QuoteIdentifier.
+type Upsert struct {
+	// Target is the conflict target; empty only with DoNothing on PostgreSQL/SQLite
+	// (any constraint) and on MySQL (which always uses every unique key).
+	Target []string
+	// Update lists the columns set from the proposed row. Empty with DoNothing.
+	Update []string
+	// DoNothing keeps the existing row.
+	DoNothing bool
+	// NoOp is the column a MySQL DoNothing assigns to itself (MySQL has no DO NOTHING).
+	NoOp string
+	// RowAlias selects the MySQL 8.0.19+ form "VALUES (...) AS excluded" with
+	// "col = excluded.col" instead of the default "col = VALUES(col)".
+	RowAlias bool
 }
 
 var dialects = make(map[string]Dialect)

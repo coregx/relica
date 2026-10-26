@@ -35,6 +35,8 @@ type DB struct {
 	validator     *security.Validator // SQL injection validator (nil = disabled)
 	auditor       *security.Auditor   // Audit logger for security compliance (nil = disabled)
 	ctx           context.Context
+
+	mysqlUpsertSyntax MySQLUpsertSyntax // how MySQL upserts read the proposed row (ADR-019)
 }
 
 // Tx represents a database transaction.

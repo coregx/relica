@@ -5,7 +5,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 
 	"github.com/coregx/relica/internal/util"
@@ -503,36 +505,10 @@ func (mq *ModelQuery) Upsert(fields ...string) error {
 
 	mq.populateAutoIDFields()
 
-	// Convert struct to map.
-	dataMap, err := util.StructToMap(mq.model)
+	q, err := mq.buildUpsert(nil, fields)
 	if err != nil {
 		return err
 	}
-
-	// Get primary keys for conflict detection.
-	pkCols, _, err := mq.getPrimaryKeys()
-	if err != nil {
-		return errors.New("model: primary key not found for upsert conflict detection")
-	}
-
-	// Remove zero single PK from INSERT (let database auto-increment).
-	mq.removeZeroPK(dataMap)
-
-	// Build update columns: either specified fields or all non-PK fields.
-	updateCols := mq.buildUpsertUpdateCols(dataMap, pkCols, fields)
-
-	// Create builder with transaction/query context if applicable.
-	qb := &QueryBuilder{
-		db:  mq.db,
-		tx:  mq.tx,
-		ctx: mq.ctx,
-	}
-
-	q := qb.Upsert(mq.table, dataMap).
-		OnConflict(pkCols...).
-		DoUpdate(updateCols...).
-		Build()
-
 	return mq.executeUpsertQuery(q)
 }
 
@@ -559,28 +535,106 @@ func (mq *ModelQuery) UpsertOn(conflictColumns []string, fields ...string) error
 
 	mq.populateAutoIDFields()
 
-	dataMap, err := util.StructToMap(mq.model)
+	q, err := mq.buildUpsert(conflictColumns, fields)
 	if err != nil {
 		return err
 	}
+	return mq.executeUpsertQuery(q)
+}
 
+// buildUpsert builds the upsert of the model. target nil = the primary key
+// (Upsert); otherwise the UpsertOn columns. fields empty = every inserted column
+// except the target (DoUpdateAll); otherwise exactly those (DoUpdate).
+// Exclude leaves a column out of both the INSERT and the update, as in Insert.
+// All names are column names; an unknown name is an error, never ignored.
+func (mq *ModelQuery) buildUpsert(target, fields []string) (*Query, error) {
+	dataMap, err := util.StructToMap(mq.model)
+	if err != nil {
+		return nil, err
+	}
+
+	target, err = mq.upsertTarget(dataMap, target)
+	if err != nil {
+		return nil, err
+	}
+	inTarget := make(map[string]bool, len(target))
+	for _, col := range target {
+		inTarget[col] = true
+	}
+
+	if err := mq.checkUpsertNames(dataMap, inTarget, fields); err != nil {
+		return nil, err
+	}
+
+	for name := range mq.exclude {
+		delete(dataMap, name)
+	}
 	// Remove zero single PK from INSERT (let database auto-increment).
 	mq.removeZeroPK(dataMap)
 
-	updateCols := mq.buildUpsertUpdateCols(dataMap, conflictColumns, fields)
-
-	qb := &QueryBuilder{
-		db:  mq.db,
-		tx:  mq.tx,
-		ctx: mq.ctx,
+	qb := &QueryBuilder{db: mq.db, tx: mq.tx, ctx: mq.ctx}
+	uq := qb.Upsert(mq.table, dataMap).OnConflict(target...)
+	if len(fields) > 0 {
+		uq = uq.DoUpdate(fields...)
+	} else {
+		uq = uq.DoUpdateAll()
 	}
+	q := uq.Build()
+	if q.prepErr != nil {
+		return nil, q.prepErr
+	}
+	return q, nil
+}
 
-	q := qb.Upsert(mq.table, dataMap).
-		OnConflict(conflictColumns...).
-		DoUpdate(updateCols...).
-		Build()
+// upsertTarget returns the primary key columns (target nil, Upsert) or checks
+// the UpsertOn columns against the model.
+func (mq *ModelQuery) upsertTarget(dataMap map[string]any, target []string) ([]string, error) {
+	if target == nil {
+		pkCols, _, err := mq.getPrimaryKeys()
+		if err != nil {
+			return nil, errors.New("model: primary key not found for upsert conflict detection")
+		}
+		return pkCols, nil
+	}
+	for _, col := range target {
+		if _, ok := dataMap[col]; !ok {
+			return nil, fmt.Errorf("model: UpsertOn conflict column %q is not a column of the model", col)
+		}
+	}
+	return target, nil
+}
 
-	return mq.executeUpsertQuery(q)
+// checkUpsertNames rejects Exclude names and update fields that are not columns
+// of the model, are in the conflict target, or contradict each other.
+func (mq *ModelQuery) checkUpsertNames(dataMap map[string]any, inTarget map[string]bool, fields []string) error {
+	for _, name := range sortedKeys(mq.exclude) {
+		if _, ok := dataMap[name]; !ok {
+			return fmt.Errorf("model: Exclude name %q is not a column of the model", name)
+		}
+		if inTarget[name] {
+			return fmt.Errorf("model: Exclude name %q is in the conflict target of the upsert", name)
+		}
+	}
+	for _, f := range fields {
+		switch _, ok := dataMap[f]; {
+		case !ok:
+			return fmt.Errorf("model: Upsert field %q is not a column of the model", f)
+		case inTarget[f]:
+			return fmt.Errorf("model: Upsert field %q is in the conflict target and is never updated", f)
+		case mq.exclude[f]:
+			return fmt.Errorf("model: Upsert field %q is excluded", f)
+		}
+	}
+	return nil
+}
+
+func sortedKeys(m map[string]bool) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // removeZeroPK removes zero single PK from dataMap so database auto-increments.
@@ -613,35 +667,6 @@ func (mq *ModelQuery) executeUpsertQuery(q *Query) error {
 
 	_ = mq.populatePrimaryKey(result)
 	return nil
-}
-
-// buildUpsertUpdateCols builds the list of columns to update on conflict.
-// If fields are specified, use only those (minus any PKs).
-// Otherwise, use all non-PK fields.
-func (mq *ModelQuery) buildUpsertUpdateCols(dataMap map[string]any, pkCols, fields []string) []string {
-	pkSet := make(map[string]bool, len(pkCols))
-	for _, pk := range pkCols {
-		pkSet[pk] = true
-	}
-
-	if len(fields) > 0 {
-		result := make([]string, 0, len(fields))
-		for _, f := range fields {
-			if !pkSet[f] {
-				result = append(result, f)
-			}
-		}
-		return result
-	}
-
-	// All non-PK columns.
-	result := make([]string, 0, len(dataMap))
-	for col := range dataMap {
-		if !pkSet[col] {
-			result = append(result, col)
-		}
-	}
-	return result
 }
 
 // scanReturningID executes a query with RETURNING clause and populates the PK field.

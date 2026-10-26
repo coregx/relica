@@ -552,6 +552,18 @@ err = db.Model(&user).Upsert("name", "email")
 ```
 
 Works with PostgreSQL (`ON CONFLICT DO UPDATE`), MySQL (`ON DUPLICATE KEY UPDATE`), SQLite (`ON CONFLICT DO UPDATE`).
+`Exclude("created_at")` leaves a column out of both the insert and the update.
+
+The builder form needs exactly one conflict action — otherwise `Execute` returns an error and nothing is sent:
+
+```go
+_, err := db.Upsert("users", values).OnConflict("id").DoUpdateAll().Execute()    // every non-target column
+_, err = db.Upsert("users", values).OnConflict("id").DoUpdate("name").Execute()  // listed columns only
+_, err = db.Upsert("users", values).OnConflict("id").DoNothing().Execute()       // keep the existing row
+```
+
+Updated columns take the value of the row proposed for insertion. On MySQL the default is `col = VALUES(col)`;
+`relica.WithMySQLUpsertSyntax(relica.MySQLUpsertRowAlias)` switches to the 8.0.19+ row alias.
 
 #### UpdateChanged (Dirty Field Detection)
 

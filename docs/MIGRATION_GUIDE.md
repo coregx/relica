@@ -1,5 +1,6 @@
-> Upgrading to **v0.19.0**? Jump to [v0.18.x → v0.19.0](#migration-guide-v018x--v0190).
-> Then [v0.19.0 → v0.19.1](#migration-guide-v0190--v0191) (no code changes needed).
+> Upgrading to **v0.20.0**? Jump to [v0.19.x → v0.20.0](#migration-guide-v019x--v0200): upserts, naming,
+> scanning, whole-table DELETE/UPDATE and row locks now fail loudly instead of doing something else.
+> Older steps: [v0.18.x → v0.19.0](#migration-guide-v018x--v0190), [v0.19.0 → v0.19.1](#migration-guide-v0190--v0191).
 
 # Migration Guide: v0.3.0-beta → v0.4.0-beta
 
@@ -641,3 +642,51 @@ Patch release: nothing stops compiling. Fixes and additions:
 
 If you matched `err.Error()` text yourself, switch to the helpers: the text depends on the server
 language and version, the code does not.
+
+---
+
+# Migration Guide: v0.19.x → v0.20.0
+
+**Type**: MINOR (pre-v1.0). Relica now refuses statements it used to run with a different meaning than the code
+asked for. Most of the changes below turn a silent wrong result into an error returned by `Execute`/`All`/`One`
+before anything is sent to the database. Each section says how to find affected code and how to keep the old
+behaviour where that is still possible.
+
+## Upsert: exactly one explicit conflict action (ADR-019)
+
+`Upsert(table, values)` and `BatchInsert(...).OnConflict(...)` need exactly one of `DoUpdate(cols...)`,
+`DoUpdateAll()`, `DoNothing()`.
+
+| v0.19 code | v0.19 behaviour | v0.20.0 | Change your code to |
+|---|---|---|---|
+| `db.Upsert(t, v).Execute()` (no OnConflict, no action) | plain `INSERT`, failed on a duplicate | error: "an upsert takes exactly one of …" | add the action you meant, or use `db.Insert` |
+| `db.Upsert(t, v).OnConflict("id").Execute()` | updated every non-target column | same error | `.OnConflict("id").DoUpdateAll()` |
+| `BatchInsert(...).OnConflict("id")` without an action | updated every non-target column | same error | `.DoUpdateAll()` |
+| `.DoUpdate()` with no columns | updated every non-target column | error | `.DoUpdateAll()` |
+| `.DoUpdate("x")` where `x` is not inserted | set `x` to NULL/default | error | insert `x` or drop it from `DoUpdate` |
+| `.DoUpdate(...).DoNothing()` (or any two actions) | the last call won | error | keep one |
+| PostgreSQL/SQLite `DoUpdate`/`DoUpdateAll` without `OnConflict` | `ON CONFLICT () …` syntax error at run time; batch: DoUpdate silently dropped | error at build | add `OnConflict(cols...)` |
+| MySQL `DoNothing()` | plain `INSERT`, failed on a duplicate | `ON DUPLICATE KEY UPDATE c = c` (first conflict column, else first inserted column): the row is kept | nothing; note the row is still locked, an `AUTO_INCREMENT` value is consumed, `BEFORE UPDATE` triggers fire, affected rows is 0 |
+| `OnConflict()` with no columns, or called twice | accepted | error | pass the columns once |
+| `Upsert` with an empty values map | `INSERT INTO t () VALUES ()` | error | — |
+
+**Model upsert** (`db.Model(&m).Upsert(fields...)`, `UpsertOn(conflict, fields...)`) keeps "save the struct": the
+target is the primary key (or `conflict`), the PK is never updated, and with no `fields` every other column is
+updated. Changes:
+
+- `Exclude(cols...)` now works for upserts: the excluded columns are left out of both the INSERT and the update
+  (as in `Insert`). Before, it was ignored and the columns were overwritten on every upsert.
+- Unknown names are errors: a `fields`/`Exclude`/`UpsertOn` name that is not a column of the model, a field that is
+  in the conflict target, or a field that is also excluded. `fields` and `Exclude` take **column names** (the `db`
+  tag), not Go field names.
+- A model with nothing to update (only PK columns) is an error instead of an invalid `SET`.
+
+**MySQL proposed-row syntax.** Updates read the row proposed for insertion — after `BEFORE INSERT` triggers, like
+PostgreSQL's `EXCLUDED`. The default stays `col = VALUES(col)` (MySQL 5.7–9.x, MariaDB; deprecated by MySQL since
+8.0.20 with warning 1287). On MySQL 8.0.19+ you can switch to the row alias:
+`relica.Open("mysql", dsn, relica.WithMySQLUpsertSyntax(relica.MySQLUpsertRowAlias))`. MariaDB rejects the alias.
+
+**Batch duplicates.** Keys repeated inside one batch are not detected by Relica: with `DoNothing` the first row wins
+everywhere; with `DoUpdate`, PostgreSQL rejects the statement (error 21000) and MySQL/SQLite keep the last row.
+
+**Find affected code:** `grep -rn "\.Upsert(\|OnConflict(" --include=*.go .` and check each chain ends in one action.

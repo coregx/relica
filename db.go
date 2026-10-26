@@ -1394,9 +1394,13 @@ func (mq *ModelQuery) Delete() error {
 
 // Upsert performs an INSERT ... ON CONFLICT DO UPDATE for the model.
 //
-// Auto-detects the conflict column from the primary key.
-// If fields are specified, only those fields are updated on conflict.
-// If no fields are specified, all non-PK fields are updated on conflict.
+// The conflict target is the primary key; the primary key is never updated.
+// If fields are specified, only those columns are updated on conflict.
+// If no fields are specified, every other inserted column is updated.
+// Exclude(cols...) leaves columns out of both the INSERT and the update.
+// fields and Exclude take column names (the db tag). A name that is not a
+// column of the model, a field in the target or an excluded field, and a model
+// with nothing left to update, are errors; nothing is sent.
 //
 // For PostgreSQL, the primary key is auto-populated after upsert (using RETURNING).
 // For MySQL/SQLite, LastInsertId() is used when the PK is zero.
@@ -1421,6 +1425,8 @@ func (mq *ModelQuery) Upsert(fields ...string) error {
 // The first argument specifies conflict columns (the UNIQUE constraint).
 // Remaining arguments specify which fields to update on conflict.
 // If no fields are specified, all non-conflict columns are updated.
+// Name checks and Exclude work as in Upsert; a conflict column that is not a
+// column of the model is an error.
 //
 // Example:
 //
@@ -2523,7 +2529,12 @@ func (dq *DeleteQuery) ToSQL() (string, []any) {
 // UpsertQuery Methods
 // ============================================================================
 
-// UpsertQuery represents an UPSERT query being built.
+// UpsertQuery represents an UPSERT query being built: INSERT with conflict
+// handling. It needs exactly one conflict action — DoUpdate(cols...),
+// DoUpdateAll() or DoNothing(); none, two, or an invalid one is an error
+// returned by Execute (nothing is sent). Updated columns take their value from
+// the row proposed for insertion (PostgreSQL/SQLite EXCLUDED, MySQL VALUES() or
+// the row alias, see WithMySQLUpsertSyntax).
 type UpsertQuery struct {
 	uq *core.UpsertQuery
 }
@@ -2533,7 +2544,11 @@ func (uq *UpsertQuery) WithContext(ctx context.Context) *UpsertQuery {
 	return &UpsertQuery{uq: uq.uq.WithContext(ctx)}
 }
 
-// OnConflict specifies the columns that determine a conflict.
+// OnConflict sets the conflict target: the columns of a PRIMARY KEY or UNIQUE
+// constraint. Required with DoUpdate/DoUpdateAll on PostgreSQL and SQLite.
+// On MySQL it is advisory: ON DUPLICATE KEY UPDATE fires on any unique key, but
+// the target columns are still left out of DoUpdateAll. No columns, or a second
+// call, is an error.
 //
 // Example:
 //
@@ -2543,7 +2558,9 @@ func (uq *UpsertQuery) OnConflict(columns ...string) *UpsertQuery {
 	return uq
 }
 
-// DoUpdate specifies which columns to update on conflict.
+// DoUpdate updates exactly the listed columns from the proposed row on
+// conflict. Each column must be one of the inserted columns; no columns is an
+// error (use DoUpdateAll).
 //
 // Example:
 //
@@ -2553,7 +2570,22 @@ func (uq *UpsertQuery) DoUpdate(columns ...string) *UpsertQuery {
 	return uq
 }
 
-// DoNothing ignores conflicts (no update).
+// DoUpdateAll updates every inserted column except the conflict target from the
+// proposed row on conflict. It is an error when no column is left to update.
+//
+// Example:
+//
+//	Upsert(...).OnConflict("id").DoUpdateAll()
+func (uq *UpsertQuery) DoUpdateAll() *UpsertQuery {
+	uq.uq.DoUpdateAll()
+	return uq
+}
+
+// DoNothing keeps the existing row on conflict. PostgreSQL/SQLite: ON CONFLICT
+// DO NOTHING (without OnConflict: any constraint). MySQL has no DO NOTHING:
+// Relica assigns the first conflict column (or the first inserted column) to
+// itself in ON DUPLICATE KEY UPDATE, so the row is still locked, an
+// AUTO_INCREMENT value is consumed and UPDATE triggers fire.
 //
 // Example:
 //
@@ -2627,7 +2659,9 @@ func (biq *BatchInsertQuery) Build() *Query {
 	return &Query{q: biq.biq.Build()}
 }
 
-// OnConflict specifies the conflict columns for upsert behavior.
+// OnConflict sets the conflict target and turns the batch into an upsert, which
+// then needs exactly one of DoUpdate, DoUpdateAll, DoNothing (see UpsertQuery).
+// A batch without OnConflict or an action is a plain INSERT.
 //
 // Example:
 //
@@ -2641,14 +2675,24 @@ func (biq *BatchInsertQuery) OnConflict(columns ...string) *BatchInsertQuery {
 	return biq
 }
 
-// DoUpdate specifies which columns to update on conflict.
-// If not called (but OnConflict is set), all non-conflict columns are updated.
+// DoUpdate updates exactly the listed batch columns from each proposed row on
+// conflict (see UpsertQuery.DoUpdate). Duplicate keys inside one batch are not
+// detected client-side: PostgreSQL rejects the statement (error 21000, "cannot
+// affect row a second time"), MySQL and SQLite keep the last row.
 func (biq *BatchInsertQuery) DoUpdate(columns ...string) *BatchInsertQuery {
 	biq.biq.DoUpdate(columns...)
 	return biq
 }
 
-// DoNothing specifies that conflicting rows should be silently ignored.
+// DoUpdateAll updates every batch column except the conflict target from each
+// proposed row on conflict (see UpsertQuery.DoUpdateAll).
+func (biq *BatchInsertQuery) DoUpdateAll() *BatchInsertQuery {
+	biq.biq.DoUpdateAll()
+	return biq
+}
+
+// DoNothing keeps existing rows on conflict (see UpsertQuery.DoNothing for
+// MySQL). With duplicate keys inside one batch the first row wins.
 func (biq *BatchInsertQuery) DoNothing() *BatchInsertQuery {
 	biq.biq.DoNothing()
 	return biq

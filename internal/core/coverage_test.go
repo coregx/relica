@@ -547,9 +547,9 @@ func TestUpsertQuery_Execute(t *testing.T) {
 	defer db.Close()
 	seedCovTable(t, db)
 
-	// Upsert falls back to plain Execute (doNothing / no conflict spec).
 	_, err := db.Builder().
 		Upsert("cov_items", map[string]interface{}{"id": int64(3), "name": "gamma", "score": int64(30)}).
+		OnConflict("id").DoNothing().
 		Execute()
 	if err != nil {
 		t.Fatalf("UpsertQuery.Execute: %v", err)
