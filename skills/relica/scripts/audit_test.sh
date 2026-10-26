@@ -14,7 +14,9 @@ run_fixture() { # run_fixture NAME — prints audit output for testdata/NAME
 	local tmp
 	tmp=$(mktemp -d)
 	cp -r "$here/testdata/$1/." "$tmp/"
-	find "$tmp" -name '*.go.txt' | while read -r f; do mv "$f" "${f%.txt}"; done
+	# Fixtures carry a .txt suffix so they are neither Go files of this module nor
+	# nested modules (a go.mod would cut them out of the module zip).
+	find "$tmp" \( -name '*.go.txt' -o -name 'go.mod.txt' \) | while read -r f; do mv "$f" "${f%.txt}"; done
 	RELICA_AUDIT_OFFLINE=1 bash "$here/audit.sh" "$tmp"
 	rm -rf "$tmp"
 }

@@ -107,5 +107,5 @@ A workaround in the project is named as such, with a link to the issue.
 
 `scripts/audit_test.sh` runs `audit.sh` offline on `scripts/testdata/`: `bad/` fires every check a
 known number of times, `clean/` holds the correct form of each pattern and must produce nothing.
-Fixtures are `*.go.txt` so they are not part of the Go module. Run it after every change to the
+Fixtures are `*.go.txt` and `go.mod.txt` so they are neither Go files of the module nor nested modules. Run it after every change to the
 script; a new check or a fixed false positive gets its fixture case first.
