@@ -178,13 +178,21 @@ func soItemOf(id int, title string, price int) soItem {
 
 // soSeed inserts so_item rows with explicit ids through plain Insert, so the
 // struct operations under test are not used to prepare their own input.
-func soSeed(t *testing.T, db *relica.DB, items ...soItem) {
+func soSeed(t *testing.T, db *relica.DB, dialect string, items ...soItem) {
 	t.Helper()
 	for _, it := range items {
 		_, err := db.Insert("so_item", map[string]any{
 			"id": it.ID, "title": it.Title, "unit_price": it.UnitPrice, "user_id": it.UserID,
 			"httplog": it.HTTPLog, "created_by": it.CreatedBy, "updated_by": it.UpdatedBy,
 		}).Execute()
+		require.NoError(t, err)
+	}
+	// An explicit id does not advance a PostgreSQL SERIAL sequence (SQLite and
+	// MySQL move their counters past the largest key), so a later generated
+	// key would collide with a seeded one.
+	if dialect == "postgres" {
+		_, err := db.ExecContext(context.Background(),
+			"SELECT setval(pg_get_serial_sequence('so_item', 'id'), (SELECT MAX(id) FROM so_item))")
 		require.NoError(t, err)
 	}
 }
@@ -198,7 +206,7 @@ func runStructOpsTests(t *testing.T, db *relica.DB, dialect string) {
 
 	t.Run("Tx_RollbackDiscardsEveryStructOp", func(t *testing.T) {
 		soResetTables(t, db, dialect)
-		soSeed(t, db, soItemOf(1, "seed", 10))
+		soSeed(t, db, dialect, soItemOf(1, "seed", 10))
 
 		tx, err := db.Begin(context.Background())
 		require.NoError(t, err)
@@ -288,7 +296,7 @@ func runStructOpsReceiver(t *testing.T, db *relica.DB, dialect string, r soRecei
 
 	t.Run("UpdateStruct", func(t *testing.T) {
 		soResetTables(t, db, dialect)
-		soSeed(t, db, soItemOf(1, "old", 10), soItemOf(2, "keep", 20))
+		soSeed(t, db, dialect, soItemOf(1, "old", 10), soItemOf(2, "keep", 20))
 		_, err := db.Insert("so_tagged", map[string]any{"item_key": 1, "label": "a"}).Execute()
 		require.NoError(t, err)
 		_, err = db.Insert("so_tagged", map[string]any{"item_key": 2, "label": "b"}).Execute()
@@ -315,7 +323,7 @@ func runStructOpsReceiver(t *testing.T, db *relica.DB, dialect string, r soRecei
 
 	t.Run("BatchUpdate", func(t *testing.T) {
 		soResetTables(t, db, dialect)
-		soSeed(t, db, soItemOf(1, "one", 10), soItemOf(2, "two", 20), soItemOf(3, "three", 30))
+		soSeed(t, db, dialect, soItemOf(1, "one", 10), soItemOf(2, "two", 20), soItemOf(3, "three", 30))
 		r.run(t, func(ops soOps) {
 			assert.Equal(t, int64(2), soAffected(t, ops.BatchUpdate("so_item", "id").
 				Set(1, map[string]any{"title": "uno", "unit_price": 11}).
@@ -336,7 +344,7 @@ func runStructOpsReceiver(t *testing.T, db *relica.DB, dialect string, r soRecei
 
 	t.Run("Errors", func(t *testing.T) {
 		soResetTables(t, db, dialect)
-		soSeed(t, db, soItemOf(1, "seed", 10))
+		soSeed(t, db, dialect, soItemOf(1, "seed", 10))
 		var nilItem *soItem
 		r.run(t, func(ops soOps) {
 			upd := soItemOf(1, "changed", 99)

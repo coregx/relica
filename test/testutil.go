@@ -55,6 +55,21 @@ func containerUnavailable(t *testing.T, dialect string, err error) {
 	t.Skipf("Docker not available for %s integration tests: %v", dialect, err)
 }
 
+// containerStartupTimeout bounds the wait for a database container to accept
+// connections. A cold MySQL 8.0 start (first initialisation after a Docker
+// restart) took 63 s on a developer machine, past the old 60 s limit.
+const containerStartupTimeout = 3 * time.Minute
+
+// terminateFailedContainer stops a container whose start failed: a module's
+// Run returns the container together with the error, and with the Ryuk reaper
+// disabled (TESTCONTAINERS_RYUK_DISABLED=true) nothing else would remove it.
+func terminateFailedContainer(t *testing.T, c testcontainers.Container) {
+	t.Helper()
+	if err := testcontainers.TerminateContainer(c); err != nil {
+		t.Logf("terminate failed container: %v", err)
+	}
+}
+
 // startContainer runs start and turns a panic into an error: testcontainers
 // panics instead of returning an error when it finds no usable Docker host
 // (for example "rootless Docker is not supported on Windows").
@@ -111,11 +126,12 @@ func SetupPostgreSQLTestDB(t *testing.T) *DatabaseSetup {
 			testcontainers.WithWaitStrategy(
 				wait.ForLog("database system is ready to accept connections").
 					WithOccurrence(2).
-					WithStartupTimeout(30*time.Second),
+					WithStartupTimeout(containerStartupTimeout),
 			),
 		)
 	})
 	if err != nil {
+		terminateFailedContainer(t, pgContainer)
 		containerUnavailable(t, "postgres", err)
 	}
 
@@ -164,11 +180,12 @@ func SetupMySQLTestDB(t *testing.T) *DatabaseSetup {
 			mysql.WithPassword("password"),
 			testcontainers.WithWaitStrategy(
 				wait.ForLog("port: 3306  MySQL Community Server").
-					WithStartupTimeout(60*time.Second),
+					WithStartupTimeout(containerStartupTimeout),
 			),
 		)
 	})
 	if err != nil {
+		terminateFailedContainer(t, mysqlContainer)
 		containerUnavailable(t, "mysql", err)
 	}
 
