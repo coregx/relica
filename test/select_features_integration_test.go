@@ -88,7 +88,7 @@ func createSelectFeatureTables(t *testing.T, db *relica.DB) {
 
 // sfQ quotes an identifier the way the dialect renders it.
 func sfQ(dialect, ident string) string {
-	if dialect == "mysql" {
+	if dialect == "mysql" || dialect == "sqlite" {
 		return "`" + ident + "`"
 	}
 	return `"` + ident + `"`
@@ -1015,8 +1015,8 @@ func runSelectFeatureTests(t *testing.T, db *relica.DB, dialect string) {
 	})
 
 	t.Run("ColumnCompare_UnknownColumn_ServerError", func(t *testing.T) {
-		// Qualified on purpose: SQLite turns an unknown double-quoted bare
-		// identifier into a string literal, but not a table-qualified one.
+		// Qualified: an unknown table-qualified column fails on every database
+		// (bare ones too since SQLite quotes with backticks, see identifier_typos).
 		var ids []int
 		err := emp().Where(relica.GreaterThanCol("salary", "sf_emp.no_such_col")).Column(&ids)
 		require.Error(t, err)

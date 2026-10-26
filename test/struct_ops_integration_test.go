@@ -159,7 +159,7 @@ func soCount(t *testing.T, db *relica.DB, table string) int64 {
 }
 
 func soQuote(dialect, col string) string {
-	if dialect == "mysql" {
+	if dialect == "mysql" || dialect == "sqlite" {
 		return "`" + col + "`"
 	}
 	return `"` + col + `"`

@@ -54,7 +54,7 @@ func TestInsertStruct_EmbeddedAndUntaggedColumns(t *testing.T) {
 	}
 	qb := &QueryBuilder{db: mockDB("sqlite")}
 	buildOK(t, qb.InsertStruct("docs", Doc{Audit: Audit{CreatedAt: "t", CreatedBy: "u"}, Title: "x"}),
-		`INSERT INTO "docs" ("created_at", "created_by", "title") VALUES (?, ?, ?)`)
+		"INSERT INTO `docs` (`created_at`, `created_by`, `title`) VALUES (?, ?, ?)")
 }
 
 func TestBatchInsertStruct_SkipsZeroPKInEveryRow(t *testing.T) {

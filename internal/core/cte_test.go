@@ -244,7 +244,7 @@ func TestWith_AllDialects(t *testing.T) {
 		{
 			name:                "SQLite",
 			dialectName:         "sqlite3",
-			expectedQuote:       `"`,
+			expectedQuote:       "`",
 			expectedPlaceholder: "?",
 		},
 	}
@@ -461,7 +461,7 @@ func TestWithRecursive_AllDialects(t *testing.T) {
 	}{
 		{name: "PostgreSQL", dialectName: "postgres", expectedQuote: `"`},
 		{name: "MySQL", dialectName: "mysql", expectedQuote: "`"},
-		{name: "SQLite", dialectName: "sqlite3", expectedQuote: `"`},
+		{name: "SQLite", dialectName: "sqlite3", expectedQuote: "`"},
 	}
 
 	for _, tt := range tests {

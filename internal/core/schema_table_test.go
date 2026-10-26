@@ -14,7 +14,7 @@ func TestDML_SchemaQualifiedTable(t *testing.T) {
 	}{
 		{"postgres", `"app"."users"`},
 		{"mysql", "`app`.`users`"},
-		{"sqlite", `"app"."users"`},
+		{"sqlite", "`app`.`users`"},
 	}
 	for _, d := range dialects {
 		qb := &QueryBuilder{db: mockDB(d.name)}

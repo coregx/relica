@@ -75,11 +75,11 @@ func TestInExp_Subquery_SQLite(t *testing.T) {
 	exp := In("id", sub)
 	sql, args := exp.Build(dialect)
 
-	if !strings.Contains(sql, `"id" IN (SELECT`) {
-		t.Errorf("%q does not contain %q", sql, `"id" IN (SELECT`)
+	if !strings.Contains(sql, "`id` IN (SELECT") {
+		t.Errorf("%q does not contain %q", sql, "`id` IN (SELECT")
 	}
-	if !strings.Contains(sql, `FROM "orders"`) {
-		t.Errorf("%q does not contain %q", sql, `FROM "orders"`)
+	if !strings.Contains(sql, "FROM `orders`") {
+		t.Errorf("%q does not contain %q", sql, "FROM `orders`")
 	}
 	if !strings.Contains(sql, `WHERE total > ?`) {
 		t.Errorf("%q does not contain %q", sql, `WHERE total > ?`)

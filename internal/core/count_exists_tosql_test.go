@@ -35,7 +35,7 @@ func TestSelectQuery_ToSQL_Simple(t *testing.T) {
 		{
 			name:       "sqlite: no WHERE",
 			dialect:    "sqlite3",
-			wantSQL:    `SELECT * FROM "users"`,
+			wantSQL:    "SELECT * FROM `users`",
 			wantParams: nil,
 		},
 	}
@@ -251,7 +251,7 @@ func TestUpdateQuery_ToSQL_SQLite(t *testing.T) {
 		Where(Eq("id", 10)).
 		ToSQL()
 
-	checks := []string{`UPDATE "products" SET`, `"price" = ?`, `WHERE "id" = ?`}
+	checks := []string{"UPDATE `products` SET", "`price` = ?", "WHERE `id` = ?"}
 	for _, s := range checks {
 		if !strings.Contains(sql, s) {
 			t.Errorf("%q does not contain %q", sql, s)
@@ -303,8 +303,8 @@ func TestDeleteQuery_ToSQL_SQLite(t *testing.T) {
 
 	sql, params := qb.Delete("logs").Where(In("level", "debug", "trace")).ToSQL()
 
-	if !strings.Contains(sql, `DELETE FROM "logs" WHERE "level" IN (?, ?)`) {
-		t.Errorf("%q does not contain %q", sql, `DELETE FROM "logs" WHERE "level" IN (?, ?)`)
+	if !strings.Contains(sql, "DELETE FROM `logs` WHERE `level` IN (?, ?)") {
+		t.Errorf("%q does not contain %q", sql, "DELETE FROM `logs` WHERE `level` IN (?, ?)")
 	}
 	want := []interface{}{"debug", "trace"}
 	if len(params) != len(want) || params[0] != want[0] || params[1] != want[1] {
@@ -553,7 +553,7 @@ func TestSelectQuery_Exists_SQL_SQLite(t *testing.T) {
 	innerSQL, innerParams := innerQuery.buildSQL(db.dialect)
 	existsSQL := "SELECT EXISTS(" + innerSQL + ")"
 
-	want := `SELECT EXISTS(SELECT 1 FROM "products" WHERE "sku" = ?)`
+	want := "SELECT EXISTS(SELECT 1 FROM `products` WHERE `sku` = ?)"
 	if existsSQL != want {
 		t.Errorf("got %v, want %v", existsSQL, want)
 	}

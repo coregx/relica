@@ -42,7 +42,7 @@ func TestLock_InTransaction_RendersPerDialect(t *testing.T) {
 
 	// SQLite: the clause is dropped inside a transaction (database-level locking).
 	q := tx.Builder().Select("id").From("t").ForUpdate().Build()
-	buildOK(t, q, `SELECT "id" FROM "t"`)
+	buildOK(t, q, "SELECT `id` FROM `t`")
 
 	// The same transaction state with the PostgreSQL dialect renders the clause.
 	pgBuilder := &QueryBuilder{db: mockDB("postgres"), tx: tx.tx}
@@ -62,7 +62,7 @@ func TestLock_SQLiteDetectedByDialect(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	buildOK(t, tx.Builder().Select("id").From("t").ForUpdate().Build(), `SELECT "id" FROM "t"`)
+	buildOK(t, tx.Builder().Select("id").From("t").ForUpdate().Build(), "SELECT `id` FROM `t`")
 }
 
 func TestLock_InvalidCombinations_AreBuildErrors(t *testing.T) {

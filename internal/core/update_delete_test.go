@@ -95,7 +95,7 @@ func TestUpdateQuery_SQLite(t *testing.T) {
 	}
 
 	// Verify SQL structure
-	expectedSQL := `UPDATE "users" SET "name" = ?, "status" = ? WHERE id = ?`
+	expectedSQL := "UPDATE `users` SET `name` = ?, `status` = ? WHERE id = ?"
 	if q.sql != expectedSQL {
 		t.Errorf("got %v, want %v", q.sql, expectedSQL)
 	}
@@ -344,7 +344,7 @@ func TestDeleteQuery_SQLite(t *testing.T) {
 	}
 
 	// Verify SQL structure
-	expectedSQL := `DELETE FROM "users" WHERE id = ?`
+	expectedSQL := "DELETE FROM `users` WHERE id = ?"
 	if q.sql != expectedSQL {
 		t.Errorf("got %v, want %v", q.sql, expectedSQL)
 	}
@@ -503,7 +503,7 @@ func TestDeleteQuery_SingleCondition(t *testing.T) {
 	}
 
 	// Verify SQL structure
-	expectedSQL := `DELETE FROM "sessions" WHERE expired = ?`
+	expectedSQL := "DELETE FROM `sessions` WHERE expired = ?"
 	if q.sql != expectedSQL {
 		t.Errorf("got %v, want %v", q.sql, expectedSQL)
 	}

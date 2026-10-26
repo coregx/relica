@@ -110,7 +110,7 @@ func TestUpsert_DoUpdateWithoutTarget(t *testing.T) {
 func TestUpsert_DoUpdateAll_SQL(t *testing.T) {
 	want := map[string]string{
 		"postgres": `INSERT INTO "users" ("email", "id", "name") VALUES ($1, $2, $3) ON CONFLICT ("id") DO UPDATE SET "email" = EXCLUDED."email", "name" = EXCLUDED."name"`,
-		"sqlite":   `INSERT INTO "users" ("email", "id", "name") VALUES (?, ?, ?) ON CONFLICT ("id") DO UPDATE SET "email" = excluded."email", "name" = excluded."name"`,
+		"sqlite":   "INSERT INTO `users` (`email`, `id`, `name`) VALUES (?, ?, ?) ON CONFLICT (`id`) DO UPDATE SET `email` = excluded.`email`, `name` = excluded.`name`",
 		// The target stays out of SET on MySQL too: a row matched through another
 		// unique key never gets its id overwritten.
 		"mysql": "INSERT INTO `users` (`email`, `id`, `name`) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE `email` = VALUES(`email`), `name` = VALUES(`name`)",
@@ -136,7 +136,7 @@ func TestUpsert_DoNothing_SQL(t *testing.T) {
 	}{
 		{"postgres", []string{"id"}, `INSERT INTO "users" ("email", "id", "name") VALUES ($1, $2, $3) ON CONFLICT ("id") DO NOTHING`},
 		{"postgres", nil, `INSERT INTO "users" ("email", "id", "name") VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`},
-		{"sqlite", nil, `INSERT INTO "users" ("email", "id", "name") VALUES (?, ?, ?) ON CONFLICT DO NOTHING`},
+		{"sqlite", nil, "INSERT INTO `users` (`email`, `id`, `name`) VALUES (?, ?, ?) ON CONFLICT DO NOTHING"},
 		// MySQL has no DO NOTHING: assign a column to itself. Not INSERT IGNORE,
 		// which turns unrelated errors into warnings.
 		{"mysql", []string{"id"}, "INSERT INTO `users` (`email`, `id`, `name`) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE `id` = `id`"},
@@ -208,7 +208,7 @@ func TestBatchInsert_Actions_SQL(t *testing.T) {
 	buildOK(t, batchRows(&QueryBuilder{db: mockDB("postgres")}).OnConflict("id").DoUpdateAll().Build(),
 		`INSERT INTO "users" ("id", "name") VALUES ($1, $2), ($3, $4) ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name"`)
 	buildOK(t, batchRows(&QueryBuilder{db: mockDB("sqlite")}).DoNothing().Build(),
-		`INSERT INTO "users" ("id", "name") VALUES (?, ?), (?, ?) ON CONFLICT DO NOTHING`)
+		"INSERT INTO `users` (`id`, `name`) VALUES (?, ?), (?, ?) ON CONFLICT DO NOTHING")
 	// FIX-010 #2: MySQL DoNothing was a plain INSERT that failed on the duplicate.
 	buildOK(t, batchRows(&QueryBuilder{db: mockDB("mysql")}).DoNothing().Build(),
 		"INSERT INTO `users` (`id`, `name`) VALUES (?, ?), (?, ?) ON DUPLICATE KEY UPDATE `id` = `id`")
@@ -256,19 +256,19 @@ func TestModelUpsert_DefaultAndSelectedFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	buildOK(t, q, `INSERT INTO "rows" ("created_at", "id", "name") VALUES (?, ?, ?) ON CONFLICT ("id") DO UPDATE SET "created_at" = excluded."created_at", "name" = excluded."name"`)
+	buildOK(t, q, "INSERT INTO `rows` (`created_at`, `id`, `name`) VALUES (?, ?, ?) ON CONFLICT (`id`) DO UPDATE SET `created_at` = excluded.`created_at`, `name` = excluded.`name`")
 
 	q, err = modelFor("sqlite", m).buildUpsert(nil, []string{"name"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	buildOK(t, q, `INSERT INTO "rows" ("created_at", "id", "name") VALUES (?, ?, ?) ON CONFLICT ("id") DO UPDATE SET "name" = excluded."name"`)
+	buildOK(t, q, "INSERT INTO `rows` (`created_at`, `id`, `name`) VALUES (?, ?, ?) ON CONFLICT (`id`) DO UPDATE SET `name` = excluded.`name`")
 
 	q, err = modelFor("sqlite", m).buildUpsert([]string{"name"}, []string{"created_at"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	buildOK(t, q, `INSERT INTO "rows" ("created_at", "id", "name") VALUES (?, ?, ?) ON CONFLICT ("name") DO UPDATE SET "created_at" = excluded."created_at"`)
+	buildOK(t, q, "INSERT INTO `rows` (`created_at`, `id`, `name`) VALUES (?, ?, ?) ON CONFLICT (`name`) DO UPDATE SET `created_at` = excluded.`created_at`")
 }
 
 func TestModelUpsert_InvalidNames_AreErrors(t *testing.T) {

@@ -94,7 +94,7 @@ func TestModelUpsert_SQL_AllFields(t *testing.T) {
 	want := map[string]string{
 		"postgres": `INSERT INTO "users" ("email", "id", "name", "status") VALUES ($1, $2, $3, $4) ON CONFLICT ("id") DO UPDATE SET "email" = EXCLUDED."email", "name" = EXCLUDED."name", "status" = EXCLUDED."status"`,
 		"mysql":    "INSERT INTO `users` (`email`, `id`, `name`, `status`) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE `email` = VALUES(`email`), `name` = VALUES(`name`), `status` = VALUES(`status`)",
-		"sqlite":   `INSERT INTO "users" ("email", "id", "name", "status") VALUES (?, ?, ?, ?) ON CONFLICT ("id") DO UPDATE SET "email" = excluded."email", "name" = excluded."name", "status" = excluded."status"`,
+		"sqlite":   "INSERT INTO `users` (`email`, `id`, `name`, `status`) VALUES (?, ?, ?, ?) ON CONFLICT (`id`) DO UPDATE SET `email` = excluded.`email`, `name` = excluded.`name`, `status` = excluded.`status`",
 	}
 	for d, sql := range want {
 		t.Run(d, func(t *testing.T) {
@@ -110,7 +110,7 @@ func TestModelUpsert_SQL_SelectiveFields(t *testing.T) {
 	want := map[string]string{
 		"postgres": `INSERT INTO "users" ("email", "id", "name", "status") VALUES ($1, $2, $3, $4) ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name"`,
 		"mysql":    "INSERT INTO `users` (`email`, `id`, `name`, `status`) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE `name` = VALUES(`name`)",
-		"sqlite":   `INSERT INTO "users" ("email", "id", "name", "status") VALUES (?, ?, ?, ?) ON CONFLICT ("id") DO UPDATE SET "name" = excluded."name"`,
+		"sqlite":   "INSERT INTO `users` (`email`, `id`, `name`, `status`) VALUES (?, ?, ?, ?) ON CONFLICT (`id`) DO UPDATE SET `name` = excluded.`name`",
 	}
 	for d, sql := range want {
 		t.Run(d, func(t *testing.T) {

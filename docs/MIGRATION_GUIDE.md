@@ -773,6 +773,17 @@ Code that used `Count()` on a grouped query to get the size of one group should 
 **Find affected code:** `grep -rn "\.Count()\|\.Exists()" --include=*.go .` and check the chains that also call
 `GroupBy`, `Having`, `Distinct`, `Union`/`Intersect`/`Except` or `With`.
 
+## SQLite: identifiers in backticks
+
+Relica now writes `` `users` `` instead of `"users"` on SQLite. SQLite reads an unknown double-quoted name as a string
+literal, so a misspelled column used to change the result silently (a `Where` on a typo matched every row or none,
+a `Delete` with one deleted the whole table); now it fails with `no such column`. Nothing to change unless your code:
+
+- compares generated SQLite SQL text (tests on `ToSQL()`, logs): expect backticks;
+- passes a literal through `Select` (`Select("1")`, `Select("1 as level")`): it is a column name and fails now; use
+  `SelectExpr("1")`;
+- uses a column name that only resolved through the literal fallback: fix the name.
+
 ## `OrderBy`: one column and an optional direction per argument
 
 | v0.19 code | v0.19 result | v0.20.0 | Change your code to |

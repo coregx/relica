@@ -1154,7 +1154,7 @@ err = db.Transactional(ctx, func(tx *relica.Tx) error {
 |----------|--------|--------------|-------------|--------|
 | **PostgreSQL** | ✅ Full | `$1, $2, $3` | `"users"` | `ON CONFLICT` |
 | **MySQL** | ✅ Full | `?, ?, ?` | `` `users` `` | `ON DUPLICATE KEY` |
-| **SQLite** | ✅ Full | `?, ?, ?` | `"users"` | `ON CONFLICT` |
+| **SQLite** | ✅ Full | `?, ?, ?` | `` `users` `` | `ON CONFLICT` |
 
 ## ⚡ Performance
 

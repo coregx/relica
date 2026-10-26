@@ -473,8 +473,8 @@ func TestFunctionalExp_DialectSpecificRendering(t *testing.T) {
 	mysql, _ := newCaptureDB(t, "mysql", nil)
 
 	s, _ := sqlite.Select().SelectSub(relica.Greatest("a", "b"), "g").SelectSub(relica.Least("a", "b"), "l").From("t").ToSQL()
-	assertContains(t, s, `(MAX("a", "b")) AS "g"`)
-	assertContains(t, s, `(MIN("a", "b")) AS "l"`)
+	assertContains(t, s, "(MAX(`a`, `b`)) AS `g`")
+	assertContains(t, s, "(MIN(`a`, `b`)) AS `l`")
 
 	m, _ := mysql.Select().SelectSub(relica.Concat("a", "b"), "s").From("t").ToSQL()
 	assertContains(t, m, "(CONCAT(`a`, `b`)) AS `s`")
@@ -528,7 +528,7 @@ func TestILike_Builders(t *testing.T) {
 	requireSQL(t, sqlStr, "SELECT `h`.`id` FROM `host` AS `h` WHERE LOWER(`h`.`cpu_model`) LIKE LOWER(?)")
 
 	sqlStr, _ = lite.Select("id").From("host").Where(relica.NotILike("cpu_model", "xeon")).ToSQL()
-	requireSQL(t, sqlStr, `SELECT "id" FROM "host" WHERE LOWER("cpu_model") NOT LIKE LOWER(?) ESCAPE '\'`)
+	requireSQL(t, sqlStr, "SELECT `id` FROM `host` WHERE LOWER(`cpu_model`) NOT LIKE LOWER(?) ESCAPE '\\'")
 
 	for name, tc := range map[string]struct {
 		exp  relica.LikeExp
@@ -583,7 +583,7 @@ func TestQueryHook_ReceivesQueryEvent(t *testing.T) {
 		t.Fatalf("events = %d, want 1", len(events))
 	}
 	e := events[0]
-	if e.Operation != "UPDATE" || !strings.HasPrefix(e.SQL, `UPDATE "t" SET`) || e.Error != nil ||
+	if e.Operation != "UPDATE" || !strings.HasPrefix(e.SQL, "UPDATE `t` SET") || e.Error != nil ||
 		e.RowsAffected != 1 || e.Duration < 0 || !reflect.DeepEqual(e.Args, []any{1, 2}) {
 		t.Errorf("event = %+v", e)
 	}

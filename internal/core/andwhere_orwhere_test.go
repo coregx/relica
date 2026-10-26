@@ -76,7 +76,7 @@ func TestSelectQuery_AndWhere(t *testing.T) {
 					Where("status = ?", 1).
 					AndWhere("age > ?", 18)
 			},
-			expectedSQL: `SELECT * FROM "users" WHERE status = ? AND age > ?`,
+			expectedSQL: "SELECT * FROM `users` WHERE status = ? AND age > ?",
 			expectedLen: 2,
 		},
 	}
@@ -172,7 +172,7 @@ func TestSelectQuery_OrWhere(t *testing.T) {
 					Where("status = ?", 1).
 					OrWhere("role = ?", "admin")
 			},
-			expectedSQL: `SELECT * FROM "users" WHERE (status = ?) OR (role = ?)`,
+			expectedSQL: "SELECT * FROM `users` WHERE (status = ?) OR (role = ?)",
 			expectedLen: 2,
 		},
 	}

@@ -95,7 +95,7 @@ func TestSelectQuery_Union_MySQL(t *testing.T) {
 	}
 }
 
-// TestSelectQuery_Union_SQLite tests UNION with SQLite (double quotes)
+// TestSelectQuery_Union_SQLite tests UNION with SQLite (backticks)
 func TestSelectQuery_Union_SQLite(t *testing.T) {
 	db := mockDB("sqlite3")
 	qb := &QueryBuilder{db: db}
@@ -108,15 +108,15 @@ func TestSelectQuery_Union_SQLite(t *testing.T) {
 		t.Fatal("expected non-nil")
 	}
 
-	// SQLite uses double quotes (column names are quoted)
-	if !strings.Contains(query.sql, `SELECT "name" FROM "products" WHERE price > ?`) {
-		t.Errorf("%q does not contain %q", query.sql, `SELECT "name" FROM "products" WHERE price > ?`)
+	// SQLite uses backticks (column names are quoted)
+	if !strings.Contains(query.sql, "SELECT `name` FROM `products` WHERE price > ?") {
+		t.Errorf("%q does not contain %q", query.sql, "SELECT `name` FROM `products` WHERE price > ?")
 	}
 	if !strings.Contains(query.sql, `UNION`) {
 		t.Errorf("%q does not contain %q", query.sql, `UNION`)
 	}
-	if !strings.Contains(query.sql, `SELECT "name" FROM "premium_products"`) {
-		t.Errorf("%q does not contain %q", query.sql, `SELECT "name" FROM "premium_products"`)
+	if !strings.Contains(query.sql, "SELECT `name` FROM `premium_products`") {
+		t.Errorf("%q does not contain %q", query.sql, "SELECT `name` FROM `premium_products`")
 	}
 	if len(query.params) != 1 {
 		t.Errorf("expected length %d, got %d", 1, len(query.params))
@@ -170,11 +170,11 @@ func TestSelectQuery_Intersect_SQLite(t *testing.T) {
 	if !strings.Contains(query.sql, "INTERSECT") {
 		t.Errorf("%q does not contain %q", query.sql, "INTERSECT")
 	}
-	if !strings.Contains(query.sql, `"newsletter_subscribers"`) {
-		t.Errorf("%q does not contain %q", query.sql, `"newsletter_subscribers"`)
+	if !strings.Contains(query.sql, "`newsletter_subscribers`") {
+		t.Errorf("%q does not contain %q", query.sql, "`newsletter_subscribers`")
 	}
-	if !strings.Contains(query.sql, `"active_users"`) {
-		t.Errorf("%q does not contain %q", query.sql, `"active_users"`)
+	if !strings.Contains(query.sql, "`active_users`") {
+		t.Errorf("%q does not contain %q", query.sql, "`active_users`")
 	}
 }
 
@@ -219,11 +219,11 @@ func TestSelectQuery_Except_SQLite(t *testing.T) {
 	if !strings.Contains(query.sql, "EXCEPT") {
 		t.Errorf("%q does not contain %q", query.sql, "EXCEPT")
 	}
-	if !strings.Contains(query.sql, `"registered_users"`) {
-		t.Errorf("%q does not contain %q", query.sql, `"registered_users"`)
+	if !strings.Contains(query.sql, "`registered_users`") {
+		t.Errorf("%q does not contain %q", query.sql, "`registered_users`")
 	}
-	if !strings.Contains(query.sql, `"deleted_accounts"`) {
-		t.Errorf("%q does not contain %q", query.sql, `"deleted_accounts"`)
+	if !strings.Contains(query.sql, "`deleted_accounts`") {
+		t.Errorf("%q does not contain %q", query.sql, "`deleted_accounts`")
 	}
 }
 
@@ -604,8 +604,8 @@ func TestSelectQuery_SetOperations_SQLiteOperands(t *testing.T) {
 		dialect string
 		want    string
 	}{
-		{"sqlite", `SELECT * FROM (SELECT "id" FROM "a" ORDER BY "id" LIMIT 2) UNION SELECT "id" FROM "b" ` +
-			`EXCEPT SELECT * FROM (SELECT "id" FROM "c" UNION ALL SELECT "id" FROM "d")`},
+		{"sqlite", "SELECT * FROM (SELECT `id` FROM `a` ORDER BY `id` LIMIT 2) UNION SELECT `id` FROM `b` " +
+			"EXCEPT SELECT * FROM (SELECT `id` FROM `c` UNION ALL SELECT `id` FROM `d`)"},
 		{"postgres", `(SELECT "id" FROM "a" ORDER BY "id" LIMIT 2) UNION (SELECT "id" FROM "b") ` +
 			`EXCEPT ((SELECT "id" FROM "c") UNION ALL (SELECT "id" FROM "d"))`},
 	} {

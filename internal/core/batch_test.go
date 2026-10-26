@@ -103,8 +103,8 @@ func TestBatchInsert_SQLite(t *testing.T) {
 	// Verify SQL structure
 	sql := q.sql
 	checks := []string{
-		`INSERT INTO "products"`,
-		`("name", "price", "stock")`,
+		"INSERT INTO `products`",
+		"(`name`, `price`, `stock`)",
 		"VALUES (?, ?, ?), (?, ?, ?)",
 	}
 	for _, s := range checks {
@@ -363,11 +363,11 @@ func TestBatchUpdate_SQLite(t *testing.T) {
 	}
 
 	sql := q.sql
-	if !containsStr(sql, `UPDATE "products"`) {
-		t.Errorf("%q does not contain %q", sql, `UPDATE "products"`)
+	if !containsStr(sql, "UPDATE `products`") {
+		t.Errorf("%q does not contain %q", sql, "UPDATE `products`")
 	}
-	if !containsStr(sql, `"price" = CASE "id"`) {
-		t.Errorf("%q does not contain %q", sql, `"price" = CASE "id"`)
+	if !containsStr(sql, "`price` = CASE `id`") {
+		t.Errorf("%q does not contain %q", sql, "`price` = CASE `id`")
 	}
 }
 

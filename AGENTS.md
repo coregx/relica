@@ -1063,7 +1063,7 @@ Use `ILike` when the match must ignore case on every database:
 |---|---|---|
 | PostgreSQL | `"name" ILIKE ?` | non-ASCII folding follows the database locale (`LC_CTYPE`) |
 | MySQL | ``LOWER(`name`) LIKE LOWER(?)`` | works for any non-binary character set and collation |
-| SQLite | `LOWER("name") LIKE LOWER(?) ESCAPE '\'` | `LOWER` folds ASCII only (no ICU extension) |
+| SQLite | ``LOWER(`name`) LIKE LOWER(?) ESCAPE '\'`` | `LOWER` folds ASCII only (no ICU extension) |
 
 `LOWER(col)` cannot use a plain index on `col`. For prefix search on a large MySQL table whose
 column is already `*_ci`, plain `Like(...).Match(false, true)` is case-insensitive and can use the index.
