@@ -421,7 +421,8 @@ func (q *Query) Row(dest ...any) error {
 	return nil
 }
 
-// Column scans the first column of all rows into a slice.
+// Column scans the first column of all rows into a slice; any other columns
+// of the result are read and discarded.
 // The slice parameter must be a pointer to a slice of the appropriate type.
 //
 // Example:
@@ -431,8 +432,6 @@ func (q *Query) Row(dest ...any) error {
 //
 //	var emails []string
 //	err := db.Select("email").From("users").Column(&emails)
-//
-//nolint:cyclop // Column scanning requires sequential steps
 func (q *Query) Column(slice any) error {
 	ctx := q.getContext()
 	start := time.Now()
@@ -451,8 +450,6 @@ func (q *Query) Column(slice any) error {
 	if sliceVal.Kind() != reflect.Slice {
 		return fmt.Errorf("relica: Column() requires a pointer to a slice, got pointer to %s", sliceVal.Kind())
 	}
-
-	elemType := sliceVal.Type().Elem()
 
 	// Execute query — direct for tx, prepared for non-tx
 	var rows *sql.Rows
@@ -480,37 +477,11 @@ func (q *Query) Column(slice any) error {
 	}
 	defer func() { _ = rows.Close() }()
 
-	// Scan all rows into slice
-	rowCount := 0
-	for rows.Next() {
-		// Create a new element for this row
-		elem := reflect.New(elemType)
-
-		// Scan first column into element
-		if err := rows.Scan(elem.Interface()); err != nil {
-			elapsed := time.Since(start)
-			q.db.invokeHook(ctx, QueryEvent{
-				SQL:       q.sql,
-				Args:      q.params,
-				Duration:  elapsed,
-				Error:     err,
-				Operation: DetectOperation(q.sql),
-			})
-			return err
-		}
-
-		// Append dereferenced value to slice
-		sliceVal.Set(reflect.Append(sliceVal, elem.Elem()))
-		rowCount++
-	}
-
-	// Check for iteration errors
-	if err := rows.Err(); err != nil {
-		elapsed := time.Since(start)
+	if err := scanFirstColumn(rows, sliceVal); err != nil {
 		q.db.invokeHook(ctx, QueryEvent{
 			SQL:       q.sql,
 			Args:      q.params,
-			Duration:  elapsed,
+			Duration:  time.Since(start),
 			Error:     err,
 			Operation: DetectOperation(q.sql),
 		})
@@ -528,6 +499,32 @@ func (q *Query) Column(slice any) error {
 	})
 
 	return nil
+}
+
+// scanFirstColumn appends the first column of every row to slice (a slice
+// value). The other columns are read into one shared `any` sink and dropped:
+// `any` takes every driver value as is, with no conversion to fail or to pay
+// for (ozzo-dbx converted each into a sql.NullString).
+func scanFirstColumn(rows *sql.Rows, slice reflect.Value) error {
+	columns, err := rows.Columns()
+	if err != nil {
+		return err
+	}
+	dests := make([]any, max(len(columns), 1))
+	var discard any
+	for i := 1; i < len(dests); i++ {
+		dests[i] = &discard
+	}
+	elemType := slice.Type().Elem()
+	for rows.Next() {
+		elem := reflect.New(elemType)
+		dests[0] = elem.Interface()
+		if err := rows.Scan(dests...); err != nil {
+			return err
+		}
+		slice.Set(reflect.Append(slice, elem.Elem()))
+	}
+	return rows.Err()
 }
 
 // All fetches all rows into a slice of structs.
