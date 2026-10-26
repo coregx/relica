@@ -215,6 +215,30 @@ func (db *DB) structValues(model any) (map[string]any, error) {
 	return out, nil
 }
 
+// structValuesExceptPK is structValues without the primary-key columns
+// (including the ID/Id fallback): UpdateStruct never writes the key, as
+// Model().Update() does not.
+func (db *DB) structValuesExceptPK(model any) (map[string]any, error) {
+	v, err := structValue(model)
+	if err != nil {
+		return nil, err
+	}
+	mi, err := db.modelInfoOf(v.Type())
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]any, len(mi.fields))
+	for _, f := range mi.fields {
+		if !isPKField(mi, f) {
+			out[f.column] = v.FieldByIndex(f.index).Interface()
+		}
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("relica: UpdateStruct: %s has no column besides its primary key", v.Type())
+	}
+	return out, nil
+}
+
 // primaryKey describes the primary key of struct value v (not a pointer).
 func (db *DB) primaryKey(v reflect.Value) (*util.PrimaryKeyInfo, error) {
 	if v.Kind() == reflect.Pointer {

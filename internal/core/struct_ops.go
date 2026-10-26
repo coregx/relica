@@ -92,10 +92,11 @@ func (qb *QueryBuilder) batchRows(rows reflect.Value) ([]map[string]any, string,
 	}
 }
 
-// UpdateStruct builds an UPDATE that sets every column of data. Add Where.
+// UpdateStruct builds an UPDATE that sets every column of data except the
+// primary key. Add Where.
 func (qb *QueryBuilder) UpdateStruct(table string, data any) *UpdateQuery {
 	uq := qb.Update(table)
-	values, err := qb.db.structValues(data)
+	values, err := qb.db.structValuesExceptPK(data)
 	if err != nil {
 		uq.buildErr = err
 		return uq

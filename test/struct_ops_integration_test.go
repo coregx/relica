@@ -319,6 +319,18 @@ func runStructOpsReceiver(t *testing.T, db *relica.DB, dialect string, r soRecei
 		var labels []string
 		require.NoError(t, db.Select("label").From("so_tagged").OrderBy("item_key").Column(&labels))
 		assert.Equal(t, []string{"all", "all"}, labels)
+
+		// The primary key is never written, as in Model().Update(): a struct
+		// with a zero key updates the row Where selects and keeps its key.
+		renamed := soItemOf(0, "renamed", 7)
+		r.run(t, func(ops soOps) {
+			assert.Equal(t, int64(1), soAffected(t, ops.UpdateStruct("so_item", &renamed).Where(relica.Eq("title", "keep"))))
+			assert.Equal(t, int64(1), soAffected(t, ops.UpdateStruct("so_tagged", &soTagged{Label: "two"}).
+				Where(relica.Eq("item_key", 2))))
+		})
+		assert.Equal(t, "2", soRaw(t, db, "so_item", relica.Eq("title", "renamed"))["id"], "id kept")
+		assert.Equal(t, map[string]string{"item_key": "2", "label": "two"}, soRaw(t, db, "so_tagged", relica.Eq("label", "two")),
+			"pk-tagged key kept")
 	})
 
 	t.Run("BatchUpdate", func(t *testing.T) {

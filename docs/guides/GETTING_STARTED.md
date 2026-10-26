@@ -339,9 +339,12 @@ user := User{
 }
 
 result, err := db.UpdateStruct("users", &user).
-    Where("id = ?", 1).
+    Where(relica.Eq("id", 1)).
     Execute()
 ```
+
+Every column of the struct is written, zero values included, except the primary key (a `pk` tag, or a field named
+`ID`/`Id`), which `UpdateStruct` never changes.
 
 ### Model() API - Domain Models
 
