@@ -74,7 +74,7 @@ func GetNumberedProducts(db *relica.DB) ([]Product, error) {
 
 **Generated SQL** (PostgreSQL):
 ```sql
-SELECT "id", "name", "price", ROW_NUMBER() OVER (ORDER BY price DESC) as row_num
+SELECT "id", "name", "price", ROW_NUMBER() OVER (ORDER BY price DESC) AS row_num
 FROM "products"
 ```
 
@@ -131,7 +131,7 @@ func RankProductsByPrice(db *relica.DB) ([]ProductRank, error) {
 
 **Generated SQL**:
 ```sql
-SELECT "name", "price", ROW_NUMBER() OVER (ORDER BY price DESC) as rank_no
+SELECT "name", "price", ROW_NUMBER() OVER (ORDER BY price DESC) AS rank_no
 FROM "products"
 ```
 
@@ -281,7 +281,7 @@ func GetRunningTotalSales(db *relica.DB) ([]DailySales, error) {
 ```sql
 SELECT DATE(created_at) as sale_date,
        SUM(total) as daily_total,
-       SUM(SUM(total)) OVER (ORDER BY DATE(created_at)) as running_total
+       SUM(SUM(total)) OVER (ORDER BY DATE(created_at)) AS running_total
 FROM "orders"
 GROUP BY DATE(created_at)
 ORDER BY sale_date
@@ -481,9 +481,9 @@ func RankProductsByCategory(db *relica.DB) ([]ProductRank, error) {
 **Generated SQL**:
 ```sql
 SELECT "category", "name", "price",
-       ROW_NUMBER() OVER (PARTITION BY category ORDER BY price DESC) as rank_no
+       ROW_NUMBER() OVER (PARTITION BY category ORDER BY price DESC) AS rank_no
 FROM "products"
-ORDER BY "category", rank_no
+ORDER BY "category", "rank_no"
 ```
 
 **Result**:
