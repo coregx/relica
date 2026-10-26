@@ -73,6 +73,10 @@ func (p *Profile) TableName() string { return "profiles" }
 
 func model(db *relica.DB, u *User) { db.Model(u).Insert() }
 
+// A comment that quotes a bad chain is not code:
+// Danger: db.Delete("t").Execute() would wipe the table.
+// Note: a.Union(b).OrderBy("x") sorts the union since v0.20.0.
+
 // Set operations whose OrderBy/Limit keep their meaning: on the first branch
 // before Union, inside a branch argument, outside a FromSelect wrapper.
 func setOps(db *relica.DB) {
