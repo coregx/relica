@@ -141,9 +141,16 @@ func v11(db *relica.DB) {
 }
 
 func v12(db *relica.DB) {
-	// V12 ×2: a function column without AS — PostgreSQL names it coalesce/count
+	// V12 ×3: a function column without AS, scanned into a struct (All/One) —
+	// PostgreSQL names it coalesce/count; the third is a multi-line Select
 	db.Select("id", "COALESCE(u.full_name, '')").From("u").All(nil)
-	db.Select("id").AndSelect("COUNT(*)").From("t").GroupBy("id").All(nil)
+	db.Select("id").AndSelect("COUNT(*)").From("t").GroupBy("id").One(nil)
+	db.Select(
+		"r.id",
+		"COALESCE(u.full_name, '')",
+	).From("r").
+		LeftJoin("u", "u.id = r.user_id").
+		All(nil)
 }
 
 func i5(db *relica.DB, sort string) {
