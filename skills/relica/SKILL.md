@@ -76,7 +76,7 @@ Follow AGENTS.md. The points that caused real bugs in projects using Relica:
 
 1. `bash ${CLAUDE_SKILL_DIR}/scripts/audit.sh <repo>` — read-only, git-tracked `*.go` only. It
    reports leads in three groups: mistakes found in real projects (H1–H3, M1–M7), code whose
-   behaviour changes in v0.20.0 (V1–V11; the group title says whether the project is still below
+   behaviour changes in v0.20.0 (V1–V12; the group title says whether the project is still below
    v0.20.0), and style or placement notes (I1–I8). Each line names the AGENTS.md or
    MIGRATION_GUIDE section to read.
 2. Every finding is a lead: open the file and confirm before reporting. Then go through the

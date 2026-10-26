@@ -805,7 +805,9 @@ db.Select().From("users").
 ```
 
 **Select takes column names, SelectExpr takes expressions.** `Select` quotes each argument as a column
-(`"t.col"`, `"col AS alias"`; an argument with `(` such as `"COUNT(*) AS n"` is passed as is). Literals and arithmetic
+(`"t.col"`, `"col AS alias"`; an argument with `(` such as `"COUNT(*) AS n"` is passed as is). Give every function
+or expression column an alias when the rows go into a struct: PostgreSQL names `COALESCE(u.full_name, '')`
+`coalesce`, so a field tagged `full_name` gets nothing — an error since v0.20.0 (ScanRequireFields). Literals and arithmetic
 without parentheses must go through `SelectExpr`, with the alias inside the string and `?` args bound:
 
 ```go
