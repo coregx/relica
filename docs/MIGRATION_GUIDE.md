@@ -706,6 +706,8 @@ everywhere; with `DoUpdate`, PostgreSQL rejects the statement (error 21000) and 
 | `Column(&ids)` on a query with more than one column → error | first column scanned | — |
 | `db:"pk"` wrote column `pk` | primary key, column from the naming rule | `db:"pk_column,pk"` for an explicit column |
 | result without a column for a struct field → zero, `err == nil` | error (`ScanRequireFields`) | list the columns in `Select(...)`, tag the field `db:"-"`, or `relica.WithScanMode(relica.ScanLenient)` (per query: `.ScanMode(relica.ScanLenient)`) |
+| `Select("id", "email")` into a struct with no `email` field → column dropped | error | fix the tag or the Select list |
+| `Select()` over a join where both tables have `id`, or `Select("a.id", "b.id")` → the later `id` silently won | error "appears more than once" | list the columns, alias the second (`"b.id AS b_id"`) |
 | `BatchInsertStruct` with some zero and some explicit keys → explicit keys dropped | error | split the batch |
 | `UpdateStruct(t, &s)` wrote the primary key into SET (a zero ID set `id = 0`) | the key is never written | to change a key, use `Update(t).Set(map[string]any{"id": newID})` |
 

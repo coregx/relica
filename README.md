@@ -1229,7 +1229,9 @@ db, err := relica.Open("postgres", dsn,
 ```
 
 Reading into a struct, a field with no column in the result is an error by default (`relica.ScanRequireFields`)
-instead of a silent zero value. `relica.WithScanMode(relica.ScanLenient)` restores the ozzo-dbx behaviour per DB,
+instead of a silent zero value; so is a column named in `Select("id", "email")` that no field takes, and two result
+columns for one field (`Select()` over a join where both tables have `id`: alias one).
+`relica.WithScanMode(relica.ScanLenient)` restores the ozzo-dbx behaviour per DB,
 `.ScanMode(...)` per query; `relica.ScanStrict` also rejects result columns that have no field. Details: AGENTS.md ›
 Table and Column Names.
 

@@ -915,9 +915,12 @@ are errors. A field whose `Value()` is on the pointer receiver (`func (m *Meta) 
 int. `Column` scans the first column of each row and ignores the others.
 
 **Reading (ScanMode)**: by default a struct field that has no column in the result is an **error**
-(`ScanRequireFields`) instead of a silent zero. `Select("id", "name")` requires only the listed columns;
-`db:"-"` fields are never required; extra result columns are ignored. Per DB: `relica.WithScanMode(...)`;
-per query: `.ScanMode(relica.ScanLenient)` (ozzo-dbx behavior) or `relica.ScanStrict` (extra columns are errors too).
+(`ScanRequireFields`) instead of a silent zero. `Select("id", "name")` requires only the listed columns — and
+each listed column must have a field (a renamed tag is an error, not a dropped column); `db:"-"` fields are never
+required; extra columns of `Select()` / `Select("t.*")` (a wider table) are ignored. Two result columns for one field
+are an error — `Select("a.id", "b.id")`, or `Select()` over a join where both tables have `id`: alias one
+(`Select("a.id", "b.id AS b_id")`) or list the columns. Per DB: `relica.WithScanMode(...)`; per query:
+`.ScanMode(relica.ScanLenient)` (ozzo-dbx behavior) or `relica.ScanStrict` (every extra column is an error).
 
 **Common mistake after upgrading**: a model without `TableName()` that relied on the old `+ "s"` rule now
 queries `user` instead of `users` → add `TableName()`.
