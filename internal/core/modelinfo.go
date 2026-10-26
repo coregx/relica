@@ -1,11 +1,14 @@
 package core
 
 import (
+	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/coregx/relica/internal/util"
 )
@@ -111,14 +114,40 @@ func (mi *modelInfo) walk(owner reflect.Type, prefix []int, naming Naming) error
 	return nil
 }
 
-// isEmbeddedStruct: as encoding/json, an embedded struct (or pointer to one)
-// of an unexported type still promotes its exported fields.
+var (
+	scannerType = reflect.TypeFor[sql.Scanner]()
+	valuerType  = reflect.TypeFor[driver.Valuer]()
+	timeType    = reflect.TypeFor[time.Time]()
+)
+
+// isValueType reports whether t (or the type t points to) is one database
+// value rather than a set of columns: time.Time, or a type whose value or
+// pointer implements sql.Scanner or driver.Valuer. Promoted methods count, as
+// Go itself sees the type (GORM and go-jet draw the same line); flattening such
+// a type wrote sql.NullString as columns string/valid and dropped time.Time,
+// which has no exported fields, without a word.
+func isValueType(t reflect.Type) bool {
+	if t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t == timeType {
+		return true
+	}
+	pt := reflect.PointerTo(t)
+	return t.Implements(scannerType) || pt.Implements(scannerType) ||
+		t.Implements(valuerType) || pt.Implements(valuerType)
+}
+
+// isEmbeddedStruct reports whether f is an embedded plain struct (or pointer
+// to one) whose fields are promoted to columns. As in encoding/json, an
+// unexported embedded struct still promotes its exported fields. Embedded
+// single-value types are columns themselves.
 func isEmbeddedStruct(f reflect.StructField) bool {
 	t := f.Type
 	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
-	return f.Anonymous && t.Kind() == reflect.Struct
+	return f.Anonymous && t.Kind() == reflect.Struct && !isValueType(t)
 }
 
 // checkEmbedded reports whether f is an embedded struct to flatten, and
