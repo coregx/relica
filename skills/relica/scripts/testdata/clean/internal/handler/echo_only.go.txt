@@ -1,0 +1,9 @@
+// Fixture for audit_test.sh: a file without Relica. Not compiled.
+package handler
+
+import "github.com/labstack/echo/v4"
+
+func Search(c echo.Context) error {
+	_ = c.QueryParams()
+	return nil
+}
