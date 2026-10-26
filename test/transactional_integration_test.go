@@ -37,7 +37,7 @@ func runTransactionalTests(t *testing.T, db *relica.DB) {
 	createTxProbeTable(t, db)
 	reset := func(t *testing.T) {
 		t.Helper()
-		_, err := db.Delete("tx_probe").Execute()
+		_, err := db.Delete("tx_probe").AllRows().Execute()
 		require.NoError(t, err)
 	}
 	insert := func(tx *relica.Tx, id int) error {

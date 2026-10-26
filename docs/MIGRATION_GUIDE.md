@@ -728,3 +728,17 @@ The rule (ozzo-dbx, `regexp ([^A-Z_])([A-Z])` → `${1}_$2`, lower case) and its
 
 **Find affected code:** `grep -rn "ForUpdate\|ForShare\|ForUpdateSkipLocked" --include=*.go .` and check that each
 runs on a transaction. A `*relica.DB` from a `dbcontext.With(ctx)` helper outside a transaction errors too.
+
+## UPDATE / DELETE without a condition (ADR-020)
+
+| v0.19 code | v0.20.0 | Change your code to |
+|---|---|---|
+| `db.Delete("t").Execute()`, `db.Update("t").Set(v).Execute()` | error "without Where would affect every row" | add the `Where` you meant, or `.AllRows()` for the whole table |
+| `.Where(cond)` where `cond` renders empty — `relica.And()` with no parts, `relica.HashExp{}`, `relica.Like("c")` with no values, `""` | error "renders empty" (was: no WHERE, every row) | build the condition only when there is something to filter, or use `AllRows()` |
+| `AllRows()` together with `Where` | error | keep one |
+
+`Model(&m).Update()` / `Delete()` and `UpdateChanged` always use the primary key and are unaffected; `UpdateStruct`
+needs a `Where` like `Update`. SELECT keeps its semantics: an empty condition selects every row.
+
+**Find affected code:** search for `.Delete(` / `.Update(` chains that end in `.Execute()` with no `.Where(`, and for
+conditions assembled from optional filters (`relica.And(conds...)` where `conds` may be empty).

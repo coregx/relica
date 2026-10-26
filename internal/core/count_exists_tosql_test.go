@@ -228,6 +228,7 @@ func TestUpdateQuery_ToSQL_NoWhere(t *testing.T) {
 
 	sql, params := qb.Update("sessions").
 		Set(map[string]interface{}{"active": false}).
+		AllRows().
 		ToSQL()
 
 	if !strings.Contains(sql, `UPDATE "sessions" SET`) {
@@ -315,7 +316,7 @@ func TestDeleteQuery_ToSQL_NoWhere(t *testing.T) {
 	db := mockDB("postgres")
 	qb := &QueryBuilder{db: db}
 
-	sql, params := qb.Delete("temp_data").ToSQL()
+	sql, params := qb.Delete("temp_data").AllRows().ToSQL()
 
 	want := `DELETE FROM "temp_data"`
 	if sql != want {

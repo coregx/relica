@@ -64,7 +64,7 @@ func createPtItemTable(t *testing.T, db *relica.DB, dialect string) {
 //	gamma: nickname ga,  price 70,  min 70, state 3, note "x_y"
 func seedPtItems(t *testing.T, db *relica.DB) {
 	t.Helper()
-	_, err := db.Delete("pt_item").Execute()
+	_, err := db.Delete("pt_item").AllRows().Execute()
 	require.NoError(t, err)
 	rows := []ptItem{
 		{Name: "alpha", Nickname: sql.NullString{String: "al", Valid: true}, Price: 100, MinPrice: 50, State: 1},
@@ -262,7 +262,7 @@ func runPublicTypesTests(t *testing.T, ds *DatabaseSetup) {
 		seedPtItems(t, db)
 		_, err := db.Update("pt_item").Set(map[string]any{
 			"state": relica.CaseWhen().When(relica.GreaterThan("price", 60), 9).Else(0),
-		}).Execute()
+		}).AllRows().Execute()
 		require.NoError(t, err)
 		got := ptNames(t, db.Select("name").From("pt_item").Where(relica.Eq("state", 9)))
 		assert.Equal(t, []string{"alpha", "gamma"}, got)
@@ -291,7 +291,7 @@ func runPublicTypesTests(t *testing.T, ds *DatabaseSetup) {
 
 	t.Run("Coalesce_InUpdateSet", func(t *testing.T) {
 		seedPtItems(t, db)
-		_, err := db.Update("pt_item").Set(map[string]any{"nickname": relica.Coalesce("nickname", "name")}).Execute()
+		_, err := db.Update("pt_item").Set(map[string]any{"nickname": relica.Coalesce("nickname", "name")}).AllRows().Execute()
 		require.NoError(t, err)
 		var nick string
 		require.NoError(t, db.Select("nickname").From("pt_item").Where(relica.Eq("name", "beta")).Row(&nick))
@@ -377,7 +377,7 @@ func runPublicTypesTests(t *testing.T, ds *DatabaseSetup) {
 		n, err := tx.Select().From("pt_item").Count()
 		require.NoError(t, err)
 		assert.Equal(t, int64(3), n)
-		_, err = tx.Delete("pt_item").Execute()
+		_, err = tx.Delete("pt_item").AllRows().Execute()
 		require.Error(t, err, "a write inside a read-only transaction must fail")
 		_ = tx.Rollback()
 		assert.Equal(t, int64(3), ptCount(t, db))

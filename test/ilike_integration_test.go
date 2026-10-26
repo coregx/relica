@@ -34,7 +34,7 @@ func createCiLabelTable(t *testing.T, db *relica.DB, dialect string) {
 //	1 "Alpha Xeon", 2 "BETA 50% off", 3 "gamma x_y", 4 "Привет Мир"
 func seedCiLabels(t *testing.T, db *relica.DB) {
 	t.Helper()
-	_, err := db.Delete("ci_label").Execute()
+	_, err := db.Delete("ci_label").AllRows().Execute()
 	require.NoError(t, err)
 	for i, label := range []string{"Alpha Xeon", "BETA 50% off", "gamma x_y", "Привет Мир"} {
 		_, err := db.Insert("ci_label", map[string]any{"id": i + 1, "label": label}).Execute()

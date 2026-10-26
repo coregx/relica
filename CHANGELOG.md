@@ -27,6 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `BatchInsertStruct` with a zero primary key in some rows and explicit keys in others is an error — the key column was dropped when the first row's key was zero, losing the explicit keys
 - Removed the unused internal `GetTableName` / `DefaultFieldMapFunc` (a third, different naming rule) and the reflection helpers they duplicated
 
+### Changed (breaking) — UPDATE/DELETE that would hit every row (ADR-020 rules 1–2)
+
+- **`Update(...)` / `Delete(...)` without `Where` are errors** — `db.Delete("t").Execute()` deleted every row; it now returns an error and sends nothing. Whole-table statements need the new explicit **`AllRows()`** on `UpdateQuery` / `DeleteQuery` (`AllRows()` together with `Where` is an error). Precedents: GORM `ErrMissingWhereClause`, bun "require at least one Where", MySQL `sql_safe_updates`
+- **A condition that renders empty is an error in UPDATE/DELETE** — `Where(relica.And())`, `HashExp{}`, `Like("c")` with no values, `Where("")` dropped the WHERE clause and hit the whole table (also through `AndWhere`/`OrWhere`). SELECT keeps the old meaning (an empty condition selects every row)
+
 ### Changed (breaking) — row locks (ADR-020 rules 3–4, FIX-012)
 
 - **`ForUpdate` / `ForShare` / `ForUpdateSkipLocked` outside a transaction are errors on every database** — on `*DB` the statement autocommits and the lock ends with it, so `ForUpdate` protected nothing and two `ForUpdateSkipLocked` workers could claim the same row. SQLite included, so a SQLite test suite catches the bug that would hit PostgreSQL in production; inside a transaction SQLite still omits the clause

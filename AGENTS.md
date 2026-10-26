@@ -693,6 +693,21 @@ outer rollback must remove the inner writes too.
 
 ---
 
+## UPDATE / DELETE need Where (v0.20.0+, ADR-020)
+
+```go
+// WRONG — error since v0.20.0: "without Where would affect every row"
+db.Delete("sessions").Execute()
+// WRONG — error: the condition renders empty (would also hit every row)
+db.Update("users").Set(values).Where(relica.HashExp{}).Execute()
+
+// CORRECT
+db.Delete("sessions").Where(relica.LessThan("expires_at", now)).Execute()
+db.Delete("sessions").AllRows().Execute() // the whole table, on purpose
+```
+
+---
+
 ## Row Locking (FOR UPDATE / FOR SHARE)
 
 **Pessimistic locking for concurrent access — only inside a transaction.** Since v0.20.0 a lock on

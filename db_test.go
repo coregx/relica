@@ -1103,7 +1103,7 @@ func TestTx_Update_ToSQL(t *testing.T) {
 	db := openTestDB(t)
 	tx, _ := db.Begin(context.Background())
 	defer tx.Rollback()
-	sql, _ := tx.Update("users").Set(map[string]interface{}{"x": 1}).ToSQL()
+	sql, _ := tx.Update("users").Set(map[string]interface{}{"x": 1}).Where(relica.Eq("id", 1)).ToSQL()
 	assertContains(t, sql, "UPDATE")
 }
 
