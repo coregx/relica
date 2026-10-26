@@ -450,7 +450,7 @@ func (mq *ModelQuery) Update(attrs ...string) error {
 	// Get primary keys for WHERE.
 	pkCols, pkValues, err := mq.getPrimaryKeys()
 	if err != nil {
-		return errors.New("model: primary key not found")
+		return fmt.Errorf("model: primary key not found: %w", err)
 	}
 
 	// Remove all PK columns from SET clause.
@@ -604,7 +604,7 @@ func (mq *ModelQuery) upsertTarget(dataMap map[string]any, target []string) ([]s
 	if target == nil {
 		pkCols, _, err := mq.getPrimaryKeys()
 		if err != nil {
-			return nil, errors.New("model: primary key not found for upsert conflict detection")
+			return nil, fmt.Errorf("model: primary key not found for upsert conflict detection: %w", err)
 		}
 		return pkCols, nil
 	}
@@ -778,7 +778,7 @@ func (mq *ModelQuery) UpdateChanged(original any) error {
 	// Get primary keys for WHERE clause.
 	pkCols, pkValues, err := mq.getPrimaryKeys()
 	if err != nil {
-		return errors.New("model: primary key not found")
+		return fmt.Errorf("model: primary key not found: %w", err)
 	}
 
 	// Create builder with transaction/query context if applicable.
@@ -872,7 +872,7 @@ func (mq *ModelQuery) Delete() error {
 	// Get primary keys for WHERE.
 	pkCols, pkValues, err := mq.getPrimaryKeys()
 	if err != nil {
-		return errors.New("model: primary key not found")
+		return fmt.Errorf("model: primary key not found: %w", err)
 	}
 
 	// Create builder with transaction/query context if applicable.
@@ -960,7 +960,7 @@ func (mq *ModelQuery) Find(pk ...any) error {
 
 	pkInfo, err := mq.db.primaryKey(v)
 	if err != nil {
-		return errors.New("model: primary key not found")
+		return fmt.Errorf("model: primary key not found: %w", err)
 	}
 
 	if len(pk) != len(pkInfo.Columns) {

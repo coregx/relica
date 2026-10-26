@@ -85,6 +85,10 @@ func buildModelInfo(t reflect.Type, naming Naming) (*modelInfo, error) {
 	if err := mi.walk(t, nil, naming); err != nil {
 		return nil, err
 	}
+	if len(mi.fields) == 0 {
+		// Read, such a struct matched nothing and came back zero with no error.
+		return nil, fmt.Errorf(`relica: %s has no columns: export fields or tag them with db:"..."`, t)
+	}
 	mi.resolvePK()
 	return mi, nil
 }
