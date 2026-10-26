@@ -845,7 +845,8 @@ Errors (returned when the query runs):
 - `OrderBy` in a branch without `Limit`/`Offset` (`a.OrderBy("x").Union(b)`) orders nothing — PostgreSQL and MySQL
   ignore it — so it is an error: call `OrderBy` after `Union`.
 - A set operation after the combined result's `OrderBy`/`Limit`/`Offset` (`a.Union(b).OrderBy("x").Union(c)`):
-  pass the sorted compound as a query instead (`c.Union(sorted)`, `FromSelect(sorted, "u")`).
+  sort last (`a.Union(b).Union(c).OrderBy("x")`); a sorted **and limited** compound can be a branch
+  (`c.Union(a.Union(b).OrderBy("x").Limit(10))`), a sorted one only a `FromSelect` source.
 
 Before v0.20.0 (and in ozzo-dbx) `OrderBy`/`Limit` after `Union` went into the first branch, and
 `a.Union(b).Intersect(c)` was sent flat, which PostgreSQL and MySQL read as `a ∪ (b ∩ c)`.
@@ -1449,8 +1450,9 @@ db, err := relica.Open("postgres", dsn,
     }))
 ```
 
-**Query plans**: `q.Explain()` / `q.ExplainAnalyze()` return a `QueryPlan` (Cost, EstimatedRows, ActualRows,
-ActualTime, UsesIndex, …) on every database; see docs/QUERY_ANALYZER_GUIDE.md.
+**Query plans**: `q.Explain()` returns a `QueryPlan` (Cost, EstimatedRows, UsesIndex, …) on every database;
+`q.ExplainAnalyze()` also runs the query and fills ActualRows/ActualTime on PostgreSQL and MySQL (SQLite has no
+EXPLAIN ANALYZE and returns an error); see docs/QUERY_ANALYZER_GUIDE.md.
 
 ---
 

@@ -782,8 +782,8 @@ func (sq *SelectQuery) addSetOperation(method string, other *SelectQuery, u unio
 	}
 	if sq.hasSetRowLimits() {
 		sq.buildErr = fmt.Errorf("relica: %s() after OrderBy/Limit/Offset of the combined result: those apply to "+
-			"the combined result and must come after the last set operation; to combine a sorted or limited "+
-			"compound, pass it as a query: %s(q) or FromSelect(q, alias)", method, method)
+			"the combined result and must come after the last set operation; pass a limited compound as a "+
+			"branch, %s(q), or a sorted one as FromSelect(q, alias)", method, method)
 		return sq
 	}
 	sq.unions = append(sq.unions, u)
@@ -1829,9 +1829,10 @@ func (sq *SelectQuery) Column(slice any) error {
 
 // Count returns the number of rows the query would return: with GROUP BY the
 // number of groups, with DISTINCT the number of distinct rows, with a set
-// operation the rows of the compound result. ORDER BY, LIMIT and OFFSET are
-// ignored, so a paginated query reports its total; in a set operation they
-// belong to the first branch and are kept. A query whose select list is plain
+// operation the rows of the compound result. The result's ORDER BY, LIMIT and
+// OFFSET are ignored, so a paginated query reports its total; in a set
+// operation those are the ones called after Union, while the first branch's
+// (called before Union) choose its rows and are kept. A query whose select list is plain
 // columns is sent as SELECT COUNT(*) with its FROM, JOIN and WHERE; one with
 // GROUP BY, HAVING, DISTINCT, a set operation or an expression in the select
 // list (which may aggregate) is counted as a derived table.

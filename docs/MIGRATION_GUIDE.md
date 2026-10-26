@@ -703,7 +703,7 @@ everywhere; with `DoUpdate`, PostgreSQL rejects the statement (error 21000) and 
 | `One(&t)` / `All(&ts)` into `time.Time`, `sql.NullString` → zero value, `err == nil` | error "is a single value, not a row" | `Row(&t)` / `Column(&ts)` |
 | field type with `Value()` only on `*T` passed raw (struct: "unsupported type"; `type Level int`: written as the int) | written through `Value()` | — |
 | struct with no mapped field (all unexported or `db:"-"`) read as zero / wrote nothing | error | export or tag the fields |
-| unexported field with a `db` tag (`id int \`db:"id"\``), unexported embedded `Scan`/`Value` type → silently no column | error | export the field or type, or drop the tag |
+| unexported field with a `db` tag (`` id int `db:"id"` ``), unexported embedded `Scan`/`Value` type → silently no column | error | export the field or type, or drop the tag |
 | `Column(&ids)` on a query with more than one column → error | first column scanned | — |
 | `db:"pk"` wrote column `pk` | primary key, column from the naming rule | `db:"pk_column,pk"` for an explicit column |
 | result without a column for a struct field → zero, `err == nil` | error (`ScanRequireFields`) | list the columns in `Select(...)`, tag the field `db:"-"`, or `relica.WithScanMode(relica.ScanLenient)` (per query: `.ScanMode(relica.ScanLenient)`) |
@@ -817,7 +817,7 @@ a `Delete` with one deleted the whole table); now it fails with `no such column`
 | `a.Union(b).OrderBy("name").Limit(10)` | `a` sorted and limited to 10, then all of `b`, unsorted | the first 10 of the union, sorted | nothing — this is what the code says |
 | `a.OrderBy("x").Limit(5).Union(b)` | 5 rows of `a` plus `b` | unchanged | — |
 | `a.OrderBy("x").Union(b)` (branch sort without Limit) | sent, ordered nothing | error | `a.Union(b).OrderBy("x")` |
-| `a.Union(b).OrderBy("x").Union(c)` | `x` sorted `a` | error | sort last: `a.Union(b).Union(c).OrderBy("x")`, or `c.Union(sorted)` |
+| `a.Union(b).OrderBy("x").Union(c)` | `x` sorted `a` | error | sort last: `a.Union(b).Union(c).OrderBy("x")`; a sorted and limited compound can be a branch: `c.Union(a.Union(b).OrderBy("x").Limit(10))` |
 | `a.Union(b).Intersect(c)` | PostgreSQL/MySQL: `a ∪ (b ∩ c)`, SQLite: `(a ∪ b) ∩ c` | `(a ∪ b) ∩ c` everywhere | `a.Union(b.Intersect(c))` for the other grouping |
 | `a.Union(b).Limit(1).Count()` | counted `a` limited to 1, plus `b` | counts the whole union (the paging is ignored, as for any query) | — |
 
