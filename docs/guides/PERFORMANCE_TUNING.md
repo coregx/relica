@@ -82,11 +82,13 @@ db, err := relica.Open("postgres", dsn,
     relica.WithStmtCacheCapacity(2000), // Increase for high-traffic apps
 )
 
-// Monitor cache stats
-stats := db.StmtCacheStats()
-hitRate := float64(stats.Hits) / float64(stats.Hits + stats.Misses)
-log.Printf("Cache hit rate: %.2f%%", hitRate*100)
+// Monitor the connection pool
+stats := db.Stats()
+log.Printf("open=%d in_use=%d idle=%d wait_count=%d wait=%s",
+    stats.OpenConnections, stats.InUse, stats.Idle, stats.WaitCount, stats.WaitDuration)
 ```
+
+`db.Stats()` returns `relica.PoolStats` (connection pool counters plus `Healthy` and `LastHealthCheck`). Statement cache hit/miss counters are not part of the public API; to see whether a query pattern repeats, record its SQL with `relica.WithQueryHook`.
 
 ---
 

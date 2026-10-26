@@ -370,8 +370,8 @@ watch -n1 'psql -c "SELECT count(*) FROM pg_stat_activity"'
 ---
 
 **See Also:**
-- [LOGGING_GUIDE.md](./LOGGING_GUIDE.md) - Query logging and tracing
-- [QUERY_OPTIMIZER_GUIDE.md](./QUERY_OPTIMIZER_GUIDE.md) - Query optimization
+- [LOGGING_GUIDE.md](./LOGGING_GUIDE.md) - Query logging, query hooks, OpenTelemetry tracing via QueryHook
+- [QUERY_OPTIMIZER_GUIDE.md](./QUERY_OPTIMIZER_GUIDE.md) - Optimizer status (not public); ToSQL and Explain today
 
 ---
 

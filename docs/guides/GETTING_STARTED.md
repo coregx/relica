@@ -814,7 +814,7 @@ db.QueryRowContext(ctx,
 1. **[Best Practices Guide](BEST_PRACTICES.md)** - Production-ready patterns
 2. **[Advanced Patterns Guide](ADVANCED_PATTERNS.md)** - Complex queries
 3. **[Performance Tuning Guide](PERFORMANCE_TUNING.md)** - Optimization tips
-4. **[Security Guide](SECURITY.md)** - SQL injection prevention, audit logging
+4. **[Security Guide](SECURITY.md)** - SQL injection prevention, identifier quoting, safe error handling
 
 ### Explore Features
 
