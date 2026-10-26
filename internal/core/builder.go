@@ -1788,7 +1788,7 @@ func (sq *SelectQuery) Model(dest any) error {
 	}
 
 	for i, col := range pkInfo.Columns {
-		sq.Where(Eq(col, pkInfo.Values[i].Interface()))
+		sq.Where(Eq(col, argValue(pkInfo.Values[i])))
 	}
 
 	return sq.Limit(1).One(dest)
