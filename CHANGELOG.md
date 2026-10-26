@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `BatchInsertStruct` with a zero primary key in some rows and explicit keys in others is an error — the key column was dropped when the first row's key was zero, losing the explicit keys
 - Removed the unused internal `GetTableName` / `DefaultFieldMapFunc` (a third, different naming rule) and the reflection helpers they duplicated
 
+### Changed (breaking) — row locks (ADR-020 rules 3–4, FIX-012)
+
+- **`ForUpdate` / `ForShare` / `ForUpdateSkipLocked` outside a transaction are errors on every database** — on `*DB` the statement autocommits and the lock ends with it, so `ForUpdate` protected nothing and two `ForUpdateSkipLocked` workers could claim the same row. SQLite included, so a SQLite test suite catches the bug that would hit PostgreSQL in production; inside a transaction SQLite still omits the clause
+- **A lock combined with UNION/INTERSECT/EXCEPT (in any branch), GROUP BY, DISTINCT, `Count()` or `Exists()` is an error** — PostgreSQL rejects these, MySQL and SQLite accepted or silently dropped the lock
+- SQLite is recognised by its dialect, not by the driver name (`sqlite`/`sqlite3`), when deciding to omit the lock clause
+
 ### Added
 
 - **`WithNaming(Naming)`** — how a DB derives names: `Naming{Table, Column}` funcs over `TableSource` / `ColumnSource` (model, declaring struct, field, index path). Built-in `Snake(...)` with `SplitAcronyms()` (`HTTPLog` → `http_log`), `Initialisms(GoInitialisms()...)` (`IPv4Address` → `ipv4_address`, whole tokens only), `TablePrefix`, `PluralTables`; `SnakeCase` for custom rules

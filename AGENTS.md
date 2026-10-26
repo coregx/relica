@@ -695,8 +695,13 @@ outer rollback must remove the inner writes too.
 
 ## Row Locking (FOR UPDATE / FOR SHARE)
 
-**Pessimistic locking for concurrent access — only inside a transaction.** On `*relica.DB` the
-statement autocommits and the lock is released immediately. Omitted from the SQL on SQLite (no row locks).
+**Pessimistic locking for concurrent access — only inside a transaction.** Since v0.20.0 a lock on
+`*relica.DB` (outside a transaction) is an **error** on every database, SQLite included: the statement
+would autocommit and release the lock at once (two `ForUpdateSkipLocked` workers would claim the same row).
+A lock combined with `Union`/`UnionAll`/`Intersect`/`Except`, `GroupBy`, `Distinct`, `Count()` or `Exists()`
+is an error too. Inside a transaction SQLite omits the clause (database-level locking). MariaDB has no
+`FOR SHARE`. Aggregates written as column text (`Select("COUNT(*)")`) are not detected — PostgreSQL rejects
+them with a lock.
 
 ```go
 // Exclusive lock: other transactions wait to update, delete or lock these rows
@@ -725,6 +730,11 @@ tx.Select().From("tasks").
 | `ForUpdate()` | `FOR UPDATE` | Exclusive row lock |
 | `ForShare()` | `FOR SHARE` | Shared row lock |
 | `ForUpdateSkipLocked()` | `FOR UPDATE SKIP LOCKED` | Job queues, non-blocking |
+
+```go
+// WRONG — error since v0.20.0: "require a transaction"
+db.Select().From("tasks").ForUpdateSkipLocked().All(&tasks)
+```
 
 ---
 
