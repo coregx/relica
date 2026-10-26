@@ -49,11 +49,11 @@ protoc-*.tar.gz
 .goco/
 .goda/
 
-# Development docs (kanban, reports, internal notes, private documentation)
+# Development docs (ADRs, research, internal notes, private documentation)
 docs/dev/
 
-# Private navigation files (internal index files)
-INDEX.md
+# Project management (STATUS, HANDOFF, kanban, plans)
+.pm/
 
 # Temporary files
 *.tmp
