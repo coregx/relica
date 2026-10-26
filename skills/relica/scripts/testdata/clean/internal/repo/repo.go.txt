@@ -42,6 +42,17 @@ func queries(ctx context.Context, db *relica.DB) {
 		Execute()
 	db.Update("settings").Set(map[string]any{"dirty": false}).AllRows().Execute()
 	db.Upsert("t", map[string]any{"id": 1, "a": 2}).OnConflict("id").DoUpdate("a").Execute()
+	// The action on the next line of the chain, or picked in an if/else.
+	db.BatchInsert("t", []string{"id", "a"}).
+		OnConflict("id").
+		DoUpdateAll().
+		Execute()
+	batch := db.BatchInsert("t", []string{"id", "a"}).OnConflict("id")
+	if keep {
+		batch = batch.DoNothing()
+	} else {
+		batch = batch.DoUpdate("a")
+	}
 	_ = db.Transactional(ctx, nil)
 }
 
