@@ -383,7 +383,6 @@ func runDBOpsTests(t *testing.T, db *relica.DB, dialect string) {
 	})
 
 	t.Run("UnpinQuery_NotPinnedReturnsFalse", func(t *testing.T) {
-		t.Skip("BUG: DB.UnpinQuery returns true for a cached query that is not pinned; godoc says false")
 		q := opsCacheQuery(db, 121)
 		_, err := db.WarmCache([]string{q})
 		require.NoError(t, err)
@@ -869,7 +868,6 @@ func runDBOpsOptionTests(t *testing.T, db *relica.DB, dialect, dsn string) {
 	})
 
 	t.Run("WithHealthCheck_IsHealthyAfterClose", func(t *testing.T) {
-		t.Skip("BUG: DB.IsHealthy (and Stats.Healthy) keep reporting true after Close; the checker stops with its last result")
 		hdb, err := relica.Open(dialect, dsn, relica.WithHealthCheck(20*time.Millisecond))
 		require.NoError(t, err)
 		require.Eventually(t, hdb.IsHealthy, 10*time.Second, 10*time.Millisecond)
@@ -881,7 +879,6 @@ func runDBOpsOptionTests(t *testing.T, db *relica.DB, dialect, dsn string) {
 	})
 
 	t.Run("WithHealthCheck_CloseTwice", func(t *testing.T) {
-		t.Skip("BUG: DB.Close panics (close of closed channel) when called twice on a DB opened WithHealthCheck")
 		hdb, err := relica.Open(dialect, dsn, relica.WithHealthCheck(20*time.Millisecond))
 		require.NoError(t, err)
 		require.NoError(t, hdb.Close())
@@ -1006,10 +1003,6 @@ func runDBOpsOptionTests(t *testing.T, db *relica.DB, dialect, dsn string) {
 	})
 
 	t.Run("WithLogger_PrepareFailureLogged", func(t *testing.T) {
-		if dialect != "sqlite" {
-			t.Skip("BUG: a statement rejected at prepare time (PostgreSQL/MySQL server-side prepare: missing table, syntax error) " +
-				"returns from Query.prepareStatement before invokeHook, so QueryHook/WithLogger never see it")
-		}
 		rec := &opsRecLogger{}
 		ldb := open(t, relica.WithLogger(rec))
 		_, err := ldb.Select().From("ops_missing_table").Count()
@@ -1154,7 +1147,6 @@ func runDBOpsOptionTests(t *testing.T, db *relica.DB, dialect, dsn string) {
 	})
 
 	t.Run("QueryHook_DetectOperation_WithDelete", func(t *testing.T) {
-		t.Skip("BUG: DetectOperation reports any statement starting with WITH as SELECT; WITH ... DELETE is a DELETE")
 		var mu sync.Mutex
 		var ops []string
 		hdb := open(t, relica.WithQueryHook(func(_ context.Context, e relica.QueryEvent) {

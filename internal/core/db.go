@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/coregx/relica/internal/cache"
@@ -44,6 +45,10 @@ type DB struct {
 	models *modelCache
 
 	scanMode ScanMode // struct scanning strictness (ADR-018); zero = ScanRequireFields
+
+	// closed is set by the first Close. A pointer, because WithContext copies
+	// DB and every copy must see it.
+	closed *atomic.Bool
 }
 
 // Tx represents a database transaction.
@@ -201,6 +206,7 @@ func NewDB(driverName, dsn string) (*DB, error) {
 		stmtCache:  cache.NewStmtCache(),
 		models:     &modelCache{},
 		dialect:    dialect,
+		closed:     &atomic.Bool{},
 	}, nil
 }
 
@@ -246,6 +252,7 @@ func WrapDB(sqlDB *sql.DB, driverName string, opts ...Option) *DB {
 		stmtCache:  cache.NewStmtCache(),
 		models:     &modelCache{},
 		dialect:    dialect,
+		closed:     &atomic.Bool{},
 	}
 	for _, opt := range opts {
 		opt(db)
@@ -253,8 +260,23 @@ func WrapDB(sqlDB *sql.DB, driverName string, opts ...Option) *DB {
 	return db
 }
 
-// Close releases all database resources.
+// markClosed records the first Close and reports whether this call made it.
+// A DB built without a constructor (tests) has no flag and is never marked.
+func (db *DB) markClosed() bool {
+	return db.closed == nil || db.closed.CompareAndSwap(false, true)
+}
+
+// isClosed reports whether Close was called.
+func (db *DB) isClosed() bool {
+	return db.closed != nil && db.closed.Load()
+}
+
+// Close releases all database resources. A second Close does nothing and
+// returns nil.
 func (db *DB) Close() error {
+	if !db.markClosed() {
+		return nil
+	}
 	// Stop health checker if running
 	if db.healthChecker != nil {
 		db.healthChecker.shutdown()
@@ -516,13 +538,20 @@ func (db *DB) Stats() PoolStats {
 		poolStats.Healthy = db.healthChecker.isHealthy()
 		poolStats.LastHealthCheck = db.healthChecker.lastCheck()
 	}
+	if db.isClosed() {
+		poolStats.Healthy = false
+	}
 
 	return poolStats
 }
 
-// IsHealthy returns true if the database connection is healthy.
-// Always returns true if health checks are disabled.
+// IsHealthy returns true if the database connection is healthy: false after
+// Close; otherwise the result of the last health check, or true if health
+// checks are disabled.
 func (db *DB) IsHealthy() bool {
+	if db.isClosed() {
+		return false
+	}
 	if db.healthChecker == nil {
 		return true
 	}
