@@ -1,0 +1,8 @@
+// Fixture: entgo.io/ent generated-style code without Relica. Not compiled.
+package legacy
+
+import "entgo.io/ent/dialect/sql"
+
+func entList(s *sql.Selector) {
+	s.Select("1").From(sql.Table("t")).OrderBy("a DESC, b")
+}

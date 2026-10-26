@@ -1,0 +1,23 @@
+// Fixture: query builders and ORMs other than Relica, in files without
+// Relica. Their Select/OrderBy/Update/Delete follow their own rules, so the
+// Relica-specific checks must skip these files.
+package legacy
+
+import (
+	sq "github.com/Masterminds/squirrel"
+	"github.com/uptrace/bun"
+	"gorm.io/gorm"
+)
+
+func squirrelList() {
+	sq.Select("1").From("t").OrderBy("created_at DESC, id").GroupBy("a, b")
+	sq.Delete("sessions").RunWith(nil).Exec()
+}
+
+func gormList(db *gorm.DB) {
+	db.Select("1").Order("a DESC, b").Find(nil)
+}
+
+func bunList(db *bun.DB) {
+	db.NewSelect().Table("t").OrderExpr("a DESC, b")
+}

@@ -273,6 +273,26 @@ jobs:
     - name: Test the audit script
       run: bash skills/relica/scripts/audit_test.sh
 
+    # The plugin cache keys on plugin.json's version, so it must be the version
+    # being released: equal to the top CHANGELOG version, or above the last
+    # release while the top is [Unreleased].
+    - name: plugin.json version matches CHANGELOG
+      run: |
+        plugin=$(sed -nE 's/^[[:space:]]*"version":[[:space:]]*"([^"]+)".*/\1/p' .claude-plugin/plugin.json | head -1)
+        top=$(sed -nE 's/^## \[([^]]+)\].*/\1/p' CHANGELOG.md | head -1)
+        released=$(sed -nE 's/^## \[([0-9]+\.[0-9]+\.[0-9]+)\].*/\1/p' CHANGELOG.md | head -1)
+        echo "plugin.json $plugin, CHANGELOG top [$top], last released $released"
+        if [ "$top" = "Unreleased" ]; then
+          newest=$(printf '%s\n%s\n' "$released" "$plugin" | sort -V | tail -1)
+          if [ "$plugin" = "$released" ] || [ "$newest" != "$plugin" ]; then
+            echo "::error::plugin.json version $plugin must be above the last release $released while CHANGELOG has [Unreleased]"
+            exit 1
+          fi
+        elif [ "$plugin" != "$top" ]; then
+          echo "::error::plugin.json version $plugin != CHANGELOG [$top] (the plugin cache keys on it)"
+          exit 1
+        fi
+
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
