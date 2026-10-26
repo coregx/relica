@@ -44,6 +44,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`BatchInsert(...).ValuesMap(m)`** dropped keys that are not batch columns (a typo wrote NULL); such a key is now an error
 - **`autoid` tag with `gen=<name>` that is not registered** fell back to UUID v7 silently; it is now an error naming the generator — register it with `RegisterIDGenerator` before inserting
 
+### Removed
+
+- **`relica.NewDB`** (deprecated since v0.12.0) — use `relica.Open(driver, dsn, opts...)`, same arguments
+- **`Query.QueryParams()`** (deprecated) — use `Query.Params()`
+
+### Fixed
+
+- **`relica.Open` with a driver that has no SQL dialect panicked**; it returns an error naming the supported driver names, before the pool is opened. The message no longer points at the internal `dialects.RegisterDialect`
+
 ### Added
 
 - **`WithNaming(Naming)`** — how a DB derives names: `Naming{Table, Column}` funcs over `TableSource` / `ColumnSource` (model, declaring struct, field, index path). Built-in `Snake(...)` with `SplitAcronyms()` (`HTTPLog` → `http_log`), `Initialisms(GoInitialisms()...)` (`IPv4Address` → `ipv4_address`, whole tokens only), `TablePrefix`, `PluralTables`; `SnakeCase` for custom rules

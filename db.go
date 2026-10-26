@@ -403,21 +403,6 @@ func Open(driverName, dsn string, opts ...Option) (*DB, error) {
 	return &DB{db: coreDB}, nil
 }
 
-// NewDB creates a database connection.
-//
-// Deprecated: Use Open instead. NewDB will be removed in a future version.
-//
-// Example:
-//
-//	db, err := relica.NewDB("postgres", dsn)
-func NewDB(driverName, dsn string) (*DB, error) {
-	coreDB, err := core.NewDB(driverName, dsn)
-	if err != nil {
-		return nil, err
-	}
-	return &DB{db: coreDB}, nil
-}
-
 // WrapDB wraps an existing *sql.DB connection with Relica's query builder.
 //
 // The caller is responsible for managing the connection lifecycle (including Close()).
@@ -2913,13 +2898,6 @@ func (q *Query) Params() []any {
 		return nil
 	}
 	return q.q.Params()
-}
-
-// QueryParams returns the query parameters.
-//
-// Deprecated: Use Params instead.
-func (q *Query) QueryParams() []any {
-	return q.Params()
 }
 
 // ============================================================================

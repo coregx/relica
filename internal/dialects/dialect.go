@@ -43,13 +43,19 @@ func RegisterDialect(name string, d Dialect) {
 // Supported built-in names: "postgres", "postgresql", "pgx", "mysql", "sqlite", "sqlite3".
 // Custom dialects can be added via RegisterDialect.
 func GetDialect(name string) Dialect {
-	if d, ok := dialects[name]; ok {
-		return d
+	d, err := LookupDialect(name)
+	if err != nil {
+		panic(err.Error())
 	}
-	panic(fmt.Sprintf(
-		"relica: unsupported database dialect %q. Supported built-in dialects: "+
-			"postgres, postgresql, pgx, mysql, sqlite, sqlite3. "+
-			"Use dialects.RegisterDialect() to register a custom dialect.",
-		name,
-	))
+	return d
+}
+
+// LookupDialect returns the dialect registered for a driver name, or an error
+// naming the supported ones.
+func LookupDialect(name string) (Dialect, error) {
+	if d, ok := dialects[name]; ok {
+		return d, nil
+	}
+	return nil, fmt.Errorf("relica: no SQL dialect for driver %q; supported driver names: "+
+		"postgres, postgresql, pgx, mysql, sqlite, sqlite3", name)
 }

@@ -142,24 +142,6 @@ func TestWrapDB_ReturnsDB(t *testing.T) {
 	}
 }
 
-func TestNewDB_Deprecated_ReturnsDB(t *testing.T) {
-	db, err := relica.NewDB("sqlite3", "test")
-	if err != nil {
-		t.Fatalf("NewDB: %v", err)
-	}
-	defer db.Close()
-	if db == nil {
-		t.Fatal("expected non-nil DB")
-	}
-}
-
-func TestNewDB_Deprecated_InvalidDriver_ReturnsError(t *testing.T) {
-	_, err := relica.NewDB("nonexistent_driver_xyz", "dsn")
-	if err == nil {
-		t.Fatal("expected error for unknown driver")
-	}
-}
-
 // ─── DB lifecycle ─────────────────────────────────────────────────────────────
 
 func TestClose_NoError(t *testing.T) {
@@ -778,13 +760,6 @@ func TestQuery_SQL_Params_Nil(t *testing.T) {
 	params := q.Params()
 	_ = sqlStr
 	_ = params
-}
-
-func TestQuery_QueryParams_Deprecated(t *testing.T) {
-	db := openTestDB(t)
-	q := db.NewQuery("SELECT 1")
-	// QueryParams is deprecated alias for Params; must not panic.
-	_ = q.QueryParams()
 }
 
 func TestQuery_Bind(t *testing.T) {
@@ -1744,4 +1719,20 @@ func TestSelectQuery_ExplainAnalyze_NoPanic(t *testing.T) {
 	// ExplainAnalyze also executes the underlying query. Same as Explain —
 	// the stub cannot produce parseable EXPLAIN output. Verify no panic.
 	_, _ = db.Select("id").From("users").Where("id = ?", 1).ExplainAnalyze()
+}
+
+// AUDIT-001 O4: Open with a driver that has no SQL dialect panicked inside
+// GetDialect; it returns an error now.
+func TestOpen_DriverWithoutDialect_ReturnsError(t *testing.T) {
+	sql.Register("relica_no_dialect", &stubDriver{})
+	db, err := relica.Open("relica_no_dialect", "x")
+	if err == nil || db != nil {
+		t.Fatalf("Open = %v, %v; want an error", db, err)
+	}
+	if !strings.Contains(err.Error(), `no SQL dialect for driver "relica_no_dialect"`) {
+		t.Fatalf("err = %v", err)
+	}
+	if _, err := relica.Open("nonexistent_driver_xyz", "dsn"); err == nil {
+		t.Fatal("unknown driver: expected an error")
+	}
 }

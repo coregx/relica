@@ -53,7 +53,7 @@ func TestDriverName_SQLite(t *testing.T) {
 	got := ds.DB.DriverName()
 
 	// modernc.org/sqlite registers as "sqlite" in testutil.go (SetupSQLiteTestDB
-	// calls relica.NewDB("sqlite", ":memory:")); the driver itself may internally
+	// calls relica.Open("sqlite", ":memory:")); the driver itself may internally
 	// use "sqlite" or "sqlite3" — what matters is that the stored name matches
 	// the one we passed in.
 	if got != "sqlite" && got != "sqlite3" {
