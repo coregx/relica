@@ -109,13 +109,13 @@ func TestFindByPublicID_NoPrefixTag_PassesValidation(t *testing.T) {
 		t.Errorf("no-prefix autoid should accept any ID: unexpected error: %v", err)
 	}
 
-	// Verify FindAutoIDFields finds the field correctly
-	fields := util.FindAutoIDFields(reflect.ValueOf(event).Elem())
-	if len(fields) != 1 {
-		t.Errorf("expected length %d, got %d", 1, len(fields))
+	// The struct-info builder finds the autoid field with no prefix
+	fields, err := mockDB("postgres").autoIDFields(reflect.TypeOf(event).Elem())
+	if err != nil || len(fields) != 1 {
+		t.Fatalf("autoIDFields = %v, %v", fields, err)
 	}
-	if fields[0].Prefix != "" {
-		t.Errorf("got %v, want %v", fields[0].Prefix, "")
+	if fields[0].prefix != "" || fields[0].column != "public_id" {
+		t.Errorf("got prefix %q column %q", fields[0].prefix, fields[0].column)
 	}
 }
 

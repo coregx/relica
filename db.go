@@ -82,9 +82,6 @@ package relica
 import (
 	"context"
 	"database/sql"
-	"errors"
-	"reflect"
-	"sort"
 	"time"
 
 	"github.com/coregx/relica/internal/core"
@@ -285,14 +282,20 @@ var (
 // ModelQuery simplifies database operations by automatically inferring
 // table names and primary keys from struct definitions, similar to ozzo-dbx.
 //
-// The table name is determined by:
-//  1. TableName() method if model implements interface{ TableName() string }
-//  2. Otherwise: struct name lowercased with 's' suffix (e.g., User → users)
+// The table name is determined by (ADR-018):
+//  1. Table("x") on the query
+//  2. a TableName() string method on the model type, value or pointer receiver
+//  3. otherwise the DB's Naming (WithNaming); default snake_case singular:
+//     UserProfile → user_profile, User → user
 //
-// The primary key is detected from:
-//  1. Field with db:"id" tag
-//  2. Field with db:"*_id" tag (e.g., db:"user_id")
-//  3. Field named "ID"
+// Columns: the db tag, otherwise the DB's Naming (default snake_case of the
+// field name: CreatedAt → created_at). db:"-" skips a field; embedded structs
+// are flattened.
+//
+// The primary key is:
+//  1. every field tagged pk — db:"col,pk", db:",pk" or the legacy db:"pk" —
+//     in declaration order (several = composite key)
+//  2. otherwise the field named ID, then Id (embedded fields included)
 //
 // Example:
 //
@@ -362,6 +365,14 @@ type Query struct {
 	err error // Error from query construction (e.g., struct conversion).
 }
 
+// ScanMode overrides the DB's ScanMode (see WithScanMode) for this query.
+func (q *Query) ScanMode(m ScanMode) *Query {
+	if q.q != nil {
+		q.q.ScanMode(core.ScanMode(m))
+	}
+	return q
+}
+
 // ============================================================================
 // DB Methods
 // ============================================================================
@@ -420,10 +431,15 @@ func NewDB(driverName, dsn string) (*DB, error) {
 //	sqlDB, _ := sql.Open("postgres", dsn)
 //	sqlDB.SetMaxOpenConns(100)
 //	sqlDB.SetConnMaxLifetime(time.Hour)
-//	db := relica.WrapDB(sqlDB, "postgres")
+//	db := relica.WrapDB(sqlDB, "postgres", relica.WithQueryHook(hook))
 //	defer sqlDB.Close() // Caller's responsibility
-func WrapDB(sqlDB *sql.DB, driverName string) *DB {
-	coreDB := core.WrapDB(sqlDB, driverName)
+//
+// Options apply as in Open: hooks, logger, Naming, ScanMode, statement cache,
+// health check. Pool options (WithMaxOpenConns, …) change the caller's
+// *sql.DB. WrapDB panics if sqlDB is nil or the driver name has no dialect —
+// programmer errors, like a bad pattern in regexp.MustCompile.
+func WrapDB(sqlDB *sql.DB, driverName string, opts ...Option) *DB {
+	coreDB := core.WrapDB(sqlDB, driverName, coreOptions(opts)...)
 	return &DB{db: coreDB}
 }
 
@@ -621,14 +637,9 @@ func (d *DB) NewQuery(query string) *Query {
 // The model must be a pointer to a struct. The table name and primary key
 // are automatically inferred from the struct definition.
 //
-// Table name resolution:
-//  1. If model implements TableName() string, use that value
-//  2. Otherwise, use struct name lowercased + 's' (e.g., User → users)
-//
-// Primary key detection:
-//  1. Field with db:"id" tag
-//  2. Field with db:"*_id" tag (e.g., db:"user_id")
-//  3. Field named "ID"
+// Table name, columns and primary key are resolved as described on
+// ModelQuery: TableName() (value or pointer receiver) or the DB's Naming
+// (default snake_case singular, User → user); fields tagged pk, else ID/Id.
 //
 // Example:
 //
@@ -1594,25 +1605,7 @@ func (qb *QueryBuilder) Insert(table string, values map[string]any) *Query {
 //	user := User{Name: "Alice", Email: "alice@example.com"}
 //	result, err := db.Builder().InsertStruct("users", &user).Execute()
 func (qb *QueryBuilder) InsertStruct(table string, data any) *Query {
-	dataMap, err := util.StructToMap(data)
-	if err != nil {
-		return &Query{q: nil, err: err}
-	}
-
-	// Skip zero PK for auto-increment (same as Model().Insert())
-	v := reflect.ValueOf(data)
-	if v.Kind() == reflect.Pointer {
-		v = v.Elem()
-	}
-	if v.Kind() == reflect.Struct {
-		if pkInfo, err := util.FindPrimaryKeyFields(v); err == nil && pkInfo != nil && pkInfo.IsSingle() {
-			if util.IsPrimaryKeyZero(pkInfo.Values[0]) {
-				delete(dataMap, pkInfo.Columns[0])
-			}
-		}
-	}
-
-	return &Query{q: qb.qb.Insert(table, dataMap)}
+	return &Query{q: qb.qb.InsertStruct(table, data)}
 }
 
 // BatchInsertStruct builds a batch INSERT query from a slice of structs.
@@ -1627,65 +1620,8 @@ func (qb *QueryBuilder) InsertStruct(table string, data any) *Query {
 //	    {Name: "Bob", Email: "bob@example.com"},
 //	}
 //	result, err := db.Builder().BatchInsertStruct("users", users).Execute()
-//
-//nolint:cyclop // Slice validation + PK detection + column extraction + row iteration require sequential steps.
 func (qb *QueryBuilder) BatchInsertStruct(table string, data any) *Query {
-	// Validate input is a slice.
-	v := reflect.ValueOf(data)
-	if v.Kind() != reflect.Slice {
-		return &Query{q: nil, err: errors.New("BatchInsertStruct: expected slice, got " + v.Kind().String())}
-	}
-
-	if v.Len() == 0 {
-		return &Query{q: nil, err: errors.New("BatchInsertStruct: empty slice")}
-	}
-
-	// Convert first element to get columns.
-	firstMap, err := util.StructToMap(v.Index(0).Interface())
-	if err != nil {
-		return &Query{q: nil, err: err}
-	}
-
-	// Skip zero PK for auto-increment (same as Model().Insert())
-	firstElem := v.Index(0)
-	if firstElem.Kind() == reflect.Pointer {
-		firstElem = firstElem.Elem()
-	}
-	if firstElem.Kind() == reflect.Struct {
-		if pkInfo, err := util.FindPrimaryKeyFields(firstElem); err == nil && pkInfo != nil && pkInfo.IsSingle() {
-			if util.IsPrimaryKeyZero(pkInfo.Values[0]) {
-				delete(firstMap, pkInfo.Columns[0])
-			}
-		}
-	}
-
-	// Extract columns (sorted for consistency).
-	columns := make([]string, 0, len(firstMap))
-	for col := range firstMap {
-		columns = append(columns, col)
-	}
-	sort.Strings(columns)
-
-	// Build batch insert.
-	biq := qb.qb.BatchInsert(table, columns)
-
-	// Add all rows.
-	for i := 0; i < v.Len(); i++ {
-		rowMap, err := util.StructToMap(v.Index(i).Interface())
-		if err != nil {
-			return &Query{q: nil, err: err}
-		}
-
-		// Extract values in column order.
-		values := make([]any, len(columns))
-		for j, col := range columns {
-			values[j] = rowMap[col]
-		}
-
-		biq = biq.Values(values...)
-	}
-
-	return &Query{q: biq.Build()}
+	return &Query{q: qb.qb.BatchInsertStruct(table, data)}
 }
 
 // UpdateStruct builds an UPDATE query from a struct using db tags.
@@ -1700,12 +1636,7 @@ func (qb *QueryBuilder) BatchInsertStruct(table string, data any) *Query {
 //	    Where("id = ?", user.ID).
 //	    Execute()
 func (qb *QueryBuilder) UpdateStruct(table string, data any) *UpdateQuery {
-	dataMap, err := util.StructToMap(data)
-	if err != nil {
-		// Return UpdateQuery with error that will fail on Execute.
-		return &UpdateQuery{uq: qb.qb.Update(table), err: err}
-	}
-	return &UpdateQuery{uq: qb.qb.Update(table).Set(dataMap)}
+	return &UpdateQuery{uq: qb.qb.UpdateStruct(table, data)}
 }
 
 // Update creates an UPDATE query for the specified table.
@@ -2099,6 +2030,16 @@ func (sq *SelectQuery) Having(condition any, args ...any) *SelectQuery {
 //	// SELECT DISTINCT "category" FROM "products"
 func (sq *SelectQuery) Distinct() *SelectQuery {
 	sq.sq.Distinct()
+	return sq
+}
+
+// ScanMode overrides the DB's ScanMode (see WithScanMode) for this query.
+//
+// Example:
+//
+//	db.Select().From("users").ScanMode(relica.ScanLenient).All(&partial)
+func (sq *SelectQuery) ScanMode(m ScanMode) *SelectQuery {
+	sq.sq.ScanMode(core.ScanMode(m))
 	return sq
 }
 

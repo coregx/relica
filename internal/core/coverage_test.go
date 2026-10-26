@@ -811,43 +811,7 @@ func TestDetectOperation(t *testing.T) {
 
 // ─── utils.go coverage ───────────────────────────────────────────────────────
 
-func TestDefaultFieldMapFunc(t *testing.T) {
-	tests := []struct {
-		in   string
-		want string
-	}{
-		{"ID", "i_d"},
-		{"Name", "name"},
-		{"UserID", "user_i_d"},
-		{"CreatedAt", "created_at"},
-		{"abc", "abc"},
-	}
-	for _, tt := range tests {
-		got := DefaultFieldMapFunc(tt.in)
-		if got != tt.want {
-			t.Errorf("DefaultFieldMapFunc(%q): want %q, got %q", tt.in, tt.want, got)
-		}
-	}
-}
-
-func TestGetTableName(t *testing.T) {
-	type MyModel struct{}
-	// Should snake_case the struct name.
-	got := GetTableName(MyModel{})
-	if got != "my_model" {
-		t.Errorf("GetTableName: want 'my_model', got %q", got)
-	}
-}
-
-func TestGetTableName_Pointer(t *testing.T) {
-	type Order struct{}
-	got := GetTableName(&Order{})
-	if got != "order" {
-		t.Errorf("GetTableName pointer: want 'order', got %q", got)
-	}
-}
-
-func TestGetTableName_TableModel(t *testing.T) {
+func TestQuoteIdentifier_Spaces(t *testing.T) {
 	// Verify QuoteIdentifier in package handles spaces correctly.
 	got := QuoteIdentifier("my table")
 	if got != `"my table"` {

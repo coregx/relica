@@ -305,7 +305,8 @@ func CreateUsersTable(t *testing.T, db *relica.DB, dialect string) {
 				email VARCHAR(255) UNIQUE NOT NULL,
 				age INTEGER,
 				status INTEGER DEFAULT 1,
-				role VARCHAR(50)
+				role VARCHAR(50),
+				deleted_at VARCHAR(50)
 			)
 		`
 	case "mysql":
@@ -316,7 +317,8 @@ func CreateUsersTable(t *testing.T, db *relica.DB, dialect string) {
 				email VARCHAR(255) UNIQUE NOT NULL,
 				age INT,
 				status INT DEFAULT 1,
-				role VARCHAR(50)
+				role VARCHAR(50),
+				deleted_at VARCHAR(50)
 			)
 		`
 	case "sqlite":
@@ -327,7 +329,8 @@ func CreateUsersTable(t *testing.T, db *relica.DB, dialect string) {
 				email VARCHAR(255) UNIQUE NOT NULL,
 				age INTEGER,
 				status INTEGER DEFAULT 1,
-				role VARCHAR(50)
+				role VARCHAR(50),
+				deleted_at VARCHAR(50)
 			)
 		`
 	}

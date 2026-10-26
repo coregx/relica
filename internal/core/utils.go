@@ -1,46 +1,10 @@
 package core
 
 import (
-	"reflect"
 	"strings"
 
 	"github.com/coregx/relica/internal/dialects"
 )
-
-// DefaultFieldMapFunc converts Go struct field names to snake_case database column names.
-func DefaultFieldMapFunc(field string) string {
-	result := make([]rune, 0, len(field)+5)
-	for i, r := range field {
-		if i > 0 && 'A' <= r && r <= 'Z' {
-			result = append(result, '_')
-		}
-		result = append(result, r)
-	}
-	return strings.ToLower(string(result))
-}
-
-// GetTableName extracts the database table name from a model struct or interface.
-func GetTableName(model any) string {
-	if tm, ok := model.(TableModel); ok {
-		return tm.TableName()
-	}
-
-	t := reflect.TypeOf(model)
-	if t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-
-	if t.Kind() == reflect.Slice {
-		return GetTableName(reflect.Zero(t.Elem()).Interface())
-	}
-
-	return DefaultFieldMapFunc(t.Name())
-}
-
-// TableModel defines an interface for models that provide custom table names.
-type TableModel interface {
-	TableName() string
-}
 
 // QuoteIdentifier quotes a database identifier using double quotes.
 func QuoteIdentifier(s string) string {

@@ -690,3 +690,30 @@ PostgreSQL's `EXCLUDED`. The default stays `col = VALUES(col)` (MySQL 5.7–9.x,
 everywhere; with `DoUpdate`, PostgreSQL rejects the statement (error 21000) and MySQL/SQLite keep the last row.
 
 **Find affected code:** `grep -rn "\.Upsert(\|OnConflict(" --include=*.go .` and check each chain ends in one action.
+
+## Table names, column names, struct scanning (ADR-018)
+
+| v0.19 | v0.20.0 | Keep the old behavior |
+|---|---|---|
+| model without `TableName()` → lower case + `s` (`UserProfile` → `userprofiles`) | snake_case singular (`user_profile`) | add `func (UserProfile) TableName() string { return "userprofiles" }` |
+| `func (*T) TableName()` ignored for `db.Model(T{})` | honoured | — |
+| untagged field written as `"CreatedAt"`, read case-insensitively | `created_at` on write and read | add `db:"CreatedAt"` tags, or `WithNaming(relica.Naming{Column: func(c relica.ColumnSource) string { return c.Field.Name }})` |
+| embedded struct written as one column (or "unsupported type") | fields flattened | — (an embedded `*T` or a tagged embedded struct is now an error: embed `T`, tag its fields) |
+| `db:"pk"` wrote column `pk` | primary key, column from the naming rule | `db:"pk_column,pk"` for an explicit column |
+| result without a column for a struct field → zero, `err == nil` | error (`ScanRequireFields`) | list the columns in `Select(...)`, tag the field `db:"-"`, or `relica.WithScanMode(relica.ScanLenient)` (per query: `.ScanMode(relica.ScanLenient)`) |
+| `BatchInsertStruct` with some zero and some explicit keys → explicit keys dropped | error | split the batch |
+
+**Find affected code:**
+- models used with `Model(...)`, `SelectQuery.Model(...)` or `InsertStruct`/`BatchInsertStruct`/`UpdateStruct` that have
+  no `TableName()` and no `Table("x")`: the derived name changed unless it was already a single lower-case word ending
+  in `s`;
+- struct fields without a `db` tag in such models: the column name changed unless the field name was one lower-case
+  word (`Name` → `name` both before and after, since reads were case-insensitive);
+- run the test suite: every struct read whose query does not return a column for each field now fails with
+  `field X expects column "x", which the result does not have` — the field was silently zero before.
+
+The rule (ozzo-dbx, `regexp ([^A-Z_])([A-Z])` → `${1}_$2`, lower case) and its alternatives (`SplitAcronyms()`,
+`Initialisms(GoInitialisms()...)`, `TablePrefix`, `PluralTables`, a custom `Naming`) are described in
+[AGENTS.md](../AGENTS.md#table-and-column-names-v0200-adr-018) and on `relica.Snake`.
+
+`relica.WrapDB(sqlDB, driver, opts...)` now accepts the same options as `Open`; existing calls compile unchanged.

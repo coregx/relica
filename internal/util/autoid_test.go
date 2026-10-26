@@ -2,7 +2,6 @@ package util
 
 import (
 	"errors"
-	"reflect"
 	"strings"
 	"testing"
 )
@@ -83,129 +82,6 @@ func TestParseDBTag_BackwardCompatible(t *testing.T) {
 	}
 	if isAutoInc {
 		t.Error("expected false")
-	}
-}
-
-// --- FindAutoIDFields ---
-
-func TestFindAutoIDFields_Single(t *testing.T) {
-	type User struct {
-		ID       int64  `db:"id,pk"`
-		PublicID string `db:"public_id,autoid:usr"`
-		Name     string `db:"name"`
-	}
-
-	v := reflect.ValueOf(User{})
-	fields := FindAutoIDFields(v)
-	if len(fields) != 1 {
-		t.Fatalf("expected length %d, got %d", 1, len(fields))
-	}
-	if fields[0].Column != "public_id" {
-		t.Errorf("got %v, want %v", fields[0].Column, "public_id")
-	}
-	if fields[0].Prefix != "usr" {
-		t.Errorf("got %v, want %v", fields[0].Prefix, "usr")
-	}
-	if fields[0].Generator != "" {
-		t.Errorf("got %v, want %v", fields[0].Generator, "")
-	}
-	if fields[0].FieldIndex != 1 {
-		t.Errorf("got %v, want %v", fields[0].FieldIndex, 1)
-	}
-}
-
-func TestFindAutoIDFields_Multiple(t *testing.T) {
-	type Order struct {
-		ID       int64  `db:"id,pk"`
-		PublicID string `db:"public_id,autoid:ord"`
-		TraceID  string `db:"trace_id,autoid:trc,gen=ulid"`
-	}
-
-	v := reflect.ValueOf(Order{})
-	fields := FindAutoIDFields(v)
-	if len(fields) != 2 {
-		t.Fatalf("expected length %d, got %d", 2, len(fields))
-	}
-	if fields[0].Column != "public_id" {
-		t.Errorf("got %v, want %v", fields[0].Column, "public_id")
-	}
-	if fields[0].Prefix != "ord" {
-		t.Errorf("got %v, want %v", fields[0].Prefix, "ord")
-	}
-	if fields[1].Column != "trace_id" {
-		t.Errorf("got %v, want %v", fields[1].Column, "trace_id")
-	}
-	if fields[1].Prefix != "trc" {
-		t.Errorf("got %v, want %v", fields[1].Prefix, "trc")
-	}
-	if fields[1].Generator != "ulid" {
-		t.Errorf("got %v, want %v", fields[1].Generator, "ulid")
-	}
-}
-
-func TestFindAutoIDFields_None(t *testing.T) {
-	type Simple struct {
-		ID   int64  `db:"id,pk"`
-		Name string `db:"name"`
-	}
-
-	v := reflect.ValueOf(Simple{})
-	fields := FindAutoIDFields(v)
-	if fields != nil {
-		t.Errorf("expected nil, got %v", fields)
-	}
-}
-
-func TestFindAutoIDFields_NoPrefix(t *testing.T) {
-	type Event struct {
-		ID       int64  `db:"id,pk"`
-		PublicID string `db:"public_id,autoid"`
-	}
-
-	v := reflect.ValueOf(Event{})
-	fields := FindAutoIDFields(v)
-	if len(fields) != 1 {
-		t.Fatalf("expected length %d, got %d", 1, len(fields))
-	}
-	if fields[0].Column != "public_id" {
-		t.Errorf("got %v, want %v", fields[0].Column, "public_id")
-	}
-	if fields[0].Prefix != "" {
-		t.Errorf("got %v, want %v", fields[0].Prefix, "")
-	}
-	if !ParseDBTagFull("public_id,autoid").IsAutoID {
-		t.Error("expected true")
-	}
-}
-
-func TestFindAutoIDFields_Pointer(t *testing.T) {
-	type User struct {
-		ID       int64  `db:"id,pk"`
-		PublicID string `db:"public_id,autoid:usr"`
-	}
-
-	u := &User{}
-	fields := FindAutoIDFields(reflect.ValueOf(u))
-	if len(fields) != 1 {
-		t.Fatalf("expected length %d, got %d", 1, len(fields))
-	}
-	if fields[0].Prefix != "usr" {
-		t.Errorf("got %v, want %v", fields[0].Prefix, "usr")
-	}
-}
-
-func TestFindAutoIDFields_NilPointer(t *testing.T) {
-	var u *struct{ ID int64 }
-	fields := FindAutoIDFields(reflect.ValueOf(u))
-	if fields != nil {
-		t.Errorf("expected nil, got %v", fields)
-	}
-}
-
-func TestFindAutoIDFields_NonStruct(t *testing.T) {
-	fields := FindAutoIDFields(reflect.ValueOf(42))
-	if fields != nil {
-		t.Errorf("expected nil, got %v", fields)
 	}
 }
 
@@ -370,4 +246,10 @@ func BenchmarkGenerateAutoID(b *testing.B) {
 	for range b.N {
 		GenerateAutoID("usr", "")
 	}
+}
+
+// parseDBTag adapts ParseDBTagFull for the tag-parsing tests.
+func parseDBTag(tag string) (column string, isPK, isAutoIncrement bool) {
+	info := ParseDBTagFull(tag)
+	return info.Column, info.IsPK, info.AutoIncrement
 }

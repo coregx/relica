@@ -1,13 +1,11 @@
 package core
 
 import (
-	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/coregx/relica/internal/dialects"
-	"github.com/coregx/relica/internal/util"
 )
 
 // ============================================================================
@@ -451,99 +449,7 @@ func TestUpdateChanged_NothingChanged_NilNoQuery(t *testing.T) {
 }
 
 // ============================================================================
-// columnFromField unit tests
 // ============================================================================
 
-func TestColumnFromField_WithTag(t *testing.T) {
-	type sample struct {
-		Name string `db:"name"`
-	}
-	t2 := reflect.TypeOf(sample{})
-	col, skip := columnFromField(t2.Field(0))
-	if skip {
-		t.Error("expected false")
-	}
-	if col != "name" {
-		t.Errorf("got %v, want %v", col, "name")
-	}
-}
-
-func TestColumnFromField_WithSkipTag(t *testing.T) {
-	type sample struct {
-		Name string `db:"-"`
-	}
-	t2 := reflect.TypeOf(sample{})
-	_, skip := columnFromField(t2.Field(0))
-	if !skip {
-		t.Error("expected true")
-	}
-}
-
-func TestColumnFromField_NoTag(t *testing.T) {
-	type sample struct {
-		MyField string
-	}
-	t2 := reflect.TypeOf(sample{})
-	col, skip := columnFromField(t2.Field(0))
-	if skip {
-		t.Error("expected false")
-	}
-	if col != "MyField" {
-		t.Errorf("got %v, want %v", col, "MyField")
-	}
-}
-
-func TestColumnFromField_PKCompositeTag(t *testing.T) {
-	// db:"col_name,pk" → column = "col_name"
-	type sample struct {
-		TenantID int `db:"tenant_id,pk"`
-	}
-	t2 := reflect.TypeOf(sample{})
-	col, skip := columnFromField(t2.Field(0))
-	if skip {
-		t.Error("expected false")
-	}
-	if col != "tenant_id" {
-		t.Errorf("got %v, want %v", col, "tenant_id")
-	}
-}
-
 // ============================================================================
-// buildPKSet unit tests
 // ============================================================================
-
-func TestBuildPKSet_SinglePK(t *testing.T) {
-	pkInfo := &util.PrimaryKeyInfo{
-		Columns: []string{"id"},
-	}
-	set := buildPKSet(pkInfo)
-	if !set["id"] {
-		t.Error("expected true")
-	}
-	if set["name"] {
-		t.Error("expected false")
-	}
-}
-
-func TestBuildPKSet_CompositePK(t *testing.T) {
-	pkInfo := &util.PrimaryKeyInfo{
-		Columns: []string{"order_id", "product_id"},
-	}
-	set := buildPKSet(pkInfo)
-	if !set["order_id"] {
-		t.Error("expected true")
-	}
-	if !set["product_id"] {
-		t.Error("expected true")
-	}
-	if set["qty"] {
-		t.Error("expected false")
-	}
-}
-
-func TestBuildPKSet_Nil(t *testing.T) {
-	set := buildPKSet(nil)
-	if len(set) != 0 {
-		t.Errorf("expected empty, got %d", len(set))
-	}
-}
