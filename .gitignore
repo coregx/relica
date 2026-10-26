@@ -44,8 +44,10 @@ protoc-*.tar.gz
 .cache/
 .release/
 
-# AI agents
+# AI agents (.mcp.json holds absolute local paths, .gode/ the GODE graph)
 .claude/
+/.mcp.json
+/.gode/
 .goco/
 .goda/
 
