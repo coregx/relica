@@ -414,19 +414,31 @@ func (tx *Tx) Rollback() error {
 	return tx.tx.Rollback()
 }
 
-// ExecContext executes a raw SQL query within the transaction.
+// ExecContext executes a raw SQL query within the transaction. The QueryHook
+// sees it like any other statement.
 func (tx *Tx) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
-	return tx.tx.ExecContext(ctx, query, args...)
+	start := time.Now()
+	result, err := tx.tx.ExecContext(ctx, query, args...)
+	tx.builder.db.hookRaw(ctx, query, args, start, result, err)
+	return result, err
 }
 
 // QueryContext executes a raw SQL query within the transaction and returns rows.
+// The QueryHook sees it once the rows are returned.
 func (tx *Tx) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	return tx.tx.QueryContext(ctx, query, args...)
+	start := time.Now()
+	rows, err := tx.tx.QueryContext(ctx, query, args...)
+	tx.builder.db.hookRaw(ctx, query, args, start, nil, err)
+	return rows, err
 }
 
 // QueryRowContext executes a raw SQL query within the transaction returning one row.
+// The QueryHook sees it with the row's error (sql.ErrNoRows included).
 func (tx *Tx) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
-	return tx.tx.QueryRowContext(ctx, query, args...)
+	start := time.Now()
+	row := tx.tx.QueryRowContext(ctx, query, args...)
+	tx.builder.db.hookRaw(ctx, query, args, start, nil, row.Err())
+	return row
 }
 
 // NewQuery creates a raw SQL query that executes within the transaction.
@@ -634,6 +646,7 @@ func (db *DB) ExecContext(ctx context.Context, query string, args ...any) (sql.R
 	// Execute query
 	result, err := db.sqlDB.ExecContext(ctx, query, args...)
 	duration := time.Since(start)
+	db.hookRaw(ctx, query, args, start, result, err)
 
 	// Audit log if enabled
 	if db.auditor != nil {
@@ -660,6 +673,7 @@ func (db *DB) QueryContext(ctx context.Context, query string, args ...any) (*sql
 	// Execute query
 	rows, err := db.sqlDB.QueryContext(ctx, query, args...)
 	duration := time.Since(start)
+	db.hookRaw(ctx, query, args, start, nil, err)
 
 	// Audit log if enabled
 	if db.auditor != nil {
@@ -676,7 +690,31 @@ func (db *DB) QueryContext(ctx context.Context, query string, args ...any) (*sql
 func (db *DB) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
 	// Note: We cannot validate here because QueryRowContext cannot return errors.
 	// Validation must be done at a higher level (QueryBuilder) or users should use QueryContext.
-	return db.sqlDB.QueryRowContext(ctx, query, args...)
+	start := time.Now()
+	row := db.sqlDB.QueryRowContext(ctx, query, args...)
+	db.hookRaw(ctx, query, args, start, nil, row.Err())
+	return row
+}
+
+// hookRaw reports a raw ExecContext/QueryContext/QueryRowContext statement to
+// the QueryHook, as Query does for builder statements: QueryHook and
+// WithLogger promise every statement.
+func (db *DB) hookRaw(ctx context.Context, query string, args []any, start time.Time, result sql.Result, err error) {
+	if db.queryHook == nil {
+		return
+	}
+	var rowsAffected int64
+	if result != nil {
+		rowsAffected, _ = result.RowsAffected()
+	}
+	db.invokeHook(ctx, QueryEvent{
+		SQL:          query,
+		Args:         args,
+		Duration:     time.Since(start),
+		RowsAffected: rowsAffected,
+		Error:        err,
+		Operation:    DetectOperation(query),
+	})
 }
 
 // detectOperation attempts to detect the SQL operation type from a query string.
