@@ -63,6 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`nil` passed to `FromSelect`, `Union`, `UnionAll`, `Intersect`, `Except`, `With` or `WithRecursive` panicked**; it is now an error returned when the query runs
 - **A query that contains itself** (`q.Union(q)`, or two queries embedding each other) overflowed the stack when built; it is now an error
 - **`UpdateStruct` wrote the primary key into SET** — the godoc example (a struct without an ID plus `Where("id = ?", …)`) ran `SET "id" = 0`, and `Where` on another column changed that row's key to 0. Like `Model().Update()`, `UpdateStruct` (on `DB`, `Tx` and `Builder()`) now leaves the primary-key columns (a `pk` tag, or a field named `ID`/`Id`) out of SET; a struct with no other column is an error
+- **`MaskArgs` missed snake_case columns** such as `password_hash`, `access_token`, `refresh_token`, `user_password`, `stripe_api_key`: the word-boundary match treated `_` as a letter. A sensitive name now also matches as a part of a snake_case name; a column like `auth_method` is masked too (the safe direction)
 - **`UnpinQuery` returned true for a cached query that was not pinned**; it returns false, as documented
 - **`IsHealthy()` and `Stats().Healthy` reported true after `Close`**; a closed DB is not healthy (with or without `WithHealthCheck`)
 - **A second `Close` on a DB opened `WithHealthCheck` panicked** (close of a closed channel); `Close` is now idempotent and returns nil on later calls

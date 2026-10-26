@@ -267,3 +267,33 @@ func BenchmarkSanitizer_FormatParams(b *testing.B) {
 		_ = sanitizer.FormatParams(params)
 	}
 }
+
+// TestSanitizer_SnakeCaseNames verifies O1: a sensitive name inside a
+// snake_case column (password_hash, access_token) is detected; \b treated
+// "_" as a word character and missed them. Names that only start with the
+// same letters (author, tokenizer) stay unmasked.
+func TestSanitizer_SnakeCaseNames(t *testing.T) {
+	s := NewSanitizer(nil)
+	for _, sql := range []string{
+		`UPDATE users SET password_hash = ? WHERE id = ?`,
+		`INSERT INTO "sessions" ("user_id", "access_token") VALUES ($1, $2)`,
+		"SELECT * FROM users WHERE `refresh_token` = ?",
+		`UPDATE accounts SET user_password = ?`,
+		`INSERT INTO keys (stripe_api_key) VALUES (?)`,
+	} {
+		got := s.MaskParams(sql, []any{"s3cr3t-value", 7})
+		if got[0] != defaultMaskValue {
+			t.Errorf("%s: params %v not masked", sql, got)
+		}
+	}
+	for _, sql := range []string{
+		`SELECT * FROM books WHERE author = ?`,
+		`UPDATE jobs SET tokenizer = ? WHERE id = ?`,
+		`SELECT name FROM users WHERE id = ?`,
+	} {
+		got := s.MaskParams(sql, []any{"plain", 7})
+		if got[0] != "plain" {
+			t.Errorf("%s: params %v masked", sql, got)
+		}
+	}
+}
