@@ -56,6 +56,30 @@ func runCountSemanticsTests(t *testing.T, db *relica.DB) {
 		assert.Equal(t, rowsOf(q()), count(q()), name)
 	}
 	assert.Equal(t, int64(1), count(db.Select("MAX(salary)").From("cs_emp")))
+
+	// F4: a grouped/distinct/compound Count is a derived table. SELECT * over
+	// a join has two "id" columns; MySQL rejects duplicate names in a derived
+	// table (error 1060), PostgreSQL and SQLite accept them. Listing the
+	// columns works everywhere.
+	_, err := db.ExecContext(ctx, "DROP TABLE IF EXISTS cs_dept")
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, "CREATE TABLE cs_dept (id INTEGER PRIMARY KEY, name VARCHAR(20) NOT NULL)")
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, "INSERT INTO cs_dept (id, name) VALUES (1, 'eng'), (2, 'ops')")
+	require.NoError(t, err)
+	joined := func() *relica.SelectQuery {
+		return db.Select().From("cs_emp e").InnerJoin("cs_dept d", "d.id = e.dept").Distinct()
+	}
+	n, err := joined().Count()
+	if db.DriverName() == dialectMySQL {
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "Duplicate column", "MySQL error 1060")
+	} else {
+		require.NoError(t, err)
+		assert.Equal(t, int64(4), n)
+	}
+	assert.Equal(t, int64(4), count(db.Select("e.id", "d.name").From("cs_emp e").
+		InnerJoin("cs_dept d", "d.id = e.dept").Distinct()), "listed columns count on every database")
 }
 
 func TestCountSemantics_PostgreSQL(t *testing.T) {

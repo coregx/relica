@@ -770,6 +770,10 @@ rejects unknown columns itself.
 
 Code that used `Count()` on a grouped query to get the size of one group should filter to that group with `Where`.
 
+On MySQL, `Count()` of a `Select()` (`*`) over a join with `GroupBy`/`Distinct`/a set operation now fails with
+"Duplicate column name" (error 1060): the count is a derived table, and MySQL rejects two columns of one name there.
+List the columns you select.
+
 **Find affected code:** `grep -rn "\.Count()\|\.Exists()" --include=*.go .` and check the chains that also call
 `GroupBy`, `Having`, `Distinct`, `Union`/`Intersect`/`Except` or `With`.
 
