@@ -108,11 +108,11 @@ if !db.IsHealthy() {
 func healthHandler(db *relica.DB) http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
         if err := db.PingContext(r.Context()); err != nil {
+            // Log the cause; the response is public and must not carry driver
+            // errors (host names, user names, server versions).
+            slog.ErrorContext(r.Context(), "database health check failed", "error", err)
             w.WriteHeader(http.StatusServiceUnavailable)
-            json.NewEncoder(w).Encode(map[string]string{
-                "status": "unhealthy",
-                "error":  err.Error(),
-            })
+            json.NewEncoder(w).Encode(map[string]string{"status": "unhealthy"})
             return
         }
 

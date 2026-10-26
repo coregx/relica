@@ -119,21 +119,20 @@ if !db.IsHealthy() {
 
 ### Cache Warming at Startup
 
-Pre-load frequently-used queries to eliminate startup cache misses:
+Pre-load frequently-used queries to eliminate startup cache misses. The cache is keyed by the exact SQL a
+statement sends, with the dialect's quoting and placeholders (`$1` on PostgreSQL), so take the text from `ToSQL()`
+of the same builder query the code runs; hand-written `"... WHERE id = ?"` never matches a builder query and does not
+prepare on PostgreSQL.
 
 ```go
+// sqlOf returns the text a builder query sends, the cache key.
+func sqlOf(q *relica.SelectQuery) string { s, _ := q.ToSQL(); return s }
+
 func warmDatabase(db *relica.DB) error {
     queries := []string{
-        // User queries
-        "SELECT * FROM users WHERE id = ?",
-        "SELECT * FROM users WHERE email = ?",
-
-        // Session queries
-        "SELECT * FROM sessions WHERE token = ?",
-        "INSERT INTO sessions (user_id, token, expires) VALUES (?, ?, ?)",
-
-        // Logging
-        "INSERT INTO audit_log (user_id, action, details) VALUES (?, ?, ?)",
+        sqlOf(db.Select().From("users").Where(relica.Eq("id", 0))),
+        sqlOf(db.Select().From("users").Where(relica.Eq("email", ""))),
+        sqlOf(db.Select().From("sessions").Where(relica.Eq("token", ""))),
     }
 
     n, err := db.WarmCache(queries)
@@ -151,15 +150,14 @@ func warmDatabase(db *relica.DB) error {
 Prevent eviction of hot-path queries:
 
 ```go
-// Warm cache
-db.WarmCache([]string{
-    "SELECT * FROM users WHERE id = ?",
-    "SELECT * FROM sessions WHERE token = ?",
-})
+// Warm cache (sqlOf from the previous example)
+byID := sqlOf(db.Select().From("users").Where(relica.Eq("id", 0)))
+byToken := sqlOf(db.Select().From("sessions").Where(relica.Eq("token", "")))
+db.WarmCache([]string{byID, byToken})
 
 // Pin critical queries
-db.PinQuery("SELECT * FROM users WHERE id = ?")
-db.PinQuery("SELECT * FROM sessions WHERE token = ?")
+db.PinQuery(byID)
+db.PinQuery(byToken)
 
 // These will NEVER be evicted from cache
 ```

@@ -529,15 +529,10 @@ plan, err := db.Select().
     Explain()
 
 if err != nil {
-    // Handle errors
-    switch {
-    case strings.Contains(err.Error(), "not supported"):
-        log.Printf("EXPLAIN not supported for this database")
-    case strings.Contains(err.Error(), "syntax error"):
-        log.Printf("Invalid SQL: %v", err)
-    default:
-        log.Printf("EXPLAIN failed: %v", err)
-    }
+    // A database without EXPLAIN support, a construction error in the query
+    // and a server error all arrive here; log the error itself rather than
+    // matching its text (the text is not part of the API).
+    log.Printf("EXPLAIN failed: %v", err)
 
     // Fall back to direct execution
     return query.All(&results)

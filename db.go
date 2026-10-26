@@ -547,13 +547,17 @@ func (d *DB) IsHealthy() bool {
 // The queries are prepared synchronously in the order provided.
 // Returns the number of successfully prepared queries and any error encountered.
 //
+// The cache is keyed by the exact SQL a statement sends — the dialect's
+// quoting and placeholders ($1 on PostgreSQL) included — so pass the text
+// ToSQL returns for the builder queries you want warm. Hand-written text such
+// as "SELECT * FROM users WHERE id = ?" never matches a builder query, and on
+// PostgreSQL it does not even prepare.
+//
 // Example:
 //
-//	n, err := db.WarmCache([]string{
-//	    "SELECT * FROM users WHERE id = ?",
-//	    "INSERT INTO logs (message, level) VALUES (?, ?)",
-//	    "UPDATE users SET last_login = ? WHERE id = ?",
-//	})
+//	byID, _ := db.Select().From("users").Where(relica.Eq("id", 0)).ToSQL()
+//	byEmail, _ := db.Select().From("users").Where(relica.Eq("email", "")).ToSQL()
+//	n, err := db.WarmCache([]string{byID, byEmail})
 //	if err != nil {
 //	    log.Warn("Failed to warm cache", "error", err, "warmed", n)
 //	}
@@ -568,10 +572,10 @@ func (d *DB) WarmCache(queries []string) (int, error) {
 //
 // Example:
 //
-//	// Warm and pin critical queries
-//	queries := []string{"SELECT * FROM users WHERE id = ?"}
-//	db.WarmCache(queries)
-//	db.PinQuery(queries[0])  // Will never be evicted
+//	// Warm and pin critical queries (keys are the ToSQL text, see WarmCache)
+//	byID, _ := db.Select().From("users").Where(relica.Eq("id", 0)).ToSQL()
+//	db.WarmCache([]string{byID})
+//	db.PinQuery(byID) // Will never be evicted
 func (d *DB) PinQuery(query string) bool {
 	return d.db.PinQuery(query)
 }
