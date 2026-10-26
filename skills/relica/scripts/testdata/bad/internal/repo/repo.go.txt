@@ -1,0 +1,139 @@
+// Fixture for audit_test.sh: every check of audit.sh fires here a known
+// number of times. Not compiled (the .txt suffix keeps it out of the module).
+package repo
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/coregx/relica"
+)
+
+type DB struct{ db *relica.DB }
+
+// H1 ×1
+func (d *DB) With(ctx context.Context) *relica.DB { return d.db }
+
+func h2(db *relica.DB) {
+	// H2 ×1
+	db.Update("accounts").Set(map[string]any{"balance": "balance - ?"}).Where(relica.Eq("id", 1)).Execute()
+}
+
+func h3(ctx context.Context, db *relica.DB) {
+	// H3 ×1
+	tx, err := db.Begin(ctx)
+	defer tx.Rollback()
+	_ = err
+}
+
+func m1(err error) bool {
+	// M1 ×1
+	return strings.Contains(err.Error(), "duplicate key")
+}
+
+func m2(db *relica.DB) {
+	// M2 ×1
+	db.Select().From("t").Where("name ILIKE ?", "x").All(nil)
+}
+
+func m4(db *relica.DB) {
+	// M4 ×1
+	db.Transactional(context.Background(), nil)
+}
+
+func m5(table string) string {
+	// M5 ×1
+	return fmt.Sprintf("SELECT * FROM %s", table)
+}
+
+func m6(db *relica.DB) {
+	// M6 ×1
+	db.Select().From("t").Where(relica.Like("f", "_x").EscapeChars()).All(nil)
+}
+
+// M7 ×1
+const dsn = "data.db?mode=ro"
+
+func v1(db *relica.DB) {
+	// V1 ×3: expression, NULLS LAST, two columns in one string (the last one in chain style)
+	db.Select("id").From("t").OrderBy("salary + 1 DESC").All(nil)
+	db.Select("id").From("t").OrderBy("due ASC NULLS LAST").All(nil)
+	db.Select("id").From("t").
+		OrderBy("a DESC, b").
+		All(nil)
+}
+
+func v2(db *relica.DB) {
+	// V2 ×2: a literal, DISTINCT inside the column string
+	db.Select("1").From("t").All(nil)
+	db.Select("id").AndSelect("DISTINCT name").From("t").All(nil)
+}
+
+func v3(db *relica.DB) {
+	// V3 ×1
+	db.Select("n").From("t").GroupBy("a + b").All(nil)
+}
+
+func v4(db *relica.DB) {
+	// V4 ×2: single line, and a chain with the dot at the end of the line
+	db.Delete("sessions").Execute()
+	db.Update("t").
+		Set(map[string]any{"a": 1}).
+		Execute()
+}
+
+func v5(q *relica.Query) {
+	// V5 ×2
+	relica.NewDB("postgres", "dsn")
+	_ = q.QueryParams()
+}
+
+func v6(db *relica.DB) {
+	// V6 ×1
+	db.Upsert("t", map[string]any{"id": 1}).OnConflict("id").Execute()
+}
+
+func v7(tx *relica.Tx) {
+	// V7 ×1
+	tx.Select().From("t").ForUpdate().All(nil)
+}
+
+// V8 ×2: an untagged exported field and an embedded struct next to db tags
+type Audit struct{ By string }
+
+type Row struct {
+	Audit
+	ID        int `db:"id"`
+	CreatedAt string
+}
+
+func v9(db *relica.DB, r *Row) {
+	// V9 ×1 (INFO): Row has db tags and no TableName, and the repo uses Model
+	db.Model(r).Insert()
+}
+
+func v10(db *relica.DB) {
+	// V10 ×1
+	db.Select("dept").From("t").GroupBy("dept").Count()
+}
+
+func i5(db *relica.DB, sort string) {
+	// I5 ×1
+	db.Select().From("t").OrderBy(sort).All(nil)
+}
+
+func i6(db *relica.DB, r Row) {
+	// I6 ×1
+	db.UpdateStruct("t", r).Where(relica.Eq("id", 1)).Execute()
+}
+
+// I8 ×1
+var hook = relica.WithQueryHook(nil)
+
+func i1i2i3i4(db *relica.DB) {
+	db.Select("*").From("t").All(nil)                     // I1 ×1
+	db.Builder().Select().From("t").All(nil)             // I2 ×1
+	db.Insert("t", map[string]any{"a": 1}).Execute()     // I3 ×1
+	relica.WrapDB(nil, "postgres")                       // I4 ×1
+}

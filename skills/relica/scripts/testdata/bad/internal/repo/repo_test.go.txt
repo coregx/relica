@@ -1,0 +1,9 @@
+// Fixture: a test that compares generated SQL in a repo that uses SQLite (I7 ×1).
+package repo
+
+import "testing"
+
+func TestSQL(t *testing.T) {
+	sql, _ := q.ToSQL()
+	_ = sql
+}

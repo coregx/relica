@@ -260,6 +260,30 @@ jobs:
         go mod verify
         go test -v -count=1 ./...
 
+  # Agent skill shipped in the repo (skills/relica) and its Claude Code plugin
+  # manifests: the audit script's tests and the official manifest validator.
+  agent-skill:
+    name: Agent Skill
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Test the audit script
+      run: bash skills/relica/scripts/audit_test.sh
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+
+    - name: Validate the plugin manifests and the skill
+      run: |
+        npm install -g @anthropic-ai/claude-code@2.1.296
+        claude plugin validate . --strict
+        claude plugin validate skills --strict
+
   # Benchmarks
   benchmark:
     name: Benchmark

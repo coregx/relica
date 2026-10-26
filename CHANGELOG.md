@@ -87,6 +87,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`WithNaming(Naming)`** — how a DB derives names: `Naming{Table, Column}` funcs over `TableSource` / `ColumnSource` (model, declaring struct, field, index path). Built-in `Snake(...)` with `SplitAcronyms()` (`HTTPLog` → `http_log`), `Initialisms(GoInitialisms()...)` (`IPv4Address` → `ipv4_address`, whole tokens only), `TablePrefix`, `PluralTables`; `SnakeCase` for custom rules
 - **`ScanMode`** — `ScanRequireFields` (default), `ScanLenient`, `ScanStrict`; `WithScanMode`, `SelectQuery.ScanMode`, `Query.ScanMode`
+- **Agent skill in the repository** — `skills/relica/` (Agent Skills format) with `scripts/audit.sh`, which audits a project's Relica code for mistakes found in real projects and for every v0.20.0 behaviour change (OrderBy/Select/GroupBy arguments, UPDATE/DELETE without Where, upsert actions, row locks, naming, Count/Exists), with tests on fixtures. Installable as a Claude Code plugin: `/plugin install relica --marketplace coregx/relica`; any agent can read `<module Dir>/skills/relica/SKILL.md` at its version
 - **`WrapDB(sqlDB, driver, opts...)` takes options** (hooks, logger, naming, scan mode, cache, health check) — existing calls compile unchanged
 
 ### Documentation

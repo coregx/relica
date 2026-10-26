@@ -1,0 +1,15 @@
+{
+  "name": "relica",
+  "owner": {
+    "name": "coregx",
+    "url": "https://github.com/coregx"
+  },
+  "description": "Agent skill for Relica, the zero-dependency SQL query builder for Go",
+  "plugins": [
+    {
+      "name": "relica",
+      "source": "./",
+      "description": "Write, audit and upgrade code that uses Relica (github.com/coregx/relica): version-exact docs, an audit script for real-world mistakes and every v0.20.0 behaviour change"
+    }
+  ]
+}
