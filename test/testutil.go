@@ -57,7 +57,9 @@ func containerUnavailable(t *testing.T, dialect string, err error) {
 
 // containerStartupTimeout bounds the wait for a database container to accept
 // connections. A cold MySQL 8.0 start (first initialisation after a Docker
-// restart) took 63 s on a developer machine, past the old 60 s limit.
+// restart) took 63 s on a developer machine, past the old 60 s limit. It is
+// passed both to the log strategy and as the overall deadline:
+// testcontainers.WithWaitStrategy caps every wait at 60 s on its own.
 const containerStartupTimeout = 3 * time.Minute
 
 // terminateFailedContainer stops a container whose start failed: a module's
@@ -123,7 +125,7 @@ func SetupPostgreSQLTestDB(t *testing.T) *DatabaseSetup {
 			postgres.WithDatabase("testdb"),
 			postgres.WithUsername("user"),
 			postgres.WithPassword("password"),
-			testcontainers.WithWaitStrategy(
+			testcontainers.WithWaitStrategyAndDeadline(containerStartupTimeout,
 				wait.ForLog("database system is ready to accept connections").
 					WithOccurrence(2).
 					WithStartupTimeout(containerStartupTimeout),
@@ -178,7 +180,7 @@ func SetupMySQLTestDB(t *testing.T) *DatabaseSetup {
 			mysql.WithDatabase("testdb"),
 			mysql.WithUsername("user"),
 			mysql.WithPassword("password"),
-			testcontainers.WithWaitStrategy(
+			testcontainers.WithWaitStrategyAndDeadline(containerStartupTimeout,
 				wait.ForLog("port: 3306  MySQL Community Server").
 					WithStartupTimeout(containerStartupTimeout),
 			),
