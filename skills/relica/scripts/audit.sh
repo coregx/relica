@@ -298,7 +298,7 @@ report MEDIUM V6 'Builder Upsert / OnConflict — needs exactly one of DoUpdate,
 report MEDIUM V7 'Row lock — must run on a transaction since v0.20.0, and never with Union/GroupBy/Distinct/Count/Exists' \
 	'AGENTS.md › Row Locking' \
 	< <(g relicafiles '(^|[^A-Za-z0-9_])(ForUpdate|ForShare|ForUpdateSkipLocked)\(\)' | grep -v 'func ')
-report MEDIUM V8 'Struct with db tags and untagged exported or embedded fields — since v0.20.0 untagged fields map to snake_case columns (CreatedAt → created_at) and embedded structs are flattened; tag them to keep the old names' \
+report INFO V8 'Struct with db tags and untagged exported or embedded fields — since v0.20.0 untagged fields map to snake_case columns (CreatedAt → created_at) and embedded structs are flattened; tag them to keep the old names' \
 	'AGENTS.md › Table and Column Names' \
 	< <(untagged_fields)
 report INFO V9 'Row type with db tags and no TableName(), in a repo that uses Model() — matters only for types passed to Model() without a table: since v0.20.0 the derived table is snake_case singular (UserProfile → user_profile; before: userprofiles)' \
