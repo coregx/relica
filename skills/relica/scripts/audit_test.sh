@@ -1,24 +1,44 @@
 #!/usr/bin/env bash
 # audit_test.sh — tests for audit.sh. Run: bash audit_test.sh (exit 0 = pass).
 #
-# Each fixture under testdata/ is copied to a temporary directory (not a git
-# work tree), *.go.txt files are renamed to *.go, and audit.sh runs offline on
-# it. testdata/bad fires every check a known number of times; testdata/clean
-# holds the correct form of each pattern and must produce no finding.
+# Each fixture under testdata/ is copied to a temporary directory, *.go.txt
+# files are renamed to *.go, and audit.sh runs offline on it. testdata/bad
+# fires every check a known number of times; testdata/clean holds the correct
+# form of each pattern and must produce no finding. bad runs twice: as a plain
+# directory (audit.sh finds files with find) and as a git work tree (git
+# ls-files), where an untracked file must not be reported.
 
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
 fail=0
 
-run_fixture() { # run_fixture NAME — prints audit output for testdata/NAME
+run_fixture() { # run_fixture NAME [git] — prints audit output for testdata/NAME
 	local tmp
 	tmp=$(mktemp -d)
+	# The copy is removed with rm -rf below: only ever a fresh temp directory.
+	case $tmp in
+	/tmp/?* | "${TMPDIR:-/nonexistent}"/?*) ;;
+	*)
+		echo "FAIL: mktemp -d gave '$tmp', not a temp directory" >&2
+		return 1
+		;;
+	esac
 	cp -r "$here/testdata/$1/." "$tmp/"
 	# Fixtures carry a .txt suffix so they are neither Go files of this module nor
 	# nested modules (a go.mod would cut them out of the module zip).
 	find "$tmp" \( -name '*.go.txt' -o -name 'go.mod.txt' \) | while read -r f; do mv "$f" "${f%.txt}"; done
+	if [ "${2:-}" = git ]; then
+		git -C "$tmp" init -q && git -C "$tmp" add -A
+		# Untracked: a git work tree audits only tracked files.
+		printf 'package repo\n\nimport "github.com/coregx/relica"\n\nvar _, _ = relica.NewDB("postgres", "dsn")\n' \
+			>"$tmp/untracked_newdb.go"
+	fi
 	RELICA_AUDIT_OFFLINE=1 bash "$here/audit.sh" "$tmp"
 	rm -rf "$tmp"
+}
+
+findings() { # findings OUTPUT — the audit output without its first line (the path)
+	printf '%s\n' "$1" | sed 1d
 }
 
 expect() { # expect OUTPUT SEVERITY ID COUNT
@@ -39,6 +59,8 @@ expect_line() { # expect_line OUTPUT TEXT
 
 bad=$(run_fixture bad)
 expect_line "$bad" "go.mod: v0.19.1"
+# A versioned line inside a replace ( … ) block is shown too:
+expect_line "$bad" "relica v0.19.1 => ../relica"
 expect_line "$bad" "== Upgrading to v0.20.0"
 expect "$bad" HIGH H1 1
 expect "$bad" HIGH H2 1
@@ -71,6 +93,19 @@ expect "$bad" INFO I4 1
 expect_line "$bad" 'OrderBy("a DESC, b")'
 expect_line "$bad" 'db.Update("t").'
 
+# The same fixture as a git work tree: the same findings (in any order), and
+# the untracked file is not audited.
+badgit=$(run_fixture bad git)
+if [ "$(findings "$bad" | sort)" != "$(findings "$badgit" | sort)" ]; then
+	echo "FAIL: bad as a git work tree reports differently:"
+	diff <(findings "$bad" | sort) <(findings "$badgit" | sort) | sed "s/^/  /"
+	fail=1
+fi
+if printf '%s\n' "$badgit" | grep -q untracked_newdb; then
+	echo "FAIL: an untracked file of a git work tree was audited"
+	fail=1
+fi
+
 clean=$(run_fixture clean)
 expect_line "$clean" "go.mod: v0.20.0"
 expect_line "$clean" "== v0.20.0 rules"
@@ -81,9 +116,14 @@ if printf '%s\n' "$clean" | grep -qE '^\[(HIGH|MEDIUM|INFO)\]'; then
 	fail=1
 fi
 
-# A missing directory is reported, not a crash.
+# A missing directory is reported with exit code 2, not a crash.
 missing=$(RELICA_AUDIT_OFFLINE=1 bash "$here/audit.sh" "$here/testdata/no-such-dir" 2>&1)
+rc=$?
 expect_line "$missing" "audit: cannot cd to"
+if [ "$rc" != 2 ]; then
+	echo "FAIL: a missing directory exits with $rc, want 2"
+	fail=1
+fi
 
 if [ "$fail" = 0 ]; then
 	echo "PASS: audit.sh"

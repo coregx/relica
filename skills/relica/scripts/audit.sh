@@ -7,7 +7,8 @@
 # override), the latest published version, then grep findings: mistakes found
 # in real projects, and code whose behaviour changed in v0.20.0. Every finding
 # is a lead to read, not a verdict: open the file, read the code, then decide.
-# Exit code is always 0.
+# Exit code: 0 after an audit, with findings or not; 2 when it cannot run
+# (bash older than 4.3, a directory it cannot enter).
 #
 # Scans git-tracked *.go files (or every *.go outside vendor/ and tmp/ when the
 # directory is not a git work tree). Never modifies anything.
@@ -15,10 +16,16 @@
 # Environment: RELICA_AUDIT_OFFLINE=1 skips the proxy.golang.org lookup.
 
 set -u
+# mapfile and local -n need bash 4.3; macOS ships 3.2, where they fail per
+# command and the audit would "succeed" with nothing found.
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ] || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -lt 3 ]; }; then
+	echo "audit: needs bash 4.3+ (macOS: brew install bash), this is ${BASH_VERSION:-not bash}" >&2
+	exit 2
+fi
 repo="${1:-.}"
 cd "$repo" || {
 	echo "audit: cannot cd to $repo"
-	exit 0
+	exit 2
 }
 
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -30,15 +37,17 @@ else
 fi
 mapfile -t prodfiles < <(printf '%s\n' "${gofiles[@]}" | grep -v '_test\.go$' | grep -v '^$')
 mapfile -t testfiles < <(printf '%s\n' "${gofiles[@]}" | grep '_test\.go$')
-# Files that use ozzo-dbx and not Relica: the same method names (Select,
-# OrderBy, Delete…) follow ozzo-dbx's rules there, so the Relica-specific
-# checks skip them. Files importing neither (a wrapper type) stay in.
-mapfile -t dbxonly < <(
+# Files that use another query builder or ORM (ozzo-dbx, GORM, squirrel, bun,
+# ent) and not Relica: the same method names (Select, OrderBy, Delete…) follow
+# that library's rules there, so the Relica-specific checks skip them. Files
+# importing none of them (a wrapper type) stay in.
+otherlibs='"(github\.com/go-ozzo/ozzo-dbx|gorm\.io/gorm|github\.com/Masterminds/squirrel|github\.com/uptrace/bun|entgo\.io/ent)[/"]'
+mapfile -t otheronly < <(
 	[ ${#prodfiles[@]} -gt 0 ] && printf '%s\0' "${prodfiles[@]}" |
-		xargs -0 grep -l '"github.com/go-ozzo/ozzo-dbx"' 2>/dev/null |
+		xargs -0 grep -lE "$otherlibs" 2>/dev/null |
 		while read -r f; do grep -q '"github.com/coregx/relica"' "$f" || echo "$f"; done
 )
-mapfile -t relicafiles < <(printf '%s\n' "${prodfiles[@]}" | grep -vxF -f <(printf '%s\n' "${dbxonly[@]}") | grep -v '^$')
+mapfile -t relicafiles < <(printf '%s\n' "${prodfiles[@]}" | grep -vxF -f <(printf '%s\n' "${otheronly[@]}") | grep -v '^$')
 # context.Background() is legitimate in main packages and CLI tools.
 mapfile -t servicefiles < <(printf '%s\n' "${prodfiles[@]}" | grep -vE '(^|/)cmd/|(^|/)main\.go$' | grep -v '^$')
 
@@ -54,7 +63,10 @@ for m in "${gomods[@]}"; do
 	case $v in v0.*) [ "$minor" -lt 20 ] 2>/dev/null && below020=1 ;; esac
 	case $line in *indirect*) v="$v (indirect)" ;; esac
 	echo "  $m: $v"
-	grep -nE 'replace\s+github\.com/coregx/relica|^\s*github\.com/coregx/relica\s*=>' "$m" | sed 's/^/    replace: /'
+	# One-line replace, or a line of a replace ( … ) block, with or without the
+	# version on the left ("github.com/coregx/relica v0.19.1 => ../relica").
+	grep -nE 'replace[[:space:]]+github\.com/coregx/relica|^[[:space:]]*github\.com/coregx/relica([[:space:]]+v[^[:space:]]+)?[[:space:]]*=>' "$m" |
+		sed 's/^/    replace: /'
 done
 [ -f go.work ] && grep -nE 'coregx/relica|^\s*use|^use' go.work | sed 's/^/  go.work: /'
 [ "$found" = 1 ] || echo "  no go.mod requires github.com/coregx/relica"
