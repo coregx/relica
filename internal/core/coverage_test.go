@@ -126,7 +126,10 @@ func TestWithHealthCheck(t *testing.T) {
 		if db.IsHealthy() || db.Stats().Healthy {
 			t.Error("expected unhealthy after the ping failed on a closed database")
 		}
-		if err := db.healthChecker.lastError(); err == nil {
+		db.healthChecker.mu.RLock()
+		recorded := db.healthChecker.lastErr
+		db.healthChecker.mu.RUnlock()
+		if recorded == nil {
 			t.Error("expected the failed ping's error to be recorded")
 		}
 		if want := start.Add(2 * interval); !db.Stats().LastHealthCheck.Equal(want) {
@@ -814,31 +817,6 @@ func TestDetectOperation(t *testing.T) {
 }
 
 // ─── utils.go coverage ───────────────────────────────────────────────────────
-
-func TestQuoteIdentifier_Spaces(t *testing.T) {
-	// Verify QuoteIdentifier in package handles spaces correctly.
-	got := QuoteIdentifier("my table")
-	if got != `"my table"` {
-		t.Errorf("QuoteIdentifier: want %q, got %q", `"my table"`, got)
-	}
-}
-
-func TestQuoteIdentifierHelper(t *testing.T) {
-	tests := []struct {
-		in   string
-		want string
-	}{
-		{"users", `"users"`},
-		{"my table", `"my table"`},
-		{`quo"ted`, `"quo""ted"`},
-	}
-	for _, tt := range tests {
-		got := QuoteIdentifier(tt.in)
-		if got != tt.want {
-			t.Errorf("QuoteIdentifier(%q): want %q, got %q", tt.in, tt.want, got)
-		}
-	}
-}
 
 func TestDBQuoteTableName(t *testing.T) {
 	db := openCovDB(t)

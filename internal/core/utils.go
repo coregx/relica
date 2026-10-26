@@ -6,11 +6,6 @@ import (
 	"github.com/coregx/relica/internal/dialects"
 )
 
-// QuoteIdentifier quotes a database identifier using double quotes.
-func QuoteIdentifier(s string) string {
-	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
-}
-
 // QuoteTableName quotes a table name using the dialect's identifier quoting style.
 // A schema-qualified name is quoted per part: "app.users" → "app"."users"
 // (PostgreSQL) / `app`.`users` (MySQL).

@@ -225,7 +225,7 @@ func TestClassify_ErrorTree(t *testing.T) {
 	}{
 		{"fmt %w", fmt.Errorf("insert user: %w", unique), &uniqueViolation, true},
 		{"double %w", fmt.Errorf("a: %w", fmt.Errorf("b: %w", unique)), &uniqueViolation, true},
-		{"WrapError", WrapError(unique, "insert"), &uniqueViolation, true},
+		{"wrapped with %w", fmt.Errorf("insert: %w", unique), &uniqueViolation, true},
 		{"errors.Join second branch", errors.Join(errors.New("first"), deadlockErr), &deadlock, true},
 		{"multi %w", fmt.Errorf("%w; %w", errors.New("a"), deadlockErr), &deadlock, true},
 		{"rollback error joined after work error", errors.Join(

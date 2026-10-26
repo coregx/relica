@@ -300,24 +300,3 @@ func TestIsCheckViolation(t *testing.T) {
 		})
 	}
 }
-
-// ============================================================================
-// WrapError tests (existing functionality, regression guard)
-// ============================================================================
-
-func TestWrapError_NilInput(t *testing.T) {
-	if WrapError(nil, "context") != nil {
-		t.Error("expected nil for nil input")
-	}
-}
-
-func TestWrapError_WrapsMessage(t *testing.T) {
-	base := errors.New("base error")
-	wrapped := WrapError(base, "operation failed")
-	if wrapped.Error() != "operation failed: base error" {
-		t.Errorf("got %q, want %q", wrapped.Error(), "operation failed: base error")
-	}
-	if !errors.Is(wrapped, base) {
-		t.Error("wrapped error must satisfy errors.Is(wrapped, base)")
-	}
-}
