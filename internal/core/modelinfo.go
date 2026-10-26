@@ -78,6 +78,9 @@ func buildModelInfo(t reflect.Type, naming Naming) (*modelInfo, error) {
 	if t.Kind() != reflect.Struct {
 		return nil, fmt.Errorf("relica: expected a struct, got %s", t)
 	}
+	if isValueRow(t) {
+		return nil, fmt.Errorf("relica: %s is a single value, not a struct of columns: make it a field of a model", t)
+	}
 	mi := &modelInfo{typ: t, byColumn: make(map[string]*modelField)}
 	if err := mi.walk(t, nil, naming); err != nil {
 		return nil, err
@@ -136,6 +139,25 @@ func isValueType(t reflect.Type) bool {
 	pt := reflect.PointerTo(t)
 	return t.Implements(scannerType) || pt.Implements(scannerType) ||
 		t.Implements(valuerType) || pt.Implements(valuerType)
+}
+
+// isValueRow reports whether struct type t, passed whole as a row (a model or
+// a One/All destination), is a single value. A type that is a value only
+// through methods promoted from an embedded single-value field is a row: that
+// field is one of its columns (a model embedding sql.NullString gets Scan and
+// Value by promotion). reflect cannot tell a declared method from a promoted
+// one, so a type that declares Scan/Value and also embeds a single value is
+// taken as a row; a wrong guess then fails on a missing column, not silently.
+func isValueRow(t reflect.Type) bool {
+	if !isValueType(t) {
+		return false
+	}
+	for i := 0; i < t.NumField(); i++ {
+		if f := t.Field(i); f.Anonymous && isValueType(f.Type) {
+			return false
+		}
+	}
+	return true
 }
 
 // isEmbeddedStruct reports whether f is an embedded plain struct (or pointer

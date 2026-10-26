@@ -245,6 +245,9 @@ func (q *Query) One(dest any) error {
 	if err := q.validateBeforeExec(ctx); err != nil {
 		return err
 	}
+	if err := q.scanSettings().checkOneDest(dest); err != nil {
+		return err
+	}
 
 	// Execute query — direct for tx, prepared for non-tx
 	var rows *sql.Rows
