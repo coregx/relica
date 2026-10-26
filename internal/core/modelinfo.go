@@ -234,6 +234,29 @@ func (mi *modelInfo) resolvePK() {
 	mi.pkAutoInc = len(mi.pk) == 1 && mi.pk[0].tag.AutoIncrement
 }
 
+// argValue returns field value v as a query argument. database/sql calls
+// driver.Valuer only on the argument itself (database/sql/convert.go), so a
+// type whose Value method is on *T alone goes as a pointer: passed as T, its
+// Value was skipped — a struct failed as "unsupported type" and `type Level
+// int` was silently written as the int. The pointer is to a copy: the field may
+// not be addressable (a struct passed by value), and the argument must not
+// follow changes made to the model after the query is built.
+func argValue(v reflect.Value) any {
+	if v.Kind() == reflect.Interface {
+		if v.IsNil() {
+			return nil
+		}
+		v = v.Elem()
+	}
+	t := v.Type()
+	if t.Kind() != reflect.Pointer && !t.Implements(valuerType) && reflect.PointerTo(t).Implements(valuerType) {
+		p := reflect.New(t)
+		p.Elem().Set(v)
+		return p.Interface()
+	}
+	return v.Interface()
+}
+
 // structValue dereferences model to its struct value.
 func structValue(model any) (reflect.Value, error) {
 	v := reflect.ValueOf(model)
@@ -261,7 +284,7 @@ func (db *DB) structValues(model any) (map[string]any, error) {
 	}
 	out := make(map[string]any, len(mi.fields))
 	for _, f := range mi.fields {
-		out[f.column] = v.FieldByIndex(f.index).Interface()
+		out[f.column] = argValue(v.FieldByIndex(f.index))
 	}
 	return out, nil
 }
@@ -281,7 +304,7 @@ func (db *DB) structValuesExceptPK(model any) (map[string]any, error) {
 	out := make(map[string]any, len(mi.fields))
 	for _, f := range mi.fields {
 		if !isPKField(mi, f) {
-			out[f.column] = v.FieldByIndex(f.index).Interface()
+			out[f.column] = argValue(v.FieldByIndex(f.index))
 		}
 	}
 	if len(out) == 0 {
