@@ -299,7 +299,7 @@ func TestWithRecursive_OrganizationHierarchy(t *testing.T) {
 	qb := &QueryBuilder{db: db}
 
 	// Anchor: top-level employees (no manager)
-	anchor := qb.Select("id", "name", "manager_id", "1 as level").
+	anchor := qb.Select("id", "name", "manager_id").SelectExpr("1 AS level").
 		From("employees").
 		Where("manager_id IS NULL")
 
@@ -365,8 +365,8 @@ func TestWithRecursive_UnionAll(t *testing.T) {
 	qb := &QueryBuilder{db: db}
 
 	// Number sequence: anchor = 1, recursive = n + 1
-	anchor := qb.Select("1 as n")
-	recursive := qb.Select("n + 1").From("numbers").Where("n < ?", 10)
+	anchor := qb.Select().SelectExpr("1 AS n")
+	recursive := qb.Select().SelectExpr("n + 1").From("numbers").Where("n < ?", 10)
 	cte := anchor.UnionAll(recursive)
 
 	main := qb.Select("*").
@@ -380,9 +380,9 @@ func TestWithRecursive_UnionAll(t *testing.T) {
 
 	checks := []string{
 		`WITH RECURSIVE "numbers" AS`,
-		`SELECT "1" AS "n"`,
+		`SELECT 1 AS n`,
 		`UNION ALL`,
-		`SELECT "n + 1" FROM "numbers" WHERE n < $1`,
+		`SELECT n + 1 FROM "numbers" WHERE n < $1`,
 	}
 	for _, s := range checks {
 		if !strings.Contains(query.sql, s) {
@@ -403,7 +403,7 @@ func TestWithRecursive_ParameterMerging(t *testing.T) {
 	qb := &QueryBuilder{db: db}
 
 	// Anchor with parameter
-	anchor := qb.Select("id", "path", "1 as depth").
+	anchor := qb.Select("id", "path").SelectExpr("1 AS depth").
 		From("categories").
 		Where("parent_id = ?", 0) // Root categories
 
@@ -469,8 +469,8 @@ func TestWithRecursive_AllDialects(t *testing.T) {
 			db := mockDB(tt.dialectName)
 			qb := &QueryBuilder{db: db}
 
-			anchor := qb.Select("1 as n")
-			recursive := qb.Select("n + 1").From("seq").Where("n < ?", 5)
+			anchor := qb.Select().SelectExpr("1 AS n")
+			recursive := qb.Select().SelectExpr("n + 1").From("seq").Where("n < ?", 5)
 			cte := anchor.UnionAll(recursive)
 
 			main := qb.Select("*").WithRecursive("seq", cte).From("seq")
@@ -696,7 +696,7 @@ func TestCTE_ComplexRecursive(t *testing.T) {
 	qb := &QueryBuilder{db: db}
 
 	// Anchor: start from specific node
-	anchor := qb.Select("id", "parent_id", "name", "1 as level", "name as path").
+	anchor := qb.Select("id", "parent_id", "name", "name AS path").SelectExpr("1 AS level").
 		From("nodes").
 		Where("id = ?", 1)
 

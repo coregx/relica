@@ -100,10 +100,10 @@ func TestRecursiveCTE_ManyLevels(t *testing.T) {
 	qb := &QueryBuilder{db: db}
 
 	// Anchor query: level 0 - SELECT 1 as level
-	anchor := qb.Select("1 as level")
+	anchor := qb.Select().SelectExpr("1 AS level")
 
 	// Recursive query: increment level - SELECT level + 1 FROM numbers WHERE level < 1000
-	recursive := qb.Select("level + 1").
+	recursive := qb.Select().SelectExpr("level + 1").
 		From("numbers").
 		Where("level < ?", 1000)
 
@@ -136,9 +136,9 @@ func TestRecursiveCTE_ManyLevels(t *testing.T) {
 		t.Errorf("%q does not contain %q", query.sql, "UNION ALL")
 	}
 
-	// Verify anchor query (1 AS "level" — now properly quoted)
-	if !strings.Contains(query.sql, `AS "level"`) {
-		t.Errorf("%q does not contain %q", query.sql, `AS "level"`)
+	// Verify anchor query: the literal and its alias go through SelectExpr as is
+	if !strings.Contains(query.sql, `(SELECT 1 AS level)`) {
+		t.Errorf("%q does not contain %q", query.sql, `(SELECT 1 AS level)`)
 	}
 
 	// Verify recursive query structure

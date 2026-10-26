@@ -177,7 +177,7 @@ WHERE "id" NOT IN (SELECT "user_id" FROM "orders")
 ```go
 // Find users with at least one order
 func GetUsersWithOrders(db *relica.DB) ([]User, error) {
-    orderCheck := db.Select("1").
+    orderCheck := db.Select().SelectExpr("1").
         From("orders").
         Where("orders.user_id = users.id")
 
@@ -204,7 +204,7 @@ WHERE EXISTS (SELECT 1 FROM "orders" WHERE orders.user_id = users.id)
 ```go
 // Find users with no orders (NULL-safe)
 func GetUsersWithoutOrders(db *relica.DB) ([]User, error) {
-    orderCheck := db.Select("1").
+    orderCheck := db.Select().SelectExpr("1").
         From("orders").
         Where("orders.user_id = users.id")
 
@@ -229,7 +229,7 @@ WHERE NOT EXISTS (SELECT 1 FROM "orders" WHERE orders.user_id = users.id)
 ```go
 // Find users with recent high-value orders
 func GetHighValueRecentCustomers(db *relica.DB, since time.Time) ([]User, error) {
-    recentOrders := db.Select("1").
+    recentOrders := db.Select().SelectExpr("1").
         From("orders o").
         Where("o.user_id = u.id AND o.total > ? AND o.created_at > ?",
             1000, since)
@@ -258,11 +258,11 @@ WHERE EXISTS (
 ```go
 // Find users who have both orders AND reviews
 func GetEngagedUsers(db *relica.DB) ([]User, error) {
-    hasOrders := db.Select("1").
+    hasOrders := db.Select().SelectExpr("1").
         From("orders").
         Where("orders.user_id = users.id")
 
-    hasReviews := db.Select("1").
+    hasReviews := db.Select().SelectExpr("1").
         From("reviews").
         Where("reviews.user_id = users.id")
 
@@ -556,7 +556,7 @@ Subquery references columns from outer query.
 
 ```go
 // Correlated: subquery references users.id from parent
-orderCheck := db.Select("1").
+orderCheck := db.Select().SelectExpr("1").
     From("orders").
     Where("orders.user_id = users.id")  // References parent!
 
@@ -602,7 +602,7 @@ Need data from related table?
 2. **Checking existence**
    ```go
    // EXISTS is clearer than JOIN when you don't need joined data
-   exists := db.Select("1").From("orders").Where("user_id = users.id")
+   exists := db.Select().SelectExpr("1").From("orders").Where("user_id = users.id")
    ```
 
 3. **Filtering aggregated results**
@@ -697,7 +697,7 @@ Use LIMIT when checking existence:
 
 ```go
 // Check if ANY orders exist (stop at first match)
-orderCheck := db.Select("1").
+orderCheck := db.Select().SelectExpr("1").
     From("orders").
     Where("user_id = users.id").
     Limit(1)  // Stop after first row
@@ -746,13 +746,13 @@ db.Select("u.id", "COUNT(o.id) as order_count").
 
 1. **Use EXISTS for existence checks**
    ```go
-   sub := db.Select("1").From("orders").Where("user_id = users.id")
+   sub := db.Select().SelectExpr("1").From("orders").Where("user_id = users.id")
    relica.Exists(sub.AsExpression())
    ```
 
 2. **Add LIMIT 1 to EXISTS subqueries** (clarity)
    ```go
-   db.Select("1").From("orders").Where("user_id = users.id").Limit(1)
+   db.Select().SelectExpr("1").From("orders").Where("user_id = users.id").Limit(1)
    ```
 
 3. **Index subquery WHERE columns**
@@ -823,7 +823,7 @@ db.Select("u.id", "COUNT(o.id) as order_count").
 ```go
 // Users with no orders (NOT EXISTS pattern)
 func GetUsersWithoutOrders(db *relica.DB) ([]User, error) {
-    orderCheck := db.Select("1").
+    orderCheck := db.Select().SelectExpr("1").
         From("orders").
         Where("orders.user_id = users.id")
 
@@ -934,7 +934,7 @@ db.Select().
 **Solution**: Use NOT EXISTS instead
 ```go
 // ✅ GOOD: NULL-safe
-orderCheck := db.Select("1").
+orderCheck := db.Select().SelectExpr("1").
     From("orders").
     Where("orders.user_id = users.id")
 

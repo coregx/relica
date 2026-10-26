@@ -724,7 +724,7 @@ func (e *NotExp) Build(dialect dialects.Dialect) (string, []any) {
 //
 // Example:
 //
-//	subquery := db.Builder().Select("1").From("orders").Where("orders.user_id = users.id")
+//	subquery := db.Select().SelectExpr("1").From("orders").Where("orders.user_id = users.id")
 //	db.Builder().Select("*").From("users").Where(relica.Exists(subquery))
 //
 // Generates: SELECT * FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" WHERE orders.user_id = users.id)
@@ -738,7 +738,7 @@ type ExistsExp struct {
 //
 // Example:
 //
-//	sub := db.Builder().Select("1").From("orders").Where("user_id = ?", 123)
+//	sub := db.Select().SelectExpr("1").From("orders").Where("user_id = ?", 123)
 //	relica.Exists(sub) → EXISTS (SELECT 1 FROM "orders" WHERE user_id = 123)
 func Exists(exp Expression) Expression {
 	return &ExistsExp{Exp: exp, Not: false}
@@ -748,7 +748,7 @@ func Exists(exp Expression) Expression {
 //
 // Example:
 //
-//	sub := db.Builder().Select("1").From("orders").Where("user_id = ?", 123)
+//	sub := db.Select().SelectExpr("1").From("orders").Where("user_id = ?", 123)
 //	relica.NotExists(sub) → NOT EXISTS (SELECT 1 FROM "orders" WHERE user_id = 123)
 func NotExists(exp Expression) Expression {
 	return &ExistsExp{Exp: exp, Not: true}

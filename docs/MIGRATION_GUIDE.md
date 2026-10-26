@@ -548,7 +548,7 @@ count, err := db.Select().From("users").Count()
 ```go
 // Before
 var exists int
-err := db.Select("1").From("users").Where(relica.Eq("email", email)).Row(&exists)
+err := db.Select().SelectExpr("1").From("users").Where(relica.Eq("email", email)).Row(&exists)
 found := err == nil
 
 // After
