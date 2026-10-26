@@ -930,6 +930,30 @@ func runDBOpsOptionTests(t *testing.T, db *relica.DB, dialect, dsn string) {
 		runOpsCacheQuery(t, cdb, 1, 3, "gamma")
 	})
 
+	t.Run("WarmCache_ToSQLTextIsTheCacheKey", func(t *testing.T) {
+		// The cache is keyed by the exact SQL a statement sends: ToSQL gives it
+		// (quoting and placeholders of the dialect), so that is what WarmCache
+		// must be given (O5).
+		cdb := open(t)
+		q := cdb.Select("name").From("ops_item").Where(relica.Eq("id", 0))
+		key, _ := q.ToSQL()
+		assert.False(t, cdb.PinQuery(key), "not cached yet")
+		var names []string
+		require.NoError(t, q.Column(&names))
+		assert.True(t, cdb.PinQuery(key), "running the query cached it under its ToSQL text")
+
+		fresh := open(t)
+		n, err := fresh.WarmCache([]string{key})
+		require.NoError(t, err)
+		assert.Equal(t, 1, n)
+		assert.True(t, fresh.PinQuery(key))
+
+		if dialect == "postgres" {
+			_, err := fresh.WarmCache([]string{"SELECT name FROM ops_item WHERE id = ?"})
+			assert.Error(t, err, "PostgreSQL takes $1, not ?")
+		}
+	})
+
 	t.Run("WithStmtCacheCapacity_CloseClearsCache", func(t *testing.T) {
 		cdb, err := relica.Open(dialect, dsn, relica.WithStmtCacheCapacity(4))
 		require.NoError(t, err)
