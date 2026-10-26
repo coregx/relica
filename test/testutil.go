@@ -31,16 +31,47 @@ import (
 // and every multi-database test (databases are subtests there).
 var selectedDB = os.Getenv("RELICA_TEST_DB")
 
+// RELICA_TEST_DB values, which are also the driver and dialect names.
+const (
+	dialectPostgres = "postgres"
+	dialectMySQL    = "mysql"
+	dialectSQLite   = "sqlite"
+)
+
 // requireDB skips the test unless dialect ("postgres", "mysql", "sqlite") is
 // selected for this run.
 func requireDB(t *testing.T, dialect string) {
 	t.Helper()
 	switch selectedDB {
 	case "", dialect:
-	case "postgres", "mysql", "sqlite":
+	case dialectPostgres, dialectMySQL, dialectSQLite:
 		t.Skipf("RELICA_TEST_DB=%s", selectedDB)
 	default:
 		t.Fatalf("RELICA_TEST_DB=%q: want postgres, mysql or sqlite", selectedDB)
+	}
+}
+
+// mysqlImage is the MySQL image the tests start: mysql:8.0 (the 8.0 line CI
+// guarantees), or RELICA_MYSQL_IMAGE — CI sets mysql:latest in a separate,
+// non-required job so a newer server's changes (ADR-019: VALUES() in
+// upserts) show up before users hit them.
+func mysqlImage() string {
+	if img := os.Getenv("RELICA_MYSQL_IMAGE"); img != "" {
+		return img
+	}
+	return "mysql:8.0"
+}
+
+// withParseTime adds parseTime=true to a MySQL DSN unless it is there, so
+// DATETIME columns scan into time.Time instead of []uint8.
+func withParseTime(dsn string) string {
+	switch {
+	case strings.Contains(dsn, "parseTime=true"):
+		return dsn
+	case strings.Contains(dsn, "?"):
+		return dsn + "&parseTime=true"
+	default:
+		return dsn + "?parseTime=true"
 	}
 }
 
@@ -97,24 +128,24 @@ type DatabaseSetup struct {
 // Close cleans up database resources.
 func (ds *DatabaseSetup) Close() {
 	if ds.DB != nil {
-		ds.DB.Close() //nolint:errcheck
+		_ = ds.DB.Close()
 	}
 	if ds.Container != nil {
-		ds.Container.Terminate(context.Background()) //nolint:errcheck
+		_ = ds.Container.Terminate(context.Background())
 	}
 }
 
 // SetupPostgreSQLTestDB creates a PostgreSQL test database.
 // Uses testcontainers if available, falls back to env DSN.
 func SetupPostgreSQLTestDB(t *testing.T) *DatabaseSetup {
-	requireDB(t, "postgres")
+	requireDB(t, dialectPostgres)
 	ctx := context.Background()
 
 	// Check for manual DSN first (allows testing without Docker)
 	if dsn := os.Getenv("POSTGRES_TEST_DSN"); dsn != "" {
-		db, err := relica.Open("postgres", dsn)
+		db, err := relica.Open(dialectPostgres, dsn)
 		require.NoError(t, err)
-		return &DatabaseSetup{DB: db, Dialect: "postgres", DSN: dsn}
+		return &DatabaseSetup{DB: db, Dialect: dialectPostgres, DSN: dsn}
 	}
 
 	// Start PostgreSQL in Docker via testcontainers
@@ -134,19 +165,19 @@ func SetupPostgreSQLTestDB(t *testing.T) *DatabaseSetup {
 	})
 	if err != nil {
 		terminateFailedContainer(t, pgContainer)
-		containerUnavailable(t, "postgres", err)
+		containerUnavailable(t, dialectPostgres, err)
 	}
 
 	dsn, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
 	require.NoError(t, err)
 
-	db, err := relica.Open("postgres", dsn)
+	db, err := relica.Open(dialectPostgres, dsn)
 	require.NoError(t, err)
 
 	return &DatabaseSetup{
 		DB:        db,
 		Container: pgContainer,
-		Dialect:   "postgres",
+		Dialect:   dialectPostgres,
 		DSN:       dsn,
 	}
 }
@@ -154,29 +185,22 @@ func SetupPostgreSQLTestDB(t *testing.T) *DatabaseSetup {
 // SetupMySQLTestDB creates a MySQL test database.
 // Uses testcontainers if available, falls back to env DSN.
 func SetupMySQLTestDB(t *testing.T) *DatabaseSetup {
-	requireDB(t, "mysql")
+	requireDB(t, dialectMySQL)
 	ctx := context.Background()
 
 	// Check for manual DSN first
 	if dsn := os.Getenv("MYSQL_TEST_DSN"); dsn != "" {
-		// Ensure parseTime=true is set for time.Time support
-		if !strings.Contains(dsn, "parseTime=true") {
-			if strings.Contains(dsn, "?") {
-				dsn += "&parseTime=true"
-			} else {
-				dsn += "?parseTime=true"
-			}
-		}
-		db, err := relica.Open("mysql", dsn)
+		dsn = withParseTime(dsn)
+		db, err := relica.Open(dialectMySQL, dsn)
 		require.NoError(t, err)
-		return &DatabaseSetup{DB: db, Dialect: "mysql", DSN: dsn}
+		return &DatabaseSetup{DB: db, Dialect: dialectMySQL, DSN: dsn}
 	}
 
 	// Start MySQL in Docker via testcontainers
 	mysqlContainer, err := startContainer(func() (*mysql.MySQLContainer, error) {
 		return mysql.Run(
 			ctx,
-			"mysql:8.0",
+			mysqlImage(),
 			mysql.WithDatabase("testdb"),
 			mysql.WithUsername("user"),
 			mysql.WithPassword("password"),
@@ -191,7 +215,7 @@ func SetupMySQLTestDB(t *testing.T) *DatabaseSetup {
 	})
 	if err != nil {
 		terminateFailedContainer(t, mysqlContainer)
-		containerUnavailable(t, "mysql", err)
+		containerUnavailable(t, dialectMySQL, err)
 	}
 
 	dsn, err := mysqlContainer.ConnectionString(ctx)
@@ -202,13 +226,13 @@ func SetupMySQLTestDB(t *testing.T) *DatabaseSetup {
 	// See: https://github.com/go-sql-driver/mysql#parsetime
 	dsn += "?parseTime=true"
 
-	db, err := relica.Open("mysql", dsn)
+	db, err := relica.Open(dialectMySQL, dsn)
 	require.NoError(t, err)
 
 	return &DatabaseSetup{
 		DB:        db,
 		Container: mysqlContainer,
-		Dialect:   "mysql",
+		Dialect:   dialectMySQL,
 		DSN:       dsn,
 	}
 }
@@ -216,13 +240,13 @@ func SetupMySQLTestDB(t *testing.T) *DatabaseSetup {
 // SetupSQLiteTestDB creates an in-memory SQLite database.
 // Always works, no external dependencies.
 func SetupSQLiteTestDB(t *testing.T) *DatabaseSetup {
-	requireDB(t, "sqlite")
-	db, err := relica.Open("sqlite", ":memory:")
+	requireDB(t, dialectSQLite)
+	db, err := relica.Open(dialectSQLite, ":memory:")
 	require.NoError(t, err)
 
 	return &DatabaseSetup{
 		DB:      db,
-		Dialect: "sqlite",
+		Dialect: dialectSQLite,
 	}
 }
 
@@ -231,7 +255,7 @@ func CreateMessagesTable(t *testing.T, db *relica.DB, dialect string) {
 	var createSQL string
 
 	switch dialect {
-	case "postgres":
+	case dialectPostgres:
 		createSQL = `
 			CREATE TABLE IF NOT EXISTS messages (
 				id SERIAL PRIMARY KEY,
@@ -244,7 +268,7 @@ func CreateMessagesTable(t *testing.T, db *relica.DB, dialect string) {
 				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 			)
 		`
-	case "mysql":
+	case dialectMySQL:
 		createSQL = `
 			CREATE TABLE IF NOT EXISTS messages (
 				id INT AUTO_INCREMENT PRIMARY KEY,
@@ -257,7 +281,7 @@ func CreateMessagesTable(t *testing.T, db *relica.DB, dialect string) {
 				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 			)
 		`
-	case "sqlite":
+	case dialectSQLite:
 		createSQL = `
 			CREATE TABLE IF NOT EXISTS messages (
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -281,7 +305,7 @@ func CreateAttachmentsTable(t *testing.T, db *relica.DB, dialect string) {
 	var createSQL string
 
 	switch dialect {
-	case "postgres":
+	case dialectPostgres:
 		createSQL = `
 			CREATE TABLE IF NOT EXISTS attachments (
 				id SERIAL PRIMARY KEY,
@@ -290,7 +314,7 @@ func CreateAttachmentsTable(t *testing.T, db *relica.DB, dialect string) {
 				size INTEGER DEFAULT 0
 			)
 		`
-	case "mysql":
+	case dialectMySQL:
 		createSQL = `
 			CREATE TABLE IF NOT EXISTS attachments (
 				id INT AUTO_INCREMENT PRIMARY KEY,
@@ -299,7 +323,7 @@ func CreateAttachmentsTable(t *testing.T, db *relica.DB, dialect string) {
 				size INT DEFAULT 0
 			)
 		`
-	case "sqlite":
+	case dialectSQLite:
 		createSQL = `
 			CREATE TABLE IF NOT EXISTS attachments (
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -319,7 +343,7 @@ func CreateUsersTable(t *testing.T, db *relica.DB, dialect string) {
 	var createSQL string
 
 	switch dialect {
-	case "postgres":
+	case dialectPostgres:
 		createSQL = `
 			CREATE TABLE IF NOT EXISTS users (
 				id SERIAL PRIMARY KEY,
@@ -331,7 +355,7 @@ func CreateUsersTable(t *testing.T, db *relica.DB, dialect string) {
 				deleted_at VARCHAR(50)
 			)
 		`
-	case "mysql":
+	case dialectMySQL:
 		createSQL = `
 			CREATE TABLE IF NOT EXISTS users (
 				id INT AUTO_INCREMENT PRIMARY KEY,
@@ -343,7 +367,7 @@ func CreateUsersTable(t *testing.T, db *relica.DB, dialect string) {
 				deleted_at VARCHAR(50)
 			)
 		`
-	case "sqlite":
+	case dialectSQLite:
 		createSQL = `
 			CREATE TABLE IF NOT EXISTS users (
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -366,7 +390,7 @@ func CreatePostsTable(t *testing.T, db *relica.DB, dialect string) {
 	var createSQL string
 
 	switch dialect {
-	case "postgres":
+	case dialectPostgres:
 		createSQL = `
 			CREATE TABLE IF NOT EXISTS posts (
 				id SERIAL PRIMARY KEY,
@@ -375,7 +399,7 @@ func CreatePostsTable(t *testing.T, db *relica.DB, dialect string) {
 				content TEXT
 			)
 		`
-	case "mysql":
+	case dialectMySQL:
 		createSQL = `
 			CREATE TABLE IF NOT EXISTS posts (
 				id INT AUTO_INCREMENT PRIMARY KEY,
@@ -384,7 +408,7 @@ func CreatePostsTable(t *testing.T, db *relica.DB, dialect string) {
 				content TEXT
 			)
 		`
-	case "sqlite":
+	case dialectSQLite:
 		createSQL = `
 			CREATE TABLE IF NOT EXISTS posts (
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -474,7 +498,7 @@ func LoadTestData(t *testing.T, db *relica.DB, dialect string) {
 	require.NoError(t, err, "resolving testdata directory")
 
 	sqlFile := filepath.Join(dir, dialect+".sql")
-	raw, err := os.ReadFile(sqlFile)
+	raw, err := os.ReadFile(sqlFile) //nolint:gosec // G304: the testdata dir plus a dialect name
 	require.NoError(t, err, "reading testdata file %s", sqlFile)
 
 	ctx := context.Background()

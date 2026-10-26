@@ -44,7 +44,7 @@ func TestPostgresIntegration(t *testing.T) {
 	if err != nil {
 		containerUnavailable(t, "postgres", err)
 	}
-	defer pgContainer.Terminate(ctx) //nolint:errcheck // Test cleanup
+	defer pgContainer.Terminate(ctx)
 
 	// Get connection string (DSN)
 	dsn, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
@@ -53,7 +53,7 @@ func TestPostgresIntegration(t *testing.T) {
 	// Connect to database
 	db, err := relica.Open("postgres", dsn)
 	require.NoError(t, err)
-	defer db.Close() //nolint:errcheck // Test cleanup
+	defer db.Close()
 
 	// Create test table
 	_, err = db.ExecContext(ctx, `

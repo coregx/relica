@@ -137,7 +137,6 @@ func sfPanics(f func()) (panicked bool) {
 	return false
 }
 
-//nolint:gocognit,gocyclo,cyclop,maintidx // one subtest per public symbol, flat by design
 func runSelectFeatureTests(t *testing.T, db *relica.DB, dialect string) {
 	createSelectFeatureTables(t, db)
 	q := func(ident string) string { return sfQ(dialect, ident) }
