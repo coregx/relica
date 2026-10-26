@@ -766,6 +766,7 @@ rejects unknown columns itself.
 | `a.Union(b).Count()` / `.Exists()` | first branch only | the compound result |
 | `With("cte", q).From("cte").Count()` / `.Exists()` | error: the CTE was dropped | counts the CTE's rows |
 | `...Limit(20).Offset(40).Count()` | the total | the total (unchanged) |
+| `Select("MAX(price)").Count()`, `SelectExpr("SUM(x) AS s")...Count()` | matching rows | 1 (the one row `All` returns) |
 
 Code that used `Count()` on a grouped query to get the size of one group should filter to that group with `Where`.
 
