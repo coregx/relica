@@ -73,6 +73,12 @@ func (p *Profile) TableName() string { return "profiles" }
 
 func model(db *relica.DB, u *User) { db.Model(u).Insert() }
 
+// Function columns with an alias; a Where with a function is not a select list.
+func aliased(db *relica.DB) {
+	db.Select("id", "COALESCE(u.full_name, '') AS full_name").From("u").Where("LOWER(name) = ?", "x").All(nil)
+	db.Select("id").AndSelect("COUNT(*) as n").From("t").GroupBy("id").All(nil)
+}
+
 // A comment that quotes a bad chain is not code:
 // Danger: db.Delete("t").Execute() would wipe the table.
 // Note: a.Union(b).OrderBy("x") sorts the union since v0.20.0.

@@ -140,6 +140,12 @@ func v11(db *relica.DB) {
 		All(nil)
 }
 
+func v12(db *relica.DB) {
+	// V12 ×2: a function column without AS — PostgreSQL names it coalesce/count
+	db.Select("id", "COALESCE(u.full_name, '')").From("u").All(nil)
+	db.Select("id").AndSelect("COUNT(*)").From("t").GroupBy("id").All(nil)
+}
+
 func i5(db *relica.DB, sort string) {
 	// I5 ×1
 	db.Select().From("t").OrderBy(sort).All(nil)

@@ -273,6 +273,44 @@ setop_then_order() {
 		END { finish() }'
 }
 
+# Select/AndSelect string arguments with "(" (used as is) and no "AS alias": the
+# database names such a column after the function (coalesce, count, sum), so a
+# struct field tagged with the intended name has no column — an error under
+# ScanRequireFields since v0.20.0, a silently empty field before. Arguments are
+# read inside the call only (a Where("LOWER(x) = ?") on the line is not one).
+select_fn_no_alias() {
+	awk_files relicafiles "$awk_scan"'
+		# args(s, from): the string literals at depth 1 of the call whose "(" is
+		# at position from, joined by "\n".
+		function args(s, from,   i, n, c, d, instr, cur, out) {
+			n = length(s); d = 0; instr = 0; out = ""
+			for (i = from; i <= n; i++) {
+				c = substr(s, i, 1)
+				if (instr) {
+					if (c == "\\") { cur = cur c substr(s, i + 1, 1); i++; continue }
+					if (c == "\"") { instr = 0; if (d == 1) out = out cur "\n"; continue }
+					cur = cur c
+					continue
+				}
+				if (c == "\"") { instr = 1; cur = "" }
+				else if (c == "(") d++
+				else if (c == ")") { if (--d == 0) return out }
+			}
+			return out
+		}
+		{
+			line = nocomment($0); rest = line; off = 0; bad = 0
+			while (!bad && match(rest, /(^|[^A-Za-z0-9_])(Select|AndSelect)\(/)) {
+				pos = off + RSTART + RLENGTH - 1   # the "(" in line
+				nargs = split(args(line, pos), a, "\n")
+				for (k = 1; k <= nargs; k++)
+					if (index(a[k], "(") > 0 && a[k] !~ /[ \t][Aa][Ss][ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]*$/) bad = 1
+				off = pos; rest = substr(line, pos + 1)
+			}
+			if (bad) print FILENAME ":" FNR ":" $0
+		}'
+}
+
 # Builder Upsert("t", …) / OnConflict(…) with no DoUpdate/DoUpdateAll/DoNothing
 # on the same line or the next 8 (a chain, or an if/else that picks one).
 upsert_without_action() {
@@ -415,6 +453,9 @@ report MEDIUM V10 'Count()/Exists() with GroupBy, Distinct, Having or a set oper
 report MEDIUM V11 'OrderBy/Limit/Offset after Union/Intersect/Except — since v0.20.0 they sort and page the combined result (before: the first branch only); an OrderBy in a branch without Limit is an error' \
 	'AGENTS.md › Set Operations; MIGRATION_GUIDE › Set operations read left to right' \
 	< <(setop_then_order)
+report MEDIUM V12 'Function in Select/AndSelect without AS alias — the column is named coalesce/count/…, so a struct field with the intended name gets nothing: an error since v0.20.0 (ScanRequireFields), a silently empty field before; add "AS name"' \
+	'AGENTS.md › Ordering with Expressions; Table and Column Names (ScanMode)' \
+	< <(select_fn_no_alias)
 report INFO I5 'OrderBy with a value computed at run time (a sort parameter?) — since v0.20.0 it must be "column [ASC|DESC]"; validate user input against a list of columns' \
 	'AGENTS.md › Ordering with Expressions' \
 	< <(g relicafiles '(^|[^A-Za-z0-9_])OrderBy\([^")]' | grep -v 'func ')
