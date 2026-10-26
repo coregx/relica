@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -103,5 +104,20 @@ func TestLock_CountAndExists_AreErrors(t *testing.T) {
 	}
 	if _, err := tx.Builder().Select().From("cov_items").ForUpdate().Exists(); err == nil || !strings.Contains(err.Error(), lockCombination) {
 		t.Fatalf("Exists with a lock: err = %v", err)
+	}
+}
+
+// TestCountExists_LockInABranch verifies F7: Count and Exists reject a row
+// lock in a set-operation branch, not only on the outer query.
+func TestCountExists_LockInABranch(t *testing.T) {
+	qb := &QueryBuilder{db: mockDB("postgres")}
+	locked := func() *SelectQuery {
+		return qb.Select("id").From("a").Union(qb.Select("id").From("b").ForUpdate())
+	}
+	if _, err := locked().Count(); !errors.Is(err, errLockWithAggregate) {
+		t.Errorf("Count: err = %v, want errLockWithAggregate", err)
+	}
+	if _, err := locked().Exists(); !errors.Is(err, errLockWithAggregate) {
+		t.Errorf("Exists: err = %v, want errLockWithAggregate", err)
 	}
 }

@@ -1708,7 +1708,7 @@ func (sq *SelectQuery) Count() (int64, error) {
 	if err := sq.err(); err != nil {
 		return 0, err
 	}
-	if sq.lockClause != "" {
+	if sq.locksRows() {
 		return 0, errLockWithAggregate
 	}
 	sqlStr, params := sq.countStatement()
@@ -1733,7 +1733,7 @@ func (sq *SelectQuery) Exists() (bool, error) {
 	if err := sq.err(); err != nil {
 		return false, err
 	}
-	if sq.lockClause != "" {
+	if sq.locksRows() {
 		return false, errLockWithAggregate
 	}
 	sqlStr, params := sq.existsStatement()
@@ -2980,13 +2980,7 @@ func (buq *BatchUpdateQuery) Execute() (any, error) {
 
 // lockError enforces ADR-020 rules 3 and 4 for row locks.
 func (sq *SelectQuery) lockError() error {
-	locked := sq.lockClause != ""
-	for _, u := range sq.unions {
-		if u.query != nil && u.query.lockClause != "" {
-			locked = true
-		}
-	}
-	if !locked {
+	if !sq.locksRows() {
 		return nil
 	}
 	if len(sq.unions) > 0 || len(sq.groupBy) > 0 || sq.distinct {
@@ -2998,6 +2992,20 @@ func (sq *SelectQuery) lockError() error {
 			"outside one the lock ends with the statement")
 	}
 	return nil
+}
+
+// locksRows reports whether the query or one of its set-operation branches
+// has a row lock (ForUpdate/ForShare/ForUpdateSkipLocked).
+func (sq *SelectQuery) locksRows() bool {
+	if sq.lockClause != "" {
+		return true
+	}
+	for _, u := range sq.unions {
+		if u.query != nil && u.query.lockClause != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // errLockWithAggregate is returned by Count and Exists on a locking query.
