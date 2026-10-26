@@ -564,24 +564,26 @@ func setupTestDB(t *testing.T) *relica.DB {
 ```go
 import "log/slog"
 
-type QueryLogger struct {
-    logger *slog.Logger
-}
+func openDB(dsn string) (*relica.DB, error) {
+    var opts []relica.Option
 
-func (ql *QueryLogger) LogQuery(query string, args []interface{}, duration time.Duration) {
-    ql.logger.Info("query executed",
-        "query", query,
-        "duration_ms", duration.Milliseconds(),
-        "args_count", len(args),
-    )
-}
+    // Use in development
+    if isDevelopment() {
+        logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+        opts = append(opts, relica.WithQueryHook(func(ctx context.Context, e relica.QueryEvent) {
+            logger.InfoContext(ctx, "query executed",
+                "query", e.SQL,
+                "duration_ms", e.Duration.Milliseconds(),
+                "args_count", len(e.Args),
+            )
+        }))
+    }
 
-// Use in development
-if isDevelopment() {
-    logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-    db.SetQueryLogger(&QueryLogger{logger: logger})
+    return relica.Open("postgres", dsn, opts...)
 }
 ```
+
+For the standard log line (SQL, duration, rows, error) use `relica.WithLogger(relica.NewSlogAdapter(logger))` instead. See the [Logging Guide](../LOGGING_GUIDE.md).
 
 ---
 
@@ -831,7 +833,7 @@ Before deploying to production:
 - [ ] **Primary key strategy chosen** (see [Primary Key Strategy](#-primary-key-strategy) — avoid UUID v4 as PK)
 - [ ] **Indexes created** for frequently queried columns
 - [ ] **Query performance tested** under load
-- [ ] **Security features enabled** (validator, auditor if needed)
+- [ ] **No SQL built from input** (placeholders, `relica.Params`, Expression API; identifiers from an allowlist)
 - [ ] **Health checks implemented** (db.PingContext)
 
 ---

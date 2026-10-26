@@ -1,587 +1,231 @@
 # Security Guide
 
-> **Relica Security** - SQL Injection Prevention by Design
+> **Relica Security** - SQL injection prevention by design
 >
-> **Last Updated**: 2026-09-04
->
-> **Important**: Relica's primary and always-active defense against SQL injection
-> is **parameterized queries**. All query builder methods use placeholders — values
-> are never interpolated into SQL strings. No configuration needed.
->
-> **Note on advanced features**: The `WithValidator` and `WithAuditLog` options
-> described below are currently **internal** (`internal/security` package) and
-> not accessible from external Go modules. They are documented here for
-> architectural reference only. Do not attempt to import `internal/security`.
+> This guide describes only protections you can use today from the public `relica` package.
+> An SQL-injection validator and an audit log exist as internal groundwork and cannot be
+> enabled by users (planned).
 
 ---
 
-## 📋 Overview
+## Overview
 
-Relica provides enterprise-grade security features for protecting your database operations:
-
-- **SQL Injection Prevention**: Pattern-based detection of OWASP Top 10 SQL injection attacks
-- **Audit Logging**: Comprehensive operation tracking for compliance and forensics
-- **Context Tracking**: User, IP, and request ID propagation through database calls
-- **Privacy-First**: Parameter hashing instead of logging raw values
-
-All security features are **opt-in** with **zero overhead** when disabled.
-
----
-
-## 🔒 SQL Injection Prevention
-
-### Quick Start
-
-```go
-import (
-    "github.com/coregx/relica"
-    "github.com/coregx/relica/internal/security"
-)
-
-// Create validator
-validator := security.NewValidator()
-
-// Enable validation on DB connection
-db, err := relica.Open("postgres", dsn,
-    relica.WithValidator(validator),
-)
-if err != nil {
-    return err
-}
-defer db.Close()
-
-// All ExecContext and QueryContext calls are now validated
-_, err = db.ExecContext(ctx, "SELECT * FROM users WHERE id = ?", userID)
-// Malicious queries are blocked before execution
-```
-
-### Validation Modes
-
-#### Standard Mode (Default)
-
-Blocks dangerous patterns while allowing legitimate queries:
-
-```go
-validator := security.NewValidator()
-
-// ✅ ALLOWED: Legitimate queries
-db.ExecContext(ctx, "SELECT * FROM users WHERE status = ? OR role = ?", 1, 2)
-db.ExecContext(ctx, "SELECT * FROM orders UNION SELECT * FROM archived_orders")
-
-// ❌ BLOCKED: SQL injection attempts
-db.ExecContext(ctx, "SELECT * FROM users; DROP TABLE users")              // Stacked queries
-db.ExecContext(ctx, "SELECT * FROM users WHERE id = 1 OR 1=1")            // Tautology
-db.ExecContext(ctx, "SELECT * FROM users -- comment")                     // Comment injection
-db.ExecContext(ctx, "EXEC xp_cmdshell 'dir'")                            // Command execution
-```
-
-#### Strict Mode
-
-Maximum security - blocks even legitimate OR/AND/UNION queries:
-
-```go
-validator := security.NewValidator(security.WithStrict(true))
-
-db, err := relica.Open("postgres", dsn,
-    relica.WithValidator(validator),
-)
-
-// ❌ BLOCKED in strict mode:
-db.ExecContext(ctx, "SELECT * FROM users WHERE status = ? OR role = ?", 1, 2)
-db.ExecContext(ctx, "SELECT * FROM orders UNION SELECT * FROM archived_orders")
-```
-
-**Use strict mode when:**
-- Handling untrusted user input
-- Processing external API requests
-- Maximum security is required
-- Your application doesn't need OR/AND/UNION clauses
-
-### Attack Vectors Detected
-
-Relica's validator detects all OWASP Top 10 SQL injection patterns:
-
-| Attack Type | Example | Blocked |
-|-------------|---------|---------|
-| **Tautology** | `1 OR 1=1` | ✅ |
-| **Comment Injection** | `admin'--` | ✅ |
-| **Stacked Queries** | `; DROP TABLE` | ✅ |
-| **UNION Attacks** | `UNION SELECT password` | ✅ |
-| **Command Execution** | `xp_cmdshell`, `exec()` | ✅ |
-| **Information Schema** | `information_schema.tables` | ✅ |
-| **Timing Attacks** | `pg_sleep()`, `benchmark()` | ✅ |
-| **Boolean Injection** | `AND 1=0` | ✅ |
-
-Full pattern list: see `internal/security/validator.go`
-
-### Performance Impact
-
-Validation overhead is **< 2%** of total query execution time:
-
-```
-BenchmarkValidateQuery/safe_query     12.9 µs/op  (queries take ~10ms)
-BenchmarkValidateQuery/malicious       812 ns/op
-BenchmarkValidateParams                1.1 µs/op
-```
-
-### API Limitations
-
-**QueryRowContext does NOT support validation** due to database/sql API constraints:
-
-```go
-// ❌ NOT VALIDATED (cannot return error):
-row := db.QueryRowContext(ctx, maliciousQuery)
-
-// ✅ VALIDATED (use this instead):
-rows, err := db.QueryContext(ctx, query)
-if err != nil {
-    return err
-}
-defer rows.Close()
-if rows.Next() {
-    err = rows.Scan(&result)
-}
-```
-
-**Recommendation**: Use QueryContext() or QueryBuilder for validated queries.
+| Protection | How you get it |
+|---|---|
+| Values never become SQL text | Query builder, `?` placeholders, `{:name}` + `relica.Params`, Expression API |
+| Identifiers are quoted | Automatic in the builder; `{{table}}` / `[[column]]` in raw SQL; `db.QuoteTableName` / `db.QuoteColumnName` |
+| LIKE wildcards in input are escaped | `relica.Like` and friends escape `%`, `_` and `\` by default |
+| Database details stay out of responses | `relica.IsUniqueViolation` and the other error classifiers |
+| Logs do not contain argument values | `relica.WithLogger` logs SQL without arguments; `relica.MaskArgs` for custom hooks |
+| Runaway queries are cut off | `context.WithTimeout` + `WithContext` |
 
 ---
 
-## 📊 Audit Logging
+## Parameterized Queries
 
-### Quick Start
-
-```go
-import (
-    "log/slog"
-    "github.com/coregx/relica"
-    "github.com/coregx/relica/internal/security"
-)
-
-// Create logger
-logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-    Level: slog.LevelInfo,
-}))
-
-// Create auditor with desired level
-auditor := security.NewAuditor(logger, security.AuditWrites)
-
-// Enable auditing on DB connection
-db, err := relica.Open("postgres", dsn,
-    relica.WithAuditLog(auditor),
-)
-if err != nil {
-    return err
-}
-defer db.Close()
-
-// All operations are now logged
-_, err = db.ExecContext(ctx, "INSERT INTO users (name) VALUES (?)", "Alice")
-```
-
-### Audit Levels
-
-Choose the appropriate level for your compliance requirements:
+Every builder method sends values to the database as arguments. The SQL text contains only placeholders (`$1` on PostgreSQL, `?` on MySQL and SQLite):
 
 ```go
-// AuditNone - No logging (default, zero overhead)
-auditor := security.NewAuditor(logger, security.AuditNone)
+// Hostile input stays an argument
+email := "x' OR 1=1 --"
+var users []User
+err := db.Select().From("users").Where(relica.Eq("email", email)).All(&users)
+// PostgreSQL: SELECT * FROM "users" WHERE "email" = $1   args: [x' OR 1=1 --]
 
-// AuditWrites - Log only write operations (INSERT, UPDATE, DELETE, UPSERT)
-auditor := security.NewAuditor(logger, security.AuditWrites)
-
-// AuditReads - Log reads AND writes (SELECT + write operations)
-auditor := security.NewAuditor(logger, security.AuditReads)
-
-// AuditAll - Log everything (including utility commands)
-auditor := security.NewAuditor(logger, security.AuditAll)
+// Single-row writes through the Model API are parameterized too
+err = db.Model(&user).Insert()
 ```
 
-**Recommendation for compliance:**
-- **HIPAA**: AuditReads (track all data access)
-- **PCI-DSS**: AuditReads (audit all cardholder data access)
-- **GDPR**: AuditWrites (track data modifications)
-- **SOC2**: AuditReads (comprehensive audit trail)
+### Named placeholders
 
-### Context Metadata
-
-Track user, IP, and request ID through database operations:
+`{:name}` with `relica.Params` works in `Where`, `AndWhere`, `OrWhere`, `Having` and raw queries:
 
 ```go
-import "github.com/coregx/relica/internal/security"
+err := db.Select("id", "name").
+    From("users").
+    Where("status = {:status} AND (owner_id = {:id} OR author_id = {:id})",
+        relica.Params{"status": "active", "id": userID}).
+    All(&users)
 
-// Add metadata to context
-ctx := context.Background()
-ctx = security.WithUser(ctx, "john.doe@example.com")
-ctx = security.WithClientIP(ctx, "192.168.1.100")
-ctx = security.WithRequestID(ctx, "req-12345")
-
-// Execute query - metadata automatically logged
-_, err := db.ExecContext(ctx, "UPDATE users SET status = ? WHERE id = ?", 2, 123)
+err = db.NewQuery("SELECT * FROM users WHERE id = {:id}").
+    BindParams(relica.Params{"id": userID}).
+    One(&user)
 ```
 
-**Typical web server integration:**
+A name missing from `Params` makes the query fail with an error naming it.
+
+### Raw SQL
+
+Raw SQL is safe only when values go through placeholders:
 
 ```go
-func middleware(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        // Extract metadata from request
-        ctx := r.Context()
-        ctx = security.WithUser(ctx, getUserFromToken(r))
-        ctx = security.WithClientIP(ctx, r.RemoteAddr)
-        ctx = security.WithRequestID(ctx, r.Header.Get("X-Request-ID"))
+// ✅ Values as arguments
+err := db.NewQuery("SELECT * FROM users WHERE id = ? AND status = ?").
+    Bind(userID, "active").
+    One(&user)
 
-        // Pass enriched context to handlers
-        next.ServeHTTP(w, r.WithContext(ctx))
-    })
-}
+_, err = db.ExecContext(ctx, "UPDATE users SET status = ? WHERE id = ?", "blocked", userID)
+
+// ❌ Never build SQL text from input
+query := fmt.Sprintf("SELECT * FROM users WHERE name = '%s'", name) // SQL injection
 ```
 
-### Audit Log Format
-
-Audit events are logged as structured JSON:
-
-```json
-{
-  "level": "INFO",
-  "msg": "audit_event",
-  "timestamp": "2025-11-13T10:30:45.123Z",
-  "user": "john.doe@example.com",
-  "operation": "INSERT",
-  "table": "users",
-  "affected_rows": 1,
-  "sql": "INSERT INTO users (name, email) VALUES (?, ?)",
-  "params_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
-  "client_ip": "192.168.1.100",
-  "request_id": "req-12345",
-  "success": true,
-  "error": "",
-  "duration_ms": 15
-}
-```
-
-**Key fields:**
-- `timestamp`: UTC timestamp of operation
-- `user`: User from context (empty if not set)
-- `operation`: INSERT, UPDATE, DELETE, SELECT, etc.
-- `table`: Target table (if detectable)
-- `affected_rows`: Number of rows modified
-- `sql`: Executed query
-- `params_hash`: SHA256 hash of parameters (NOT raw values)
-- `client_ip`: Client IP from context
-- `request_id`: Request ID for distributed tracing
-- `success`: true if operation succeeded, false if error
-- `error`: Error message (if failed)
-- `duration_ms`: Query execution time in milliseconds
-
-### Parameter Hashing (Privacy)
-
-**Relica NEVER logs raw parameter values** to protect sensitive data:
-
-```go
-// Query with sensitive data
-db.ExecContext(ctx, "INSERT INTO users (email, password_hash) VALUES (?, ?)",
-    "alice@example.com", "$2a$10$...")
-
-// Audit log contains SHA256 hash, NOT raw values:
-// "params_hash": "a3c5f12..."  ← Cannot be reversed
-// "alice@example.com" does NOT appear in logs
-```
-
-This ensures compliance with GDPR/HIPAA/PCI-DSS data protection requirements.
-
-### Security Event Logging
-
-When validator blocks a malicious query, it's logged as a security event:
-
-```go
-// Attempt SQL injection
-_, err := db.ExecContext(ctx, "SELECT * FROM users; DROP TABLE users")
-// Error: "dangerous SQL pattern detected: query contains unsafe construct"
-```
-
-**Security event log:**
-
-```json
-{
-  "level": "WARN",
-  "msg": "security_event",
-  "event_type": "query_blocked",
-  "timestamp": "2025-11-13T10:35:12.456Z",
-  "user": "attacker@evil.com",
-  "client_ip": "10.0.0.666",
-  "request_id": "req-67890",
-  "query": "SELECT * FROM users; DROP TABLE users",
-  "error": "dangerous SQL pattern detected: query contains unsafe construct"
-}
-```
-
-**Security events are always logged at WARN level**, even if normal operations use INFO.
+The same rule applies to every method that takes raw SQL text: `relica.NewExp`, `SelectExpr`, `OrderByExpr`, `GroupByExpr` and string conditions in `Where`. Their SQL is used verbatim; pass values as their `args`.
 
 ---
 
-## 🛡️ Combined Security Setup
+## Expression API
 
-### Production-Ready Configuration
+Expression constructors build the SQL themselves and pass every value as an argument:
 
 ```go
-package main
+err := db.Select().
+    From("users").
+    Where(relica.And(
+        relica.Eq("status", "active"),
+        relica.In("role", "admin", "editor"),
+        relica.GreaterThan("age", minAge),
+    )).
+    All(&users)
+// PostgreSQL: ... WHERE ("status" = $1) AND ("role" IN ($2, $3)) AND ("age" > $4)
+```
 
-import (
-    "context"
-    "log/slog"
-    "os"
+Prefer the Expression API over hand-written condition strings: there is no SQL text for input to reach.
 
-    "github.com/coregx/relica"
-    "github.com/coregx/relica/internal/security"
-)
+---
 
-func setupSecureDB(dsn string) (*relica.DB, error) {
-    // Create structured logger
-    logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-        Level: slog.LevelInfo,
-        AddSource: true,
-    }))
+## Identifier Quoting
 
-    // Create validator with strict mode for maximum security
-    validator := security.NewValidator(security.WithStrictMode())
+The builder quotes table and column names for the dialect (`"users"` on PostgreSQL and SQLite, `` `users` `` on MySQL), including schema-qualified names (`"public"."users"`).
 
-    // Create auditor with reads+writes logging for compliance
-    auditor := security.NewAuditor(logger, security.AuditReads)
+In raw SQL, write `{{table}}` and `[[column]]`:
 
-    // Create DB with all security features enabled
-    db, err := relica.Open("postgres", dsn,
-        relica.WithValidator(validator),
-        relica.WithAuditLog(auditor),
-        relica.WithMaxOpenConns(25),
-        relica.WithMaxIdleConns(5),
-        relica.WithConnMaxLifetime(300), // 5 minutes
-    )
-    if err != nil {
-        return nil, err
-    }
+```go
+err := db.NewQuery("SELECT [[id]], [[name]] FROM {{users}} WHERE [[id]] = {:id}").
+    BindParams(relica.Params{"id": userID}).
+    One(&user)
+// PostgreSQL: SELECT "id", "name" FROM "users" WHERE "id" = $1
+```
 
-    return db, nil
+For identifiers chosen at runtime (a sort column from a request), check them against an allowlist first. `db.QuoteTableName` and `db.QuoteColumnName` quote a name and escape quote characters inside it, so a hostile name stays one identifier — but an allowlist is what guarantees it is a column you meant to expose:
+
+```go
+var sortable = map[string]bool{"name": true, "created_at": true}
+
+col := r.URL.Query().Get("sort")
+if !sortable[col] {
+    col = "name"
 }
-
-func main() {
-    db, err := setupSecureDB(os.Getenv("DATABASE_URL"))
-    if err != nil {
-        panic(err)
-    }
-    defer db.Close()
-
-    // Add context metadata
-    ctx := context.Background()
-    ctx = security.WithUser(ctx, "admin@example.com")
-    ctx = security.WithClientIP(ctx, "192.168.1.1")
-    ctx = security.WithRequestID(ctx, "req-001")
-
-    // Execute secure query
-    _, err = db.ExecContext(ctx, "INSERT INTO users (name) VALUES (?)", "Alice")
-    if err != nil {
-        // Malicious queries are blocked, security events logged
-        panic(err)
-    }
-
-    // Query is validated, executed, and audited
-}
+err := db.Select().From("users").OrderBy(col).All(&users)
 ```
 
 ---
 
-## 📋 Compliance Checklist
+## LIKE Escaping
 
-### GDPR (General Data Protection Regulation)
+`relica.Like`, `NotLike`, `OrLike`, `OrNotLike` and the case-insensitive `ILike` family escape `%`, `_` and `\` in the values, so user input cannot add wildcards:
 
-- ✅ **Article 32 - Security of Processing**: SQL injection prevention
-- ✅ **Article 32 - Audit Trail**: Comprehensive operation logging
-- ✅ **Article 25 - Data Protection by Design**: Privacy-first parameter hashing
-- ✅ **Article 33 - Breach Notification**: Security event logging for incident detection
+```go
+err := db.Select().From("products").Where(relica.Like("name", search)).All(&products)
+// search = "50%_off" → LIKE '%50\%\_off%' (literal match, value passed as an argument)
 
-### HIPAA (Health Insurance Portability and Accountability Act)
+// Prefix match only
+relica.Like("path", prefix).Match(false, true)
 
-- ✅ **§164.308(a)(1)(ii)(D) - Access Controls**: User tracking via context
-- ✅ **§164.312(b) - Audit Controls**: Operation logging with timestamps
-- ✅ **§164.308(a)(5)(ii)(C) - Log Review**: Structured JSON logs for analysis
-- ✅ **§164.312(a)(2)(i) - Unique User Identification**: User field in audit logs
+// Custom escaping: pairs of special character and replacement
+relica.Like("code", input).EscapeChars("!", "!!")
+```
 
-### PCI-DSS (Payment Card Industry Data Security Standard)
-
-- ✅ **Requirement 6.5 - SQL Injection Prevention**: Pattern-based validation
-- ✅ **Requirement 10 - Audit Trail**: Comprehensive logging of data access
-- ✅ **Requirement 10.2.5 - User Identification**: User, IP, request ID tracking
-- ✅ **Requirement 10.3 - Audit Log Entries**: Timestamp, user, operation, success/failure
-
-### SOC2 (Service Organization Control 2)
-
-- ✅ **CC6.1 - Logical Access Controls**: SQL injection prevention
-- ✅ **CC7.2 - System Monitoring**: Audit logging with security events
-- ✅ **CC7.3 - Incident Response**: Security event detection and logging
-- ✅ **CC8.1 - Change Management**: Audit trail of data modifications
+An odd number of `EscapeChars` arguments is a construction error: `Err()` returns it and any query using the expression fails with it.
 
 ---
 
-## 🧪 Testing Security Features
+## Error Classification Without Leaking Details
 
-### Unit Testing with Validator
-
-```go
-func TestSecureQuery(t *testing.T) {
-    validator := security.NewValidator()
-    db, _ := relica.NewDB("sqlite", ":memory:",
-        relica.WithValidator(validator),
-    )
-    defer db.Close()
-
-    ctx := context.Background()
-
-    // Test legitimate query
-    _, err := db.ExecContext(ctx, "SELECT * FROM users WHERE id = ?", 123)
-    if err != nil {
-        t.Errorf("Legitimate query blocked: %v", err)
-    }
-
-    // Test SQL injection attempt
-    _, err = db.ExecContext(ctx, "SELECT * FROM users; DROP TABLE users")
-    if err == nil {
-        t.Error("SQL injection not detected!")
-    }
-}
-```
-
-### Integration Testing with Auditor
-
-```go
-func TestAuditLogging(t *testing.T) {
-    var buf bytes.Buffer
-    logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{
-        Level: slog.LevelInfo,
-    }))
-
-    auditor := security.NewAuditor(logger, security.AuditWrites)
-    db, _ := relica.NewDB("sqlite", ":memory:",
-        relica.WithAuditLog(auditor),
-    )
-    defer db.Close()
-
-    // Create test table
-    db.sqlDB.Exec("CREATE TABLE users (id INTEGER, name TEXT)")
-
-    // Execute audited operation
-    ctx := security.WithUser(context.Background(), "test@example.com")
-    _, err := db.ExecContext(ctx, "INSERT INTO users (id, name) VALUES (?, ?)", 1, "Alice")
-    if err != nil {
-        t.Fatal(err)
-    }
-
-    // Verify audit log
-    logOutput := buf.String()
-    if !strings.Contains(logOutput, "audit_event") {
-        t.Error("Audit event not logged")
-    }
-    if !strings.Contains(logOutput, "test@example.com") {
-        t.Error("User not in audit log")
-    }
-    if !strings.Contains(logOutput, "params_hash") {
-        t.Error("Parameter hash missing")
-    }
-    if strings.Contains(logOutput, "Alice") {
-        t.Error("Raw parameter value leaked in audit log!")
-    }
-}
-```
-
----
-
-## ⚠️ Best Practices
-
-### DO:
-
-✅ **Enable validation for user-facing applications**
-```go
-validator := security.NewValidator()
-db, _ := relica.Open("postgres", dsn, relica.WithValidator(validator))
-```
-
-✅ **Use audit logging for compliance requirements**
-```go
-auditor := security.NewAuditor(logger, security.AuditReads)
-db, _ := relica.Open("postgres", dsn, relica.WithAuditLog(auditor))
-```
-
-✅ **Add context metadata for forensics**
-```go
-ctx = security.WithUser(ctx, getUserFromSession(r))
-ctx = security.WithClientIP(ctx, r.RemoteAddr)
-ctx = security.WithRequestID(ctx, getRequestID(r))
-```
-
-✅ **Use QueryContext() instead of QueryRowContext() when validation is required**
-```go
-rows, err := db.QueryContext(ctx, query, args...)
-```
-
-✅ **Monitor security events in production**
-```go
-// Set up alerts for WARN-level security events
-logger := slog.New(slog.NewJSONHandler(alertingHandler, &slog.HandlerOptions{
-    Level: slog.LevelWarn,
-}))
-```
-
-### DON'T:
-
-❌ **Don't rely solely on validation** - use prepared statements (default in Relica)
-```go
-// Validation is defense-in-depth, not primary protection
-// Prepared statements are your first line of defense
-```
-
-❌ **Don't disable validation based on "trusted" sources**
-```go
-// Even internal APIs can be compromised
-// Always validate user-controlled input
-```
-
-❌ **Don't log audit trails to the same database**
-```go
-// Use external log aggregation (CloudWatch, Elasticsearch, etc.)
-// Database compromise shouldn't destroy audit trail
-```
-
-❌ **Don't use AuditAll in high-throughput systems**
-```go
-// AuditWrites or AuditReads are sufficient for most compliance
-// AuditAll adds overhead for utility commands (PRAGMA, SHOW, etc.)
-```
-
-✅ **Use error classification to avoid leaking database details**
-
-Raw database errors often contain table names, column names, and constraint names. Use `relica.IsUniqueViolation` and friends to convert constraint errors into safe application-level errors before exposing them to callers or logging them at INFO level:
+Raw database errors can contain table, column and constraint names. Classify them and return your own errors to callers:
 
 ```go
 if err := db.Model(&record).Insert(); err != nil {
     switch {
     case relica.IsUniqueViolation(err):
-        // Return generic message — don't expose constraint name
         return ErrAlreadyExists
     case relica.IsForeignKeyViolation(err):
         return ErrInvalidReference
+    case relica.IsNotNullViolation(err), relica.IsCheckViolation(err):
+        return ErrInvalidInput
     default:
-        // Log full error internally, return generic error externally
-        logger.Error("unexpected db error", "err", err)
+        logger.Error("unexpected db error", "err", err) // full error stays in internal logs
         return ErrInternal
     }
 }
 ```
 
+The classifiers read the driver's error code (PostgreSQL SQLSTATE, MySQL error number, SQLite extended result code); the message text is consulted only when a driver attaches no code. `IsDeadlock`, `IsSerializationFailure` and `IsLockTimeout` classify concurrency errors the same way (see the package documentation for retrying a transaction).
+
 ---
 
-## 📚 Additional Resources
+## Logging Without Secrets
+
+`relica.WithLogger` logs the SQL text (with placeholders), the duration, rows and the error. It does **not** log argument values:
+
+```go
+logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+db, err := relica.Open("postgres", dsn,
+    relica.WithLogger(relica.NewSlogAdapter(logger)))
+```
+
+A custom `relica.WithQueryHook` receives the arguments in `QueryEvent.Args`. Pass them through `relica.MaskArgs` before logging: if the SQL references a sensitive column (password, token, api_key and similar), all arguments of that statement are masked:
+
+```go
+db, err := relica.Open("postgres", dsn,
+    relica.WithQueryHook(func(ctx context.Context, e relica.QueryEvent) {
+        slog.InfoContext(ctx, "query", "sql", e.SQL, "args", relica.MaskArgs(e.SQL, e.Args))
+    }))
+```
+
+Details: [Logging Guide](../LOGGING_GUIDE.md).
+
+---
+
+## Context Timeouts
+
+Bound every request-driven query with a deadline, so a slow or abusive query cannot hold a connection indefinitely:
+
+```go
+ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+defer cancel()
+
+err := db.Select().
+    From("orders").
+    Where(relica.Eq("user_id", userID)).
+    WithContext(ctx).
+    All(&orders)
+```
+
+`db.WithContext(ctx)` sets the context for every query built from the returned `*relica.DB`.
+
+---
+
+## Checklist
+
+- [ ] No `fmt.Sprintf` or string concatenation of input into SQL text
+- [ ] Raw SQL (`NewQuery`, `ExecContext`, `NewExp`, `*Expr` methods) uses placeholders for every value
+- [ ] Dynamic identifiers (sort columns, table names) checked against an allowlist
+- [ ] Search input goes through `relica.Like` / `relica.ILike`, not a hand-built pattern
+- [ ] Errors classified with `relica.Is*`; raw database errors never reach API responses
+- [ ] Custom query hooks mask arguments with `relica.MaskArgs`
+- [ ] Request queries carry a context with a deadline
+- [ ] TLS to the database enabled in the DSN (`sslmode=require` / `tls=true`)
+- [ ] The application's database user has only the privileges it needs
+
+Testing your data layer for injection: [Security Testing Guide](SECURITY_TESTING.md).
+
+---
+
+## Additional Resources
 
 - **OWASP SQL Injection**: https://owasp.org/www-community/attacks/SQL_Injection
-- **NIST Database Security**: https://csrc.nist.gov/publications/detail/sp/800-123/final
+- **OWASP Query Parameterization Cheat Sheet**: https://cheatsheetseries.owasp.org/cheatsheets/Query_Parameterization_Cheat_Sheet.html
 - **CWE-89 (SQL Injection)**: https://cwe.mitre.org/data/definitions/89.html
 
 ---

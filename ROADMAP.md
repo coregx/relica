@@ -199,7 +199,7 @@ Relica is a **query builder**, NOT an ORM. We will **NEVER** add:
 - **v0.3.0-beta** (2025-10-25) - Subqueries, Set Operations, CTEs, WrapDB() (advanced SQL features)
 - **v0.4.0-beta** (2025-10-26) - Wrapper types migration, better documentation, API stability
 - **v0.4.1-beta** (2025-10-26) - Convenience methods (Select, Insert, Update, Delete)
-- **v0.5.0** (2025-11-14) - Enterprise security, query optimizer, comprehensive documentation
+- **v0.5.0** (2025-11-14) - Comprehensive documentation; security validator, audit log, query optimizer and tracing: planned (internal groundwork, not enabled)
 - **v0.6.0** (2025-11-24) - Struct operations (InsertStruct, Model API)
 - **v0.7.0** (2025-11-24) - Model() API parity (auto-populate ID, selective fields)
 - **v0.8.0** (2025-12-16) - Named placeholders, quoting, Row/Column, Transactional, Distinct, AndWhere/OrWhere

@@ -9,7 +9,7 @@
 - [ ] All tests passing
 - [ ] Migrations tested on staging
 - [ ] Connection pool configured
-- [ ] Security features enabled (validator, auditor)
+- [ ] All SQL parameterized, no SQL built from input ([Security Guide](SECURITY.md))
 - [ ] Error handling comprehensive
 - [ ] Logging configured
 - [ ] Health checks implemented
@@ -22,19 +22,27 @@
 ### Production Settings
 
 ```go
+logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
 db, err := relica.Open("postgres", dsn,
     // Connection pool
-    relica.WithMaxOpenConns(25),     // 10-25 per CPU core
-    relica.WithMaxIdleConns(5),      // 20% of MaxOpenConns
-    relica.WithConnMaxLifetime(300), // 5 minutes
+    relica.WithMaxOpenConns(25),                 // 10-25 per CPU core
+    relica.WithMaxIdleConns(5),                  // 20% of MaxOpenConns
+    relica.WithConnMaxLifetime(5*time.Minute),   // recycle connections
+    relica.WithConnMaxIdleTime(1*time.Minute),   // close idle connections
 
-    // Security: parameterized queries prevent SQL injection by design
-    // Advanced validator/auditor options are internal — see docs/guides/SECURITY.md
+    // Health: periodic ping, read with db.IsHealthy() / db.Stats()
+    relica.WithHealthCheck(30*time.Second),
+
+    // Logging: SQL, duration and error per statement (arguments are not logged)
+    relica.WithLogger(relica.NewSlogAdapter(logger)),
 
     // Performance
     relica.WithStmtCacheCapacity(1000), // Prepared statement cache
 )
 ```
+
+SQL injection protection needs no option: values always travel as parameters (see the [Security Guide](SECURITY.md)).
 
 ### Environment Variables
 
@@ -77,6 +85,20 @@ func healthCheck(db *relica.DB) error {
     defer cancel()
 
     return db.PingContext(ctx)
+}
+```
+
+### Background Health Checks
+
+With `relica.WithHealthCheck(interval)` Relica pings the database in the background. `db.IsHealthy()` returns the last result without a round trip; `db.Stats()` also reports `Healthy` and `LastHealthCheck`:
+
+```go
+db, err := relica.Open("postgres", dsn, relica.WithHealthCheck(30*time.Second))
+
+// e.g. in a readiness probe
+if !db.IsHealthy() {
+    w.WriteHeader(http.StatusServiceUnavailable)
+    return
 }
 ```
 
@@ -182,36 +204,32 @@ func updateMetrics(db *relica.DB) {
 }
 ```
 
+### Query Metrics and Slow-Query Log
+
+`relica.WithQueryHook` receives every statement's SQL, duration, rows affected, error and operation. Use it for latency metrics, slow-query logs or tracing ([Logging Guide](../LOGGING_GUIDE.md)):
+
+```go
+db, err := relica.Open("postgres", dsn,
+    relica.WithQueryHook(func(ctx context.Context, e relica.QueryEvent) {
+        if e.Duration >= 200*time.Millisecond {
+            slog.WarnContext(ctx, "slow query",
+                "sql", e.SQL, "op", e.Operation, "duration", e.Duration)
+        }
+    }))
+```
+
 ---
 
 ## Security
 
-### Enable Validator
+- **Parameterized queries**: the builder, `?` placeholders and `{:name}` with `relica.Params` always send values as arguments. Never build SQL text with `fmt.Sprintf`.
+- **Dynamic identifiers** (sort columns): check against an allowlist; `db.QuoteColumnName` quotes and escapes a name.
+- **Errors**: classify with `relica.IsUniqueViolation`, `relica.IsForeignKeyViolation` and the other `relica.Is*` helpers; do not return raw database errors to clients.
+- **Logs**: `relica.WithLogger` does not log arguments; custom hooks mask them with `relica.MaskArgs(e.SQL, e.Args)`.
+- **Timeouts**: give request queries a context with a deadline (`WithContext(ctx)`).
+- **Transport and privileges**: TLS in the DSN (`sslmode=require`), a database user with only the privileges the application needs.
 
-```go
-import "github.com/coregx/relica/internal/security"
-
-validator := security.NewValidator(security.WithStrictMode())
-db, err := relica.Open("postgres", dsn,
-    relica.WithValidator(validator),
-)
-```
-
-### Enable Audit Logging
-
-```go
-logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-auditor := security.NewAuditor(logger, security.AuditReads)
-
-db, err := relica.Open("postgres", dsn,
-    relica.WithAuditLog(auditor),
-)
-
-// Add context metadata
-ctx = security.WithUser(ctx, getUserFromToken(r))
-ctx = security.WithClientIP(ctx, r.RemoteAddr)
-ctx = security.WithRequestID(ctx, r.Header.Get("X-Request-ID"))
-```
+Request metadata for an audit trail (user, client IP, request ID) can be logged from a query hook, which receives the query's context. A built-in SQL-injection validator and audit log are planned; they are not available in the public API.
 
 ---
 

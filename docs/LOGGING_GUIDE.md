@@ -1,17 +1,15 @@
 # Logging and Tracing Guide for Relica
 
-> **Note**: `WithTracer` and `NewOtelTracer` described below are currently
-> **internal** and not part of the public API. Logging via `WithLogger` and
-> `WithQueryHook` is fully public and available. The tracing examples are
-> for architectural reference only.
+This guide covers SQL query logging (`relica.WithLogger`) and observability hooks (`relica.WithQueryHook`), including OpenTelemetry tracing written in your own code.
 
-This guide covers SQL query logging and distributed tracing capabilities in Relica.
+Relica stays zero-dependency: it imports no logging or tracing library. `WithLogger` takes any value with `Debug/Info/Warn/Error` methods, and tracing is a few lines of your code in a `QueryHook` — the OpenTelemetry import lives in your module, not in Relica.
 
 ## Table of Contents
 
 - [Quick Start](#quick-start)
 - [Logging with slog](#logging-with-slog)
-- [OpenTelemetry Tracing](#opentelemetry-tracing)
+- [Query Hooks](#query-hooks)
+- [Tracing with OpenTelemetry via QueryHook](#tracing-with-opentelemetry-via-queryhook)
 - [Sensitive Data Masking](#sensitive-data-masking)
 - [Best Practices](#best-practices)
 - [Performance](#performance)
@@ -51,89 +49,52 @@ func main() {
     var users []User
     _ = db.Select().From("users").All(&users)
     // Output: {"time":"...","level":"INFO","msg":"query executed",
-    //          "sql":"SELECT * FROM users","duration_ms":15,"rows":10}
+    //          "sql":"SELECT * FROM \"users\"","duration_ms":15,"rows":0}
 }
 ```
 
 ### Basic Tracing (OpenTelemetry)
 
+Register a hook that turns each statement into a span — see [Tracing with OpenTelemetry via QueryHook](#tracing-with-opentelemetry-via-queryhook) for the hook itself:
+
 ```go
-package main
-
-import (
-    "context"
-
-    "github.com/coregx/relica"
-    "go.opentelemetry.io/otel"
-    "go.opentelemetry.io/otel/exporters/jaeger"
-    sdktrace "go.opentelemetry.io/otel/sdk/trace"
-)
-
-func main() {
-    // Setup OpenTelemetry
-    exporter, _ := jaeger.New(jaeger.WithCollectorEndpoint())
-    tp := sdktrace.NewTracerProvider(
-        sdktrace.WithBatcher(exporter),
-    )
-    otel.SetTracerProvider(tp)
-    defer tp.Shutdown(context.Background())
-
-    // Create tracer
-    tracer := otel.Tracer("relica")
-
-    // Open database with tracing
-    db, err := relica.Open("postgres", dsn,
-        relica.WithTracer(relica.NewOtelTracer(tracer)))
-    if err != nil {
-        panic(err)
-    }
-    defer db.Close()
-
-    // All queries are now traced
-    ctx := context.Background()
-    var user User
-    _ = db.WithContext(ctx).
-        Select().
-        From("users").
-        Where("id = ?", 123).
-        One(&user)
-    // Span created: relica.query.one with db.* attributes
-}
+db, err := relica.Open("postgres", dsn,
+    relica.WithQueryHook(otelHook(otel.Tracer("myapp/db"))))
 ```
 
 ---
 
 ## Logging with slog
 
+`relica.WithLogger(l)` registers a query hook that logs every statement through `l`. `relica.NewSlogAdapter` adapts a `*slog.Logger` (a nil logger uses `slog.Default()`); any type with the four `relica.Logger` methods works too.
+
 ### Logger Levels
 
 Relica logs at different levels depending on the outcome:
 
-- **INFO**: Successful query execution
-- **WARN**: Query returned no rows (sql.ErrNoRows)
-- **ERROR**: Query preparation failed, execution failed, or scanning failed
+| Level | Message | When |
+|---|---|---|
+| INFO | `query executed` | Statement succeeded |
+| WARN | `no rows` | Query found no row (`relica.ErrNotFound` / `sql.ErrNoRows`) |
+| ERROR | `query failed` | Execution or scanning failed |
 
 ### Log Fields
 
-Standard fields logged for each query:
+| Field | Type | Description |
+|---|---|---|
+| `sql` | string | SQL text with dialect placeholders (`$1` or `?`) |
+| `duration_ms` | int64 | Statement duration in milliseconds |
+| `rows` | int64 | Rows affected (INSERT/UPDATE/DELETE); INFO only |
+| `error` | error | The error; ERROR only |
 
-| Field          | Type    | Description                         |
-|---------------|---------|-------------------------------------|
-| `msg`          | string  | Log message                         |
-| `sql`          | string  | SQL query string                    |
-| `params`       | string  | Formatted parameters (sanitized)    |
-| `duration_ms`  | int64   | Query execution time in milliseconds |
-| `database`     | string  | Database driver name (postgres/mysql/sqlite) |
-| `rows_affected`| int64   | Number of rows affected (INSERT/UPDATE/DELETE) |
-| `rows`         | int     | Number of rows returned (SELECT)    |
-| `error`        | string  | Error message (if failed)           |
+Argument values are **not** logged. To log them, write your own hook and mask them with `relica.MaskArgs` (see [Sensitive Data Masking](#sensitive-data-masking)).
 
 ### Custom Log Handlers
 
 ```go
 // Text handler (human-readable)
 textHandler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-    Level: slog.LevelDebug, // Include debug logs
+    Level: slog.LevelDebug,
 })
 logger := slog.New(textHandler)
 
@@ -180,53 +141,109 @@ func (h *SlowQueryHandler) Handle(ctx context.Context, r slog.Record) error {
 }
 ```
 
+A query hook is often simpler for this (next section).
+
 ---
 
-## OpenTelemetry Tracing
+## Query Hooks
 
-### Span Names
+`relica.WithQueryHook(hook)` registers a `relica.QueryHook`, called after each statement:
 
-Relica creates spans with these names:
+```go
+type QueryHook func(ctx context.Context, event QueryEvent)
 
-- `relica.query.execute` - INSERT/UPDATE/DELETE operations
-- `relica.query.one` - SELECT returning single row
-- `relica.query.all` - SELECT returning multiple rows
+type QueryEvent struct {
+    SQL          string        // executed SQL with dialect placeholders ($1 or ?)
+    Args         []any         // bound arguments — may contain secrets, see MaskArgs
+    Duration     time.Duration // how long the statement took
+    RowsAffected int64         // INSERT/UPDATE/DELETE
+    Error        error         // execution or scan error, nil on success
+    Operation    string        // SELECT, INSERT, UPDATE, DELETE or UNKNOWN
+}
+```
 
-### Span Attributes (OpenTelemetry Semantic Conventions)
+- `ctx` is the query's context (from `WithContext`), so request-scoped values such as the active trace span are available.
+- Hooks compose: each `WithQueryHook` adds one, and they run in registration order. `WithLogger` is itself a hook.
+- A hook runs synchronously on the query's goroutine, after the statement completes: keep it fast.
+- Without hooks there is no per-query overhead.
 
-| Attribute          | Type    | Example                         |
-|-------------------|---------|----------------------------------|
-| `db.system`        | string  | `"postgres"`, `"mysql"`, `"sqlite"` |
-| `db.statement`     | string  | `"SELECT * FROM users WHERE id = $1"` |
-| `db.operation`     | string  | `"SELECT"`, `"INSERT"`, `"UPDATE"`, `"DELETE"` |
-| `db.table`         | string  | `"users"` (optional)             |
-| `db.duration_ms`   | float64 | `15.5`                           |
-| `db.rows_affected` | int64   | `1` (for INSERT/UPDATE/DELETE)   |
+```go
+// Slow query log
+db, err := relica.Open("postgres", dsn,
+    relica.WithQueryHook(func(ctx context.Context, e relica.QueryEvent) {
+        if e.Duration >= 100*time.Millisecond {
+            slog.WarnContext(ctx, "slow query", "sql", e.SQL, "duration", e.Duration)
+        }
+    }))
+```
+
+---
+
+## Tracing with OpenTelemetry via QueryHook
+
+Relica has no built-in tracer. A hook creates the span from the event. Because the hook runs **after** the statement, the span is back-dated: it starts at `now - Duration` and ends now. The span becomes a child of whatever span is in the query's context.
+
+```go
+package dbtrace
+
+import (
+    "context"
+    "errors"
+    "time"
+
+    "github.com/coregx/relica"
+    "go.opentelemetry.io/otel/attribute"
+    "go.opentelemetry.io/otel/codes"
+    "go.opentelemetry.io/otel/trace"
+)
+
+// otelHook returns a QueryHook that records one client span per statement.
+func otelHook(tracer trace.Tracer) relica.QueryHook {
+    return func(ctx context.Context, e relica.QueryEvent) {
+        end := time.Now()
+        _, span := tracer.Start(ctx, e.Operation,
+            trace.WithSpanKind(trace.SpanKindClient),
+            trace.WithTimestamp(end.Add(-e.Duration)),
+            trace.WithAttributes(
+                attribute.String("db.system.name", "postgresql"),
+                attribute.String("db.operation.name", e.Operation),
+                attribute.String("db.query.text", e.SQL),
+                attribute.Int64("db.rows_affected", e.RowsAffected),
+            ))
+        // A query that found no row is a normal result, not a span error.
+        if e.Error != nil && !errors.Is(e.Error, relica.ErrNotFound) {
+            span.RecordError(e.Error)
+            span.SetStatus(codes.Error, e.Error.Error())
+        }
+        span.End(trace.WithTimestamp(end))
+    }
+}
+```
+
+Notes:
+
+- `db.query.text` is the SQL with placeholders; argument values are not recorded. Do not add `e.Args` to spans unless they pass through `relica.MaskArgs`.
+- Attribute names follow the [OpenTelemetry database semantic conventions](https://opentelemetry.io/docs/specs/semconv/database/); set `db.system.name` to your database (`postgresql`, `mysql`, `sqlite`).
+- Exporters, samplers and the `TracerProvider` are configured in your application as usual.
 
 ### Integrating with HTTP Tracing
 
+Pass the request context to the query; the hook's span then nests under the HTTP span:
+
 ```go
 func getUserHandler(w http.ResponseWriter, r *http.Request) {
-    // Extract trace context from HTTP request
-    ctx := otel.GetTextMapPropagator().Extract(r.Context(),
-        propagation.HeaderCarrier(r.Header))
-
-    // Start HTTP span
-    ctx, span := tracer.Start(ctx, "getUserHandler")
+    ctx, span := tracer.Start(r.Context(), "getUserHandler")
     defer span.End()
 
-    // Database query inherits trace context
     var user User
-    err := db.WithContext(ctx).
-        Select().
+    err := db.Select().
         From("users").
-        Where("id = ?", r.URL.Query().Get("id")).
+        Where(relica.Eq("id", r.URL.Query().Get("id"))).
+        WithContext(ctx).
         One(&user)
-
-    // Query span is child of HTTP span in trace
     if err != nil {
         span.RecordError(err)
-        http.Error(w, err.Error(), 500)
+        http.Error(w, "internal error", http.StatusInternalServerError)
         return
     }
 
@@ -234,81 +251,39 @@ func getUserHandler(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-### Multiple Tracing Backends
+### Metrics
+
+The same event feeds metrics. With OpenTelemetry metrics (in your code):
 
 ```go
-// Jaeger
-import "go.opentelemetry.io/otel/exporters/jaeger"
+hist, _ := otel.Meter("myapp/db").Float64Histogram("db.client.operation.duration",
+    metric.WithUnit("s"))
 
-exporter, _ := jaeger.New(jaeger.WithCollectorEndpoint(
-    jaeger.WithEndpoint("http://localhost:14268/api/traces"),
-))
-
-// Zipkin
-import "go.opentelemetry.io/otel/exporters/zipkin"
-
-exporter, _ := zipkin.New("http://localhost:9411/api/v2/spans")
-
-// OTLP (OpenTelemetry Protocol)
-import "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
-
-exporter, _ := otlptracehttp.New(context.Background(),
-    otlptracehttp.WithEndpoint("localhost:4318"),
-)
-
-// Console (debugging)
-import "go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
-
-exporter, _ := stdouttrace.New(
-    stdouttrace.WithPrettyPrint(),
-)
-
-// Use exporter with TracerProvider
-tp := sdktrace.NewTracerProvider(
-    sdktrace.WithBatcher(exporter),
-)
+db, err := relica.Open("postgres", dsn,
+    relica.WithQueryHook(func(ctx context.Context, e relica.QueryEvent) {
+        hist.Record(ctx, e.Duration.Seconds(),
+            metric.WithAttributes(attribute.String("db.operation.name", e.Operation)))
+    }))
 ```
 
 ---
 
 ## Sensitive Data Masking
 
-### Default Sensitive Fields
-
-Relica automatically masks these field names in query logs:
-
-- Passwords: `password`, `passwd`, `pwd`
-- Tokens: `token`, `api_key`, `apikey`, `api_token`
-- Secrets: `secret`, `auth`, `authorization`
-- Payment: `credit_card`, `card_number`, `cvv`, `cvc`
-- Personal: `ssn`, `social_security`
-- Keys: `private_key`, `priv_key`
-
-### Custom Sensitive Fields
+`WithLogger` never logs arguments. A custom hook that does must mask them with `relica.MaskArgs(sql, args)`: if the SQL references a sensitive column (password, token, api_key and similar), **all** arguments of that statement are masked — not just the sensitive one, to prevent correlation.
 
 ```go
 db, err := relica.Open("postgres", dsn,
-    relica.WithLogger(logger),
-    relica.WithSensitiveFields([]string{
-        "internal_api_key",
-        "encryption_key",
-        "oauth_secret",
+    relica.WithQueryHook(func(ctx context.Context, e relica.QueryEvent) {
+        slog.DebugContext(ctx, "query",
+            "sql", e.SQL,
+            "args", relica.MaskArgs(e.SQL, e.Args))
     }))
+
+// UPDATE users SET password = $1 WHERE id = $2  → every argument is masked
 ```
 
-### Masking Behavior
-
-```go
-// SQL with sensitive field
-sql := "UPDATE users SET password = ? WHERE id = ?"
-params := []interface{}{"mySecretPassword", 123}
-
-// Logged as:
-// {"sql":"UPDATE users SET password = ? WHERE id = ?",
-//  "params":"[***REDACTED***, ***REDACTED***]"}
-```
-
-**Note**: Masking uses pattern matching on SQL column names. If a sensitive field is detected in the SQL, all parameters are masked for that query to prevent correlation attacks.
+The list of sensitive column names is fixed. For other sensitive columns, filter `e.Args` yourself before logging, or do not log arguments at all.
 
 ---
 
@@ -362,20 +337,17 @@ logger := slog.New(samplingHandler)
 
 ### 4. Correlate Logs and Traces
 
-```go
-// Add trace ID to logs
-type TraceIDHandler struct {
-    handler slog.Handler
-}
+`WithLogger` calls the logger without a context. To put the trace ID on query logs, log from your own hook, which receives the query's context:
 
-func (h *TraceIDHandler) Handle(ctx context.Context, r slog.Record) error {
-    spanCtx := trace.SpanContextFromContext(ctx)
-    if spanCtx.IsValid() {
-        r = r.Clone()
-        r.AddAttrs(slog.String("trace_id", spanCtx.TraceID().String()))
-    }
-    return h.handler.Handle(ctx, r)
-}
+```go
+db, err := relica.Open("postgres", dsn,
+    relica.WithQueryHook(func(ctx context.Context, e relica.QueryEvent) {
+        sc := trace.SpanContextFromContext(ctx)
+        slog.InfoContext(ctx, "query",
+            "sql", e.SQL,
+            "duration_ms", e.Duration.Milliseconds(),
+            "trace_id", sc.TraceID().String())
+    }))
 ```
 
 ### 5. Log Error Classification, Not Raw DB Errors
@@ -403,78 +375,60 @@ This keeps database internals out of application responses and makes logs action
 ### 6. Disable in Performance-Critical Paths
 
 ```go
-// For ultra-high-throughput services
-db, _ := relica.Open("postgres", dsn)
-// No logger = NoopLogger (zero overhead)
+opts := []relica.Option{relica.WithMaxOpenConns(100)}
 
 // Enable only for debugging
 if os.Getenv("DEBUG_SQL") == "true" {
-    db, _ = relica.Open("postgres", dsn,
-        relica.WithLogger(logger))
+    opts = append(opts, relica.WithLogger(relica.NewSlogAdapter(logger)))
 }
+
+db, err := relica.Open("postgres", dsn, opts...)
 ```
 
 ---
 
 ## Performance
 
-### Overhead Measurements
-
-| Configuration       | Overhead  | Notes                              |
-|--------------------|-----------|-------------------------------------|
-| No logging         | 0%        | NoopLogger (zero allocations)      |
-| slog (text)        | <1%       | Minimal impact                      |
-| slog (JSON)        | <2%       | Slightly slower due to marshaling   |
-| OpenTelemetry      | <5%       | Depends on sampling rate            |
-| Both (log + trace) | <7%       | Combined overhead                   |
-
-### Benchmarks
-
-```bash
-go test -bench=. -benchmem ./internal/logger/...
-go test -bench=. -benchmem ./internal/tracer/...
-```
-
-Results:
-```
-BenchmarkNoopLogger-8           1000000000  0.28 ns/op   0 B/op  0 allocs/op
-BenchmarkSlogAdapter-8              500000  2500 ns/op  128 B/op  3 allocs/op
-BenchmarkNoopTracer-8           100000000  10.5 ns/op    0 B/op  0 allocs/op
-BenchmarkOtelTracer-8             5000000   300 ns/op   64 B/op  2 allocs/op
-```
+- No logger and no hooks: no per-query overhead.
+- Each hook (including `WithLogger`) runs synchronously after every statement, on the query's goroutine. Its cost is the cost of your logging handler or tracer: keep hooks short and let exporters batch (`sdktrace.WithBatcher`).
+- Sampling belongs in the logger handler or the trace sampler, not in Relica.
 
 ---
 
 ## Examples
 
-### Example 1: Production Setup (JSON + Jaeger)
+### Example 1: Production Setup (JSON logs + OTLP traces)
 
 ```go
-func main() {
+func openDB(ctx context.Context, dsn string) (*relica.DB, func(), error) {
     // Logging
-    logFile, _ := os.OpenFile("sql.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-    logger := slog.New(slog.NewJSONHandler(logFile, &slog.HandlerOptions{
+    logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
         Level: slog.LevelInfo,
     }))
 
-    // Tracing
-    exporter, _ := jaeger.New(jaeger.WithCollectorEndpoint())
+    // Tracing (your code; Relica does not import OpenTelemetry)
+    exporter, err := otlptracehttp.New(ctx)
+    if err != nil {
+        return nil, nil, err
+    }
     tp := sdktrace.NewTracerProvider(
         sdktrace.WithBatcher(exporter),
         sdktrace.WithSampler(sdktrace.TraceIDRatioBased(0.1)), // 10% sampling
     )
     otel.SetTracerProvider(tp)
-    tracer := otel.Tracer("myapp")
 
-    // Database
-    db, _ := relica.Open("postgres", dsn,
+    db, err := relica.Open("postgres", dsn,
         relica.WithLogger(relica.NewSlogAdapter(logger)),
-        relica.WithTracer(relica.NewOtelTracer(tracer)),
-        relica.WithSensitiveFields([]string{"api_key", "secret"}))
+        relica.WithQueryHook(otelHook(tp.Tracer("myapp/db"))))
+    if err != nil {
+        return nil, nil, err
+    }
 
-    defer db.Close()
-    defer tp.Shutdown(context.Background())
-    defer logFile.Close()
+    cleanup := func() {
+        db.Close()
+        tp.Shutdown(context.Background())
+    }
+    return db, cleanup, nil
 }
 ```
 
@@ -487,20 +441,16 @@ func main() {
         Level: slog.LevelDebug,
     }))
 
-    // Console tracing (pretty print)
-    exporter, _ := stdouttrace.New(stdouttrace.WithPrettyPrint())
-    tp := sdktrace.NewTracerProvider(
-        sdktrace.WithSyncer(exporter), // Sync for debugging
-    )
-    otel.SetTracerProvider(tp)
-    tracer := otel.Tracer("dev")
-
-    db, _ := relica.Open("sqlite", ":memory:",
+    db, err := relica.Open("sqlite", ":memory:",
         relica.WithLogger(relica.NewSlogAdapter(logger)),
-        relica.WithTracer(relica.NewOtelTracer(tracer)))
-
+        // Arguments too, masked
+        relica.WithQueryHook(func(ctx context.Context, e relica.QueryEvent) {
+            logger.DebugContext(ctx, "args", "values", relica.MaskArgs(e.SQL, e.Args))
+        }))
+    if err != nil {
+        panic(err)
+    }
     defer db.Close()
-    defer tp.Shutdown(context.Background())
 }
 ```
 
@@ -518,15 +468,9 @@ func openDB() (*relica.DB, error) {
         opts = append(opts, relica.WithLogger(relica.NewSlogAdapter(logger)))
     }
 
-    // Enable tracing in all environments
-    if endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"); endpoint != "" {
-        exporter, _ := otlptracehttp.New(context.Background(),
-            otlptracehttp.WithEndpoint(endpoint))
-        tp := sdktrace.NewTracerProvider(sdktrace.WithBatcher(exporter))
-        otel.SetTracerProvider(tp)
-
-        tracer := otel.Tracer("myapp")
-        opts = append(opts, relica.WithTracer(relica.NewOtelTracer(tracer)))
+    // Tracing in all environments, if an exporter is configured
+    if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
+        opts = append(opts, relica.WithQueryHook(otelHook(otel.Tracer("myapp/db"))))
     }
 
     return relica.Open("postgres", os.Getenv("DATABASE_URL"), opts...)
@@ -548,59 +492,34 @@ func openDB() (*relica.DB, error) {
 
 **Check**:
 1. Exporter is correctly configured with endpoint
-2. `WithTracer` option is passed to `relica.Open()`
-3. TracerProvider is flushed on shutdown: `tp.Shutdown(ctx)`
-4. Firewall/network allows connection to trace collector
+2. The hook is registered with `relica.WithQueryHook` in `relica.Open()`
+3. Queries carry the request context (`WithContext(ctx)`); otherwise spans are roots, not children of the request span
+4. TracerProvider is flushed on shutdown: `tp.Shutdown(ctx)`
 
 ### Sensitive data leaking
 
 **Check**:
-1. Field names match your schema (case-insensitive)
-2. Use `WithSensitiveFields()` for custom field names
-3. Verify log output: sensitive values should show `***REDACTED***`
+1. Custom hooks pass `e.Args` through `relica.MaskArgs` before logging
+2. Spans record `e.SQL` (placeholders only), never raw `e.Args`
+3. Columns outside the built-in sensitive list are filtered by your own code
 
 ---
 
 ## API Reference
 
-### Logger Interface
+All in package `relica` (`go doc github.com/coregx/relica <name>`):
 
-```go
-type Logger interface {
-    Debug(msg string, args ...any)
-    Info(msg string, args ...any)
-    Warn(msg string, args ...any)
-    Error(msg string, args ...any)
-}
-```
-
-### Tracer Interface
-
-```go
-type Tracer interface {
-    StartSpan(ctx context.Context, name string) (context.Context, Span)
-}
-
-type Span interface {
-    SetAttributes(attrs ...attribute.KeyValue)
-    RecordError(err error)
-    SetStatus(code codes.Code, description string)
-    End()
-}
-```
-
-### Configuration Options
-
-```go
-// Logger
-relica.WithLogger(logger relica.Logger)
-
-// Tracer
-relica.WithTracer(tracer relica.Tracer)
-
-// Sensitive fields
-relica.WithSensitiveFields(fields []string)
-```
+| Symbol | Purpose |
+|---|---|
+| `WithLogger(l Logger) Option` | Log every statement (no arguments) |
+| `Logger` | `Debug/Info/Warn/Error(msg string, args ...any)` |
+| `NewSlogAdapter(l *slog.Logger) *SlogAdapter` | `Logger` backed by `log/slog` |
+| `NoopLogger` | `Logger` that discards everything |
+| `WithQueryHook(hook QueryHook) Option` | Register a hook; hooks compose |
+| `QueryHook` | `func(ctx context.Context, event QueryEvent)` |
+| `QueryEvent` | `SQL`, `Args`, `Duration`, `RowsAffected`, `Error`, `Operation` |
+| `MaskArgs(query string, args []any) []any` | Mask arguments of statements touching sensitive columns |
+| `DetectOperation(query string) string` | The value of `QueryEvent.Operation` |
 
 ---
 
@@ -610,8 +529,3 @@ relica.WithSensitiveFields(fields []string)
 - [Go slog Package](https://pkg.go.dev/log/slog)
 - [Database Semantic Conventions (OTel)](https://opentelemetry.io/docs/specs/semconv/database/)
 - [Relica GitHub Repository](https://github.com/coregx/relica)
-
----
-
-**Version**: 0.5.0-beta
-**Last Updated**: 2025-01-24
