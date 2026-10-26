@@ -195,6 +195,18 @@ func runEmbeddedValueTests(t *testing.T, db *relica.DB, dialect string) {
 		assert.Equal(t, "level-5", level)
 	})
 
+	t.Run("ColumnScansTheFirstOfSeveral", func(t *testing.T) {
+		// The other columns (NULL, a timestamp, text) are read and dropped.
+		var ids []int
+		require.NoError(t, db.Select("id", "note", "at", "meta").From("f3_note").OrderBy("id").Column(&ids))
+		assert.Equal(t, []int{1, 2}, ids)
+
+		var times []time.Time
+		require.NoError(t, db.NewQuery("SELECT at, id, note FROM f3_note ORDER BY id").Column(&times))
+		require.Len(t, times, 2)
+		assert.True(t, times[0].Equal(at))
+	})
+
 	t.Run("SingleValueIsNotARow", func(t *testing.T) {
 		const hint = " is a single value, not a row: use Row(&v) or Column(&[]v)"
 		_, err := relica.One[time.Time](db.Select("at").From("f3_note").Where(relica.Eq("id", 1)))
