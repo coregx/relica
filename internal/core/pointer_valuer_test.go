@@ -153,6 +153,20 @@ func TestPointerValuer_PrimaryKeyInWhere(t *testing.T) {
 	}
 }
 
+func TestPointerValuer_SelectModelBindsValue(t *testing.T) {
+	db := evDB(t)
+	if _, err := db.ExecContext(context.Background(), `INSERT INTO ev_rows (id, note) VALUES (?, ?)`, "level-5", "x"); err != nil {
+		t.Fatal(err)
+	}
+	m := evLevelPK{Code: 5}
+	if err := db.Builder().Select().From("ev_rows").Model(&m); err != nil {
+		t.Fatalf("Select().Model: %v; the WHERE must bind level-5, not 5", err)
+	}
+	if m.Name != "x" {
+		t.Fatalf("model = %+v", m)
+	}
+}
+
 func firstField(s any) reflect.Value { return reflect.ValueOf(s).Field(0) }
 
 func TestArgValue(t *testing.T) {
