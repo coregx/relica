@@ -2,6 +2,10 @@
 
 > **Instructions for AI coding agents working with Relica.**
 > **Read this BEFORE generating any code.**
+>
+> Agent skill: `skills/relica/` (Agent Skills format) — how to find the docs for your version, an audit script for
+> a project's Relica code (`skills/relica/scripts/audit.sh`), the upgrade procedure. Claude Code:
+> `/plugin install relica --marketplace coregx/relica`; any agent: `<module Dir>/skills/relica/SKILL.md`.
 
 ---
 

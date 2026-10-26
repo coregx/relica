@@ -11,6 +11,12 @@
 **Relica** is a lightweight, type-safe database query builder for Go with zero production dependencies.
 
 > **🤖 AI Agents**: Before generating code, read **[AGENTS.md](AGENTS.md)** for correct API patterns. Use `Model()` API for CRUD, `Expression API` for WHERE conditions. Avoid `map[string]interface{}`.
+>
+> **Agent skill**: [`skills/relica/`](skills/relica/SKILL.md) (Agent Skills format) — version-exact docs, an audit
+> script for a project's Relica code, the upgrade procedure. In Claude Code:
+> `/plugin install relica --marketplace coregx/relica` (or `/plugin marketplace add coregx/relica`, then
+> `/plugin install relica@relica`). Other agents: read `<module Dir>/skills/relica/SKILL.md` at your version
+> (`go list -m -f '{{.Dir}}' github.com/coregx/relica`).
 
 ## ✨ Features
 

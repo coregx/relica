@@ -1,0 +1,65 @@
+// Fixture for audit_test.sh: the correct form of every pattern audit.sh
+// checks. The audit must report nothing here. Not compiled.
+package repo
+
+import (
+	"context"
+
+	"github.com/coregx/relica"
+)
+
+type Store struct{ db *relica.DB }
+
+func (s *Store) With(ctx context.Context) relica.Executor { return s.db.WithContext(ctx) }
+
+func transfer(ctx context.Context, db *relica.DB) error {
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	_, err = tx.Update("accounts").
+		Set(map[string]any{"balance": relica.NewExp("balance - ?", 10)}).
+		Where(relica.Eq("id", 1)).
+		Execute()
+	if relica.IsUniqueViolation(err) {
+		return nil
+	}
+	return tx.Commit()
+}
+
+func queries(ctx context.Context, db *relica.DB) {
+	db.Select("id", "t.name AS n", "COUNT(*) AS c").From("t").
+		Where(relica.ILike("name", "x")).
+		GroupBy("id", "t.name").
+		OrderBy("n DESC", "id").
+		OrderByExpr("due ASC NULLS LAST").
+		All(nil)
+	db.Select().SelectExpr("1").From("t").Where(relica.Like("f", "_x")).All(nil)
+	db.Select("name").Distinct().From("t").All(nil)
+	db.Delete("sessions").
+		Where(relica.Eq("user_id", 1)).
+		Execute()
+	db.Update("settings").Set(map[string]any{"dirty": false}).AllRows().Execute()
+	db.Upsert("t", map[string]any{"id": 1, "a": 2}).OnConflict("id").DoUpdate("a").Execute()
+	_ = db.Transactional(ctx, nil)
+}
+
+type User struct {
+	ID   int    `db:"id"`
+	Name string `db:"name"`
+	Note string `db:"-"`
+}
+
+func (User) TableName() string { return "users" }
+
+type Profile struct {
+	ID int `db:"id"`
+}
+
+// A named pointer receiver counts as a TableName too.
+func (p *Profile) TableName() string { return "profiles" }
+
+func model(db *relica.DB, u *User) { db.Model(u).Insert() }
+
+const dsn = "file:data.db?mode=ro"

@@ -1,0 +1,2 @@
+# Shell scripts run on Linux CI and in users' Git Bash: keep LF whatever core.autocrlf is.
+*.sh text eol=lf

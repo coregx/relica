@@ -1,0 +1,8 @@
+module example.com/bad
+
+go 1.25.0
+
+require (
+	github.com/coregx/relica v0.19.1
+	modernc.org/sqlite v1.39.1
+)
