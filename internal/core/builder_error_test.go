@@ -132,7 +132,7 @@ func TestSelectQuery_BuildErr_WithRecursive_EmptyName(t *testing.T) {
 	db := mockDB("postgres")
 	qb := &QueryBuilder{db: db}
 
-	anchor := qb.Select("1 as n")
+	anchor := qb.Select().SelectExpr("1 AS n")
 	rec := qb.Select("n+1").From("nums").Where("n < ?", 10)
 	cte := anchor.UnionAll(rec)
 

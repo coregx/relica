@@ -219,6 +219,78 @@ func TestDocs_DBAndTxMethodsExist(t *testing.T) {
 	}
 }
 
+var (
+	// columnCall matches a Select/AndSelect/GroupBy/OrderBy call whose
+	// argument list has no nested parentheses.
+	columnCall = regexp.MustCompile(`\b(Select|AndSelect|GroupBy|OrderBy)\(([^()]*)\)`)
+	stringArg  = regexp.MustCompile(`"([^"]*)"`)
+	ident      = `[\p{L}_][\p{L}\p{N}_$]*`
+	columnRef  = regexp.MustCompile(`^` + ident + `(\.` + ident + `)*(\.\*)?$`)
+	aliasedRef = regexp.MustCompile(`(?i)^(` + ident + `(\.` + ident + `)*) AS ` + ident + `$`)
+	orderedRef = regexp.MustCompile(`(?i)^(` + ident + `(\.` + ident + `)*) (ASC|DESC)$`)
+)
+
+// columnArgOK reports whether arg is what method takes: Select/AndSelect a
+// column (optionally "AS alias") or "*", GroupBy a column, OrderBy a column
+// with an optional direction; an argument with "(" is used as is everywhere.
+func columnArgOK(method, arg string) bool {
+	if arg == "..." || strings.Contains(arg, "(") || columnRef.MatchString(arg) {
+		return true
+	}
+	switch method {
+	case "Select", "AndSelect":
+		return arg == "*" || aliasedRef.MatchString(arg)
+	case "OrderBy":
+		return orderedRef.MatchString(arg)
+	}
+	return false
+}
+
+// columnDocsForeign lists files whose Select/GroupBy/OrderBy calls belong to
+// another library shown for comparison.
+var columnDocsForeign = map[string]string{
+	"docs/guides/MIGRATION_FROM_GORM.md": "GORM's Select/Order take SQL fragments",
+	"docs/guides/MIGRATION_FROM_SQLX.md": "sqlx's Select takes a destination and a query",
+	"docs/MIGRATION_GUIDE.md":            "shows the old code that v0.20.0 rejects",
+}
+
+// TestDocs_ColumnArgumentsAreColumns keeps expressions out of the column
+// methods in examples: Select("1 as level") and Select("h.level + 1") quote
+// the text as one name, and OrderBy rejects anything beyond "col [ASC|DESC]".
+// Expressions go through SelectExpr/OrderByExpr/GroupByExpr. Counter-examples
+// are skipped: a call written as "not Select(...)", and the line right after
+// a "WRONG" or "❌" comment; so is the "..." placeholder.
+func TestDocs_ColumnArgumentsAreColumns(t *testing.T) {
+	for _, file := range publicDocs(t) {
+		if file == "CHANGELOG.md" || columnDocsForeign[file] != "" {
+			continue
+		}
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(string(data), "\n")
+		for i, line := range lines {
+			if i > 0 && (strings.Contains(lines[i-1], "WRONG") || strings.Contains(lines[i-1], "❌")) {
+				continue
+			}
+			for _, loc := range columnCall.FindAllStringSubmatchIndex(line, -1) {
+				before := strings.ToLower(line[:loc[0]])
+				if strings.HasSuffix(before, "not ") || strings.HasSuffix(before, "not `") {
+					continue
+				}
+				method, args := line[loc[2]:loc[3]], line[loc[4]:loc[5]]
+				for _, m := range stringArg.FindAllStringSubmatch(args, -1) {
+					if !columnArgOK(method, m[1]) {
+						t.Errorf("%s:%d %s(%q) is not a column argument; use %sExpr: %s",
+							file, i+1, method, m[1], strings.TrimPrefix(method, "And"), strings.TrimSpace(line))
+					}
+				}
+			}
+		}
+	}
+}
+
 // TestDocs_NoInternalImports keeps internal/ packages out of user-facing
 // docs: users cannot import them. CONTRIBUTING describes the layout, and the
 // v0.4 migration tells users how to find the internal imports they had.

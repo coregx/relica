@@ -313,7 +313,7 @@ func Not(e Expression) Expression { return wrapExp(core.Not(coreExp(e))) }
 
 // Exists creates an EXISTS subquery expression:
 //
-//	relica.Exists(db.Select("1").From("orders").Where(relica.EqCol("orders.user_id", "users.id")).AsExpression())
+//	relica.Exists(db.Select().SelectExpr("1").From("orders").Where(relica.EqCol("orders.user_id", "users.id")).AsExpression())
 func Exists(e Expression) Expression { return wrapExp(core.Exists(coreExp(e))) }
 
 // NotExists creates a NOT EXISTS subquery expression.

@@ -858,7 +858,7 @@ db.Select().WithRecursive("tree", cte).From("tree").All(&results)
 **Problem**: No termination condition
 ```go
 // ❌ BAD: No depth limit
-recursive := db.Select("c.id", "t.depth + 1").
+recursive := db.Select("c.id").SelectExpr("t.depth + 1").
     From("categories c").
     InnerJoin("tree t", "c.parent_id = t.id")
 ```
@@ -866,13 +866,13 @@ recursive := db.Select("c.id", "t.depth + 1").
 **Solution**: Add depth limit or cycle detection
 ```go
 // ✅ GOOD: Depth limit
-recursive := db.Select("c.id", "t.depth + 1").
+recursive := db.Select("c.id").SelectExpr("t.depth + 1").
     From("categories c").
     InnerJoin("tree t", "c.parent_id = t.id").
     Where("t.depth < ?", 10)
 
 // ✅ BETTER: Cycle detection (PostgreSQL)
-recursive := db.Select("c.id", "t.path || c.id").
+recursive := db.Select("c.id").SelectExpr("t.path || c.id").
     From("categories c").
     InnerJoin("tree t", "c.parent_id = t.id").
     Where("NOT c.id = ANY(t.path)")

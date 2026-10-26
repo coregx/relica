@@ -73,7 +73,7 @@ db.Select().
 ### EXISTS (Faster)
 
 ```go
-orderCheck := db.Select("1").
+orderCheck := db.Select().SelectExpr("1").
     From("orders").
     Where("orders.user_id = users.id")
 

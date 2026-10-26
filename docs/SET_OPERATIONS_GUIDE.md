@@ -351,7 +351,7 @@ db.Select("user_id").
     From("premium_memberships").
     Where("active = ?", true).
     Where(relica.Exists(
-        db.Select("1").
+        db.Select().SelectExpr("1").
             From("forum_posts").
             Where("forum_posts.user_id = premium_memberships.user_id").
             GroupBy("user_id").
@@ -472,7 +472,7 @@ SELECT "user_id" FROM "suspended_accounts"
 db.Select("id").
     From("users").
     Where(relica.NotExists(
-        db.Select("1").
+        db.Select().SelectExpr("1").
             From("orders").
             Where("orders.user_id = users.id"),
     ))
@@ -711,7 +711,7 @@ func intersectWorkaround(db *relica.DB) {
     q1 := db.Select("user_id").
         From("premium_memberships").
         Where(relica.Exists(
-            db.Select("1").
+            db.Select().SelectExpr("1").
                 From("forum_posts").
                 Where("forum_posts.user_id = premium_memberships.user_id"),
         ))
@@ -724,7 +724,7 @@ func exceptWorkaround(db *relica.DB) {
     q1 := db.Select("id").
         From("users").
         Where(relica.NotExists(
-            db.Select("1").
+            db.Select().SelectExpr("1").
                 From("orders").
                 Where("orders.user_id = users.id"),
         ))
@@ -753,8 +753,8 @@ func exceptWorkaround(db *relica.DB) {
 
 4. **Use meaningful column aliases**
    ```go
-   q1 := db.Select("'active' as source", "id", "name").From("users")
-   q2 := db.Select("'archived' as source", "id", "name").From("archived_users")
+   q1 := db.Select("id", "name").SelectExpr("'active' AS source").From("users")
+   q2 := db.Select("id", "name").SelectExpr("'archived' AS source").From("archived_users")
    ```
 
 5. **Index WHERE clause columns**
@@ -792,10 +792,10 @@ func exceptWorkaround(db *relica.DB) {
 4. **Don't forget column aliases for literals**
    ```go
    // ❌ Bad: Unclear column name
-   Select("'North'")
+   SelectExpr("'North'")
 
-   // ✅ Good: Named column
-   Select("'North' as region")
+   // ✅ Good: Named column (a literal goes through SelectExpr; Select would quote it as a name)
+   SelectExpr("'North' AS region")
    ```
 
 5. **Don't rely on column position** (use explicit aliases)
@@ -976,7 +976,7 @@ q1.Intersect(q2)
 q1 := db.Select("user_id").
     From("premium_memberships").
     Where(relica.Exists(
-        db.Select("1").
+        db.Select().SelectExpr("1").
             From("forum_posts").
             Where("forum_posts.user_id = premium_memberships.user_id"),
     ))
@@ -985,7 +985,7 @@ q1 := db.Select("user_id").
 q1 := db.Select("id").
     From("users").
     Where(relica.NotExists(
-        db.Select("1").
+        db.Select().SelectExpr("1").
             From("orders").
             Where("orders.user_id = users.id"),
     ))

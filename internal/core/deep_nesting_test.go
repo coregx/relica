@@ -78,7 +78,7 @@ func TestCTE_Nested_3Levels(t *testing.T) {
 		Where("status = ?", 1)
 
 	// CTE 2: References CTE 1 - SELECT id, value * 2 as doubled FROM cte1 WHERE value > 10
-	cte2Query := qb.Select("id", "value * 2 as doubled").
+	cte2Query := qb.Select("id").SelectExpr("value * 2 AS doubled").
 		From("cte1").
 		Where("value > ?", 10)
 
@@ -115,8 +115,8 @@ func TestCTE_Nested_3Levels(t *testing.T) {
 	if !strings.Contains(query.sql, `SELECT "id", "value" FROM "base_table" WHERE status = $1`) {
 		t.Errorf("%q does not contain %q", query.sql, `SELECT "id", "value" FROM "base_table" WHERE status = $1`)
 	}
-	if !strings.Contains(query.sql, `"value * 2" AS "doubled"`) {
-		t.Errorf("%q does not contain %q", query.sql, `"value * 2" AS "doubled"`)
+	if !strings.Contains(query.sql, `SELECT "id", value * 2 AS doubled FROM`) {
+		t.Errorf("%q does not contain %q", query.sql, `SELECT "id", value * 2 AS doubled FROM`)
 	}
 	if !strings.Contains(query.sql, `FROM "cte1"`) {
 		t.Errorf("%q does not contain %q", query.sql, `FROM "cte1"`)

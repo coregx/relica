@@ -1168,7 +1168,7 @@ err := db.Select("name", "age").From("users").
 
 // CORRECT - Check existence
 var exists int
-err := db.Select("1").From("users").
+err := db.Select().SelectExpr("1").From("users").
     Where(relica.Eq("id", userID)).
     Row(&exists)  // exists = 1 if found, sql.ErrNoRows if not
 ```

@@ -851,7 +851,7 @@ sub := db.Select("user_id").From("orders").Where("status = ?", "completed")
 db.Select().From("users").Where(relica.In("id", sub.AsExpression())).All(&users)
 
 // Find users with at least one order (EXISTS is often faster)
-orderCheck := db.Select("1").From("orders").Where("orders.user_id = users.id")
+orderCheck := db.Select().SelectExpr("1").From("orders").Where("orders.user_id = users.id")
 db.Select().From("users").Where(relica.Exists(orderCheck.AsExpression())).All(&users)
 ```
 
