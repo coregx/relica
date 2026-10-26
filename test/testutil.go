@@ -180,6 +180,9 @@ func SetupMySQLTestDB(t *testing.T) *DatabaseSetup {
 			mysql.WithDatabase("testdb"),
 			mysql.WithUsername("user"),
 			mysql.WithPassword("password"),
+			// MySQL 8 enables the binary log, and then a user without SUPER
+			// cannot CREATE TRIGGER (error 1419); the upsert tests need triggers.
+			testcontainers.WithCmdArgs("--log-bin-trust-function-creators=1"),
 			testcontainers.WithWaitStrategyAndDeadline(containerStartupTimeout,
 				wait.ForLog("port: 3306  MySQL Community Server").
 					WithStartupTimeout(containerStartupTimeout),
