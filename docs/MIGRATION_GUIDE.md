@@ -702,6 +702,7 @@ everywhere; with `DoUpdate`, PostgreSQL rejects the statement (error 21000) and 
 | `db:"pk"` wrote column `pk` | primary key, column from the naming rule | `db:"pk_column,pk"` for an explicit column |
 | result without a column for a struct field → zero, `err == nil` | error (`ScanRequireFields`) | list the columns in `Select(...)`, tag the field `db:"-"`, or `relica.WithScanMode(relica.ScanLenient)` (per query: `.ScanMode(relica.ScanLenient)`) |
 | `BatchInsertStruct` with some zero and some explicit keys → explicit keys dropped | error | split the batch |
+| `UpdateStruct(t, &s)` wrote the primary key into SET (a zero ID set `id = 0`) | the key is never written | to change a key, use `Update(t).Set(map[string]any{"id": newID})` |
 
 **Find affected code:**
 - models used with `Model(...)`, `SelectQuery.Model(...)` or `InsertStruct`/`BatchInsertStruct`/`UpdateStruct` that have

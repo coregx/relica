@@ -773,17 +773,18 @@ func (d *DB) BatchInsertStruct(table string, data any) *Query {
 // UpdateStruct builds an UPDATE query from a struct using db tags.
 //
 // Similar to InsertStruct, but for UPDATE operations. The struct fields
-// are converted to SET clauses. You must chain a Where() call to specify
-// which rows to update.
+// are converted to SET clauses, except the primary key (a pk tag, or a field
+// named ID/Id), which is never written, as in Model().Update(). You must
+// chain a Where() call to specify which rows to update.
 //
 // This method provides type-safe struct-based updates without manually
 // constructing maps.
 //
 // Example:
 //
-//	user := User{Name: "Alice Updated", Status: "active"}
+//	user := User{ID: 42, Name: "Alice Updated", Status: "active"}
 //	result, err := db.UpdateStruct("users", &user).
-//	    Where("id = ?", user.ID).
+//	    Where(relica.Eq("id", user.ID)).
 //	    Execute()
 //	if err != nil {
 //	    return err
@@ -1182,9 +1183,9 @@ func (t *Tx) BatchInsertStruct(table string, data any) *Query {
 //
 // Example:
 //
-//	user := User{Name: "Alice Updated", Status: "active"}
+//	user := User{ID: 42, Name: "Alice Updated", Status: "active"}
 //	_, err := tx.UpdateStruct("users", &user).
-//	    Where("id = ?", user.ID).
+//	    Where(relica.Eq("id", user.ID)).
 //	    Execute()
 //	if err != nil {
 //	    tx.Rollback()
@@ -1625,9 +1626,9 @@ func (qb *QueryBuilder) BatchInsertStruct(table string, data any) *Query {
 //
 // Example:
 //
-//	user := User{Name: "Alice Updated", Status: "active"}
+//	user := User{ID: 42, Name: "Alice Updated", Status: "active"}
 //	result, err := db.Builder().UpdateStruct("users", &user).
-//	    Where("id = ?", user.ID).
+//	    Where(relica.Eq("id", user.ID)).
 //	    Execute()
 func (qb *QueryBuilder) UpdateStruct(table string, data any) *UpdateQuery {
 	return &UpdateQuery{uq: qb.qb.UpdateStruct(table, data)}
