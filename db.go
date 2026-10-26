@@ -1923,9 +1923,15 @@ func (sq *SelectQuery) CrossJoin(table string) *SelectQuery {
 // Supports multiple columns. OrderBy, OrderByExpr and OrderBySub add to the
 // same clause, in the order they are called.
 //
+// Each argument is "column" or "column ASC|DESC" (one column per argument);
+// an argument containing "(" (a function call) is used as is. Anything else —
+// arithmetic, NULLS FIRST/LAST, COLLATE, "a, b" — is an error returned when
+// the query runs: use OrderByExpr.
+//
 // Example:
 //
 //	OrderBy("age DESC", "name ASC")
+//	OrderByExpr("created_at DESC NULLS LAST")
 func (sq *SelectQuery) OrderBy(columns ...string) *SelectQuery {
 	sq.sq.OrderBy(columns...)
 	return sq
