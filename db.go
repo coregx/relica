@@ -2311,10 +2311,16 @@ func (sq *SelectQuery) ExplainAnalyze() (*QueryPlan, error) {
 
 // AsExpression converts a SelectQuery to an Expression for subquery use.
 //
+// Where, AndWhere, OrWhere and Having render their condition — and an In or
+// Exists subquery inside it — when it is added: changes made to sub afterwards
+// are not seen. SelectSub, OrderBySub, GroupBySub (and FromSelect, Union, With)
+// keep the query and render it when the outer query runs. Either way a
+// construction error in sub fails the outer query.
+//
 // Example:
 //
-//	sub := db.Builder().Select("user_id").From("orders").Where("total > ?", 100)
-//	db.Builder().Select("*").From("users").
+//	sub := db.Select("user_id").From("orders").Where(relica.GreaterThan("total", 100))
+//	db.Select().From("users").
 //	    Where(relica.In("id", sub.AsExpression())).All(&users)
 func (sq *SelectQuery) AsExpression() Expression {
 	return wrapExp(sq.sq.AsExpression())

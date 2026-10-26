@@ -433,7 +433,8 @@ func (tx *Tx) QueryContext(ctx context.Context, query string, args ...any) (*sql
 }
 
 // QueryRowContext executes a raw SQL query within the transaction returning one row.
-// The QueryHook sees it with the row's error (sql.ErrNoRows included).
+// The QueryHook sees it with the query's error; sql.ErrNoRows appears only at
+// Scan, after the hook ran.
 func (tx *Tx) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
 	start := time.Now()
 	row := tx.tx.QueryRowContext(ctx, query, args...)

@@ -1045,6 +1045,10 @@ func buildClauseItems(items []clauseItem, dialect dialects.Dialect, column func(
 			args = append(args, item.raw.Args...)
 		case item.exp != nil:
 			expSQL, expArgs := item.exp.Build(dialect)
+			if _, ok := item.exp.(*selectQueryExpression); ok {
+				// A scalar subquery needs its parentheses here, as in SelectSub.
+				expSQL = "(" + expSQL + ")"
+			}
 			parts = append(parts, expSQL)
 			args = append(args, expArgs...)
 		default:
@@ -1498,6 +1502,25 @@ func (sq *SelectQuery) errVisiting(path map[*SelectQuery]bool) error {
 	for _, c := range sq.ctes {
 		if err := c.query.errVisiting(path); err != nil {
 			return err
+		}
+	}
+	// SelectSub, OrderBySub and GroupBySub keep their expression and render it
+	// when this query runs; an error the subquery got after it was added would
+	// otherwise be lost with its condition. (Where/Having render the condition
+	// when it is added, so they hold a snapshot and need no check here.)
+	for _, s := range sq.subExprs {
+		if err := ExpressionError(s.exp); err != nil {
+			return err
+		}
+	}
+	for _, items := range [][]clauseItem{sq.orderBy, sq.groupBy} {
+		for _, item := range items {
+			if item.exp == nil {
+				continue
+			}
+			if err := ExpressionError(item.exp); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
