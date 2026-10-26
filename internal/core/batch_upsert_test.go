@@ -154,13 +154,13 @@ func TestBatchInsert_WithoutOnConflict_Unchanged(t *testing.T) {
 // Auto-detect update columns
 // ============================================================================
 
-func TestBatchInsert_OnConflict_AutoDetectUpdateCols(t *testing.T) {
+func TestBatchInsert_OnConflict_DoUpdateAll(t *testing.T) {
 	db := mockDB("postgres")
 	qb := &QueryBuilder{db: db}
 
 	sql, _ := batchSQL(qb.BatchInsert("products", []string{"sku", "name", "price"}).
 		Values("SKU-001", "Widget", 9.99).
-		OnConflict("sku"))
+		OnConflict("sku").DoUpdateAll())
 
 	if !strings.Contains(sql, `ON CONFLICT ("sku") DO UPDATE SET`) {
 		t.Errorf("missing ON CONFLICT: %s", sql)
@@ -177,24 +177,22 @@ func TestBatchInsert_OnConflict_AutoDetectUpdateCols(t *testing.T) {
 }
 
 // ============================================================================
-// DoNothing overrides DoUpdate
+// DoUpdate then DoNothing: no silent override (ADR-019)
 // ============================================================================
 
-func TestBatchInsert_DoNothing_Overrides_DoUpdate(t *testing.T) {
+func TestBatchInsert_DoUpdateThenDoNothing_IsError(t *testing.T) {
 	db := mockDB("postgres")
 	qb := &QueryBuilder{db: db}
 
-	sql, _ := batchSQL(qb.BatchInsert("t", []string{"a", "b"}).
+	q := qb.BatchInsert("t", []string{"a", "b"}).
 		Values(1, 2).
 		OnConflict("a").
 		DoUpdate("b").
-		DoNothing())
+		DoNothing().
+		Build()
 
-	if !strings.Contains(sql, "DO NOTHING") {
-		t.Errorf("DoNothing should override: %s", sql)
-	}
-	if strings.Contains(sql, "DO UPDATE") {
-		t.Errorf("should NOT contain DO UPDATE: %s", sql)
+	if q.prepErr == nil || !strings.Contains(q.prepErr.Error(), "exactly one of DoUpdate") {
+		t.Errorf("expected a build error for two conflict actions, got err=%v sql=%q", q.prepErr, q.sql)
 	}
 }
 

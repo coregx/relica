@@ -79,17 +79,16 @@ func TestUpsertQuery_PostgreSQL_DoNothing(t *testing.T) {
 	}
 }
 
-func TestUpsertQuery_PostgreSQL_AutoUpdateColumns(t *testing.T) {
+func TestUpsertQuery_PostgreSQL_DoUpdateAll(t *testing.T) {
 	db := mockDB("postgres")
 	qb := &QueryBuilder{db: db}
 
-	// When DoUpdate() not called but OnConflict is specified,
-	// it should update all columns except conflict columns
+	// DoUpdateAll() updates every inserted column except the conflict target
 	query := qb.Upsert("users", map[string]interface{}{
 		"id":    1,
 		"name":  "Alice",
 		"email": "alice@example.com",
-	}).OnConflict("id")
+	}).OnConflict("id").DoUpdateAll()
 
 	q := query.Build()
 	if q == nil {
@@ -143,7 +142,7 @@ func TestUpsertQuery_MySQL_DoUpdate(t *testing.T) {
 	}
 }
 
-func TestUpsertQuery_MySQL_AutoUpdateColumns(t *testing.T) {
+func TestUpsertQuery_MySQL_DoUpdateAll(t *testing.T) {
 	db := mockDB("mysql")
 	qb := &QueryBuilder{db: db}
 
@@ -151,7 +150,7 @@ func TestUpsertQuery_MySQL_AutoUpdateColumns(t *testing.T) {
 		"id":    1,
 		"name":  "Alice",
 		"email": "alice@example.com",
-	}).OnConflict("id")
+	}).OnConflict("id").DoUpdateAll()
 
 	q := query.Build()
 	if q == nil {

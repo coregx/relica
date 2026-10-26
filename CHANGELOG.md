@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (breaking) — upsert needs exactly one explicit conflict action (ADR-019)
+
+- **`Upsert` / `BatchInsert(...).OnConflict(...)` take exactly one of `DoUpdate(cols...)`, `DoUpdateAll()`, `DoNothing()`.** No action, two actions, `DoUpdate()` with no columns, a `DoUpdate` column that is not inserted, `OnConflict()` with no columns or called twice, and PostgreSQL/SQLite `DoUpdate`/`DoUpdateAll` without `OnConflict` are now errors returned by `Execute` before anything is sent. Before, an upsert without an action ran as a plain `INSERT`, `OnConflict` alone updated every column, a later action silently replaced an earlier one, and a batch `DoUpdate` without a target was dropped. A `BatchInsert` without `OnConflict` or an action is still a plain INSERT
+- **New `DoUpdateAll()`** on `UpsertQuery` and `BatchInsertQuery`: updates every inserted column except the conflict target, on every dialect (on MySQL a row matched through another unique key keeps its target columns)
+- **MySQL `DoNothing()` keeps the existing row** — it rendered no conflict clause and failed on the duplicate. It now renders `ON DUPLICATE KEY UPDATE c = c` (the first conflict column, else the first inserted column); not `INSERT IGNORE`, which also turns unrelated errors into warnings
+- **New `WithMySQLUpsertSyntax(MySQLUpsertRowAlias)`** selects `VALUES (...) AS excluded ... col = excluded.col` (MySQL 8.0.19+) instead of the default `col = VALUES(col)`. Both read the proposed row after `BEFORE INSERT` triggers, like PostgreSQL's `EXCLUDED`; the server version is never probed
+- **`Model(&m).Exclude(...).Upsert()` honours `Exclude`** — excluded columns were inserted and overwritten on every upsert; now they are left out of both the INSERT and the update, as in `Insert`. Unknown `fields`/`Exclude`/`UpsertOn` names, a field in the conflict target, an excluded field and a model with nothing to update are errors instead of being ignored or producing an empty `SET`
+
 ### Documentation
+
+- **Guides no longer show API users cannot call** — SECURITY, SECURITY_TESTING, QUERY_OPTIMIZER_GUIDE, LOGGING_GUIDE, PRODUCTION_DEPLOYMENT, PERFORMANCE_TUNING and BEST_PRACTICES described the SQL validator, audit log, optimizer and an OpenTelemetry tracer that exist only as internal groundwork, plus `db.StmtCacheStats()` and `db.SetQueryLogger()`, which never existed. They now document the public equivalents (parameters, quoting, `WithLogger`, `WithQueryHook`, `MaskArgs`, `Stats()`), tracing as a user-side `QueryHook` with OpenTelemetry (Relica stays dependency-free), and mark the internal features as planned. `PRODUCTION_DEPLOYMENT` also showed `WithConnMaxLifetime(300)`, which is 300 ns
 
 - **SQLite read-only connections** (AGENTS.md › SQLite, TROUBLESHOOTING) — `?mode=ro` works only in a `file:` URI; both modernc.org/sqlite and mattn/go-sqlite3 drop the query of a plain path, so the "reader" opens read-write and, with `_txlock=immediate`, waits behind the writer with `database is locked`
 - **`LikeExp.EscapeChars()` with no arguments** turns escaping off (AGENTS.md › String Operators) — only for patterns the code builds, never for user input

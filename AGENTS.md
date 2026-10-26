@@ -34,9 +34,16 @@ err := db.Model(&user).Update()
 // DELETE - CORRECT
 err := db.Model(&user).Delete()
 
-// UPSERT - CORRECT (INSERT or UPDATE on conflict)
+// UPSERT - CORRECT (INSERT or UPDATE on conflict; target = primary key)
 err := db.Model(&user).Upsert()              // all non-PK fields
-err = db.Model(&user).Upsert("name", "email") // selective fields
+err = db.Model(&user).Upsert("name", "email") // selective fields (column names)
+err = db.Model(&user).Exclude("created_at").Upsert() // created_at neither inserted nor updated
+
+// Builder upsert (v0.20.0+): exactly ONE action, or Execute returns an error
+_, err = db.Upsert("users", values).OnConflict("id").DoUpdateAll().Execute()     // every non-target column
+_, err = db.Upsert("users", values).OnConflict("id").DoUpdate("name").Execute()  // listed columns only
+_, err = db.Upsert("users", values).OnConflict("id").DoNothing().Execute()       // keep existing row
+// WRONG: db.Upsert("users", values).Execute()  /  .OnConflict("id").Execute()  → error, nothing sent
 
 // UPDATE CHANGED - CORRECT (only modified fields)
 original := user

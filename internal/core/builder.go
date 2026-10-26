@@ -1804,13 +1804,11 @@ func getKeys(m map[string]any) []string {
 
 // UpsertQuery represents an UPSERT (INSERT ... ON CONFLICT/DUPLICATE) query.
 type UpsertQuery struct {
-	builder         *QueryBuilder
-	table           string
-	values          map[string]any
-	conflictColumns []string
-	updateColumns   []string
-	doNothing       bool
-	ctx             context.Context // context for this specific query
+	builder  *QueryBuilder
+	table    string
+	values   map[string]any
+	conflict conflictClause
+	ctx      context.Context // context for this specific query
 }
 
 // WithContext sets the context for this UPSERT query.
@@ -1821,7 +1819,7 @@ func (uq *UpsertQuery) WithContext(ctx context.Context) *UpsertQuery {
 }
 
 // Upsert creates an UPSERT query for the given table and values.
-// UPSERT is INSERT with conflict resolution (UPDATE or IGNORE).
+// It needs exactly one conflict action: DoUpdate, DoUpdateAll or DoNothing (ADR-019).
 func (qb *QueryBuilder) Upsert(table string, values map[string]any) *UpsertQuery {
 	return &UpsertQuery{
 		builder: qb,
@@ -1830,33 +1828,55 @@ func (qb *QueryBuilder) Upsert(table string, values map[string]any) *UpsertQuery
 	}
 }
 
-// OnConflict specifies the columns that determine a conflict.
-// For PostgreSQL/SQLite: columns in UNIQUE constraint or PRIMARY KEY.
-// For MySQL: this is optional (uses PRIMARY KEY or UNIQUE keys automatically).
+// OnConflict sets the conflict target. Required for DoUpdate/DoUpdateAll on
+// PostgreSQL and SQLite; advisory on MySQL, which fires on any unique key (the
+// target columns are still left out of DoUpdateAll there).
 func (uq *UpsertQuery) OnConflict(columns ...string) *UpsertQuery {
-	uq.conflictColumns = columns
+	uq.conflict.onConflict(columns)
 	return uq
 }
 
-// DoUpdate specifies which columns to update on conflict.
-// If not called, defaults to updating all columns except conflict columns.
+// DoUpdate sets the listed columns from the proposed row on conflict. Each
+// column must be among the inserted ones.
 func (uq *UpsertQuery) DoUpdate(columns ...string) *UpsertQuery {
-	uq.updateColumns = columns
-	uq.doNothing = false
+	uq.conflict.setAction(upsertDoUpdate, columns)
 	return uq
 }
 
-// DoNothing specifies to ignore conflicts (do not update).
-// This is equivalent to INSERT IGNORE in MySQL or ON CONFLICT DO NOTHING in PostgreSQL.
+// DoUpdateAll sets every inserted column except the conflict target from the
+// proposed row on conflict.
+func (uq *UpsertQuery) DoUpdateAll() *UpsertQuery {
+	uq.conflict.setAction(upsertDoUpdateAll, nil)
+	return uq
+}
+
+// DoNothing keeps the existing row on conflict: ON CONFLICT DO NOTHING on
+// PostgreSQL/SQLite; on MySQL a self-assignment of the first conflict column (or
+// the first inserted column) in ON DUPLICATE KEY UPDATE.
 func (uq *UpsertQuery) DoNothing() *UpsertQuery {
-	uq.doNothing = true
-	uq.updateColumns = nil
+	uq.conflict.setAction(upsertDoNothing, nil)
 	return uq
 }
 
-// Build constructs the Query object from UpsertQuery.
+// Build constructs the Query object from UpsertQuery. An invalid upsert
+// returns a Query that carries the error; nothing is sent.
 func (uq *UpsertQuery) Build() *Query {
+	// Context priority: query ctx > builder ctx > nil
+	ctx := uq.ctx
+	if ctx == nil {
+		ctx = uq.builder.ctx
+	}
+	if len(uq.values) == 0 {
+		return &Query{prepErr: errors.New("relica: Upsert requires a non-empty values map"),
+			db: uq.builder.db, tx: uq.builder.tx, ctx: ctx}
+	}
+
 	keys := getKeys(uq.values)
+	conflictSQL, err := uq.conflict.render(uq.builder.db, keys)
+	if err != nil {
+		return &Query{prepErr: err, db: uq.builder.db, tx: uq.builder.tx, ctx: ctx}
+	}
+
 	placeholders := make([]string, 0, len(keys))
 	params := make([]any, 0, len(keys))
 
@@ -1873,33 +1893,8 @@ func (uq *UpsertQuery) Build() *Query {
 	// Build base INSERT statement
 	query := `INSERT INTO ` + quoteTableName(uq.table, uq.builder.db.dialect) +
 		` (` + strings.Join(quotedKeys, ", ") + `) ` +
-		`VALUES (` + strings.Join(placeholders, ", ") + `)`
-
-	// Quote conflict/update columns before passing to dialect
-	quoteSlice := func(cols []string) []string {
-		q := make([]string, len(cols))
-		for i, c := range cols {
-			q[i] = uq.builder.db.dialect.QuoteIdentifier(c)
-		}
-		return q
-	}
-
-	// Add conflict resolution if specified
-	if uq.doNothing {
-		query += uq.builder.db.dialect.UpsertSQL(uq.table, quoteSlice(uq.conflictColumns), nil)
-	} else if len(uq.conflictColumns) > 0 || len(uq.updateColumns) > 0 {
-		updateCols := uq.updateColumns
-		if len(updateCols) == 0 {
-			updateCols = filterKeys(keys, uq.conflictColumns)
-		}
-		query += uq.builder.db.dialect.UpsertSQL(uq.table, quoteSlice(uq.conflictColumns), quoteSlice(updateCols))
-	}
-
-	// Context priority: query ctx > builder ctx > nil
-	ctx := uq.ctx
-	if ctx == nil {
-		ctx = uq.builder.ctx
-	}
+		`VALUES (` + strings.Join(placeholders, ", ") + `)` +
+		conflictSQL
 
 	return &Query{
 		sql:    query,
@@ -2391,15 +2386,13 @@ func (dq *DeleteQuery) ToSQL() (string, []any) {
 // BatchInsertQuery represents a batch INSERT query being built.
 // It allows inserting multiple rows with a single SQL statement for performance.
 type BatchInsertQuery struct {
-	builder         *QueryBuilder
-	table           string
-	columns         []string
-	rows            [][]any
-	conflictColumns []string
-	updateColumns   []string
-	doNothing       bool
-	ctx             context.Context // context for this specific query
-	buildErr        error           // stored programming error (replaces panic in fluent chain)
+	builder  *QueryBuilder
+	table    string
+	columns  []string
+	rows     [][]any
+	conflict conflictClause
+	ctx      context.Context // context for this specific query
+	buildErr error           // stored programming error (replaces panic in fluent chain)
 }
 
 // WithContext sets the context for this batch INSERT query.
@@ -2449,26 +2442,33 @@ func (biq *BatchInsertQuery) ValuesMap(values map[string]any) *BatchInsertQuery 
 	return biq.Values(row...)
 }
 
-// OnConflict specifies the conflict columns for upsert behavior.
-// Generates ON CONFLICT (cols) clause (PostgreSQL/SQLite) or ON DUPLICATE KEY (MySQL).
+// OnConflict sets the conflict target and turns the batch into an upsert, which
+// then needs exactly one of DoUpdate, DoUpdateAll, DoNothing (ADR-019).
+// Required for DoUpdate/DoUpdateAll on PostgreSQL and SQLite; advisory on MySQL.
 func (biq *BatchInsertQuery) OnConflict(columns ...string) *BatchInsertQuery {
-	biq.conflictColumns = columns
+	biq.conflict.onConflict(columns)
 	return biq
 }
 
-// DoUpdate specifies which columns to update on conflict.
-// If not called (but OnConflict is set), all non-conflict columns are updated.
+// DoUpdate sets the listed columns from each proposed row on conflict. Each
+// column must be one of the batch columns.
 func (biq *BatchInsertQuery) DoUpdate(columns ...string) *BatchInsertQuery {
-	biq.updateColumns = columns
-	biq.doNothing = false
+	biq.conflict.setAction(upsertDoUpdate, columns)
 	return biq
 }
 
-// DoNothing specifies that conflicting rows should be skipped.
-// PostgreSQL/SQLite: ON CONFLICT DO NOTHING. MySQL: INSERT IGNORE.
+// DoUpdateAll sets every batch column except the conflict target from each
+// proposed row on conflict.
+func (biq *BatchInsertQuery) DoUpdateAll() *BatchInsertQuery {
+	biq.conflict.setAction(upsertDoUpdateAll, nil)
+	return biq
+}
+
+// DoNothing keeps existing rows on conflict: ON CONFLICT DO NOTHING on
+// PostgreSQL/SQLite; on MySQL a self-assignment of the first conflict column (or
+// the first batch column) in ON DUPLICATE KEY UPDATE.
 func (biq *BatchInsertQuery) DoNothing() *BatchInsertQuery {
-	biq.doNothing = true
-	biq.updateColumns = nil
+	biq.conflict.setAction(upsertDoNothing, nil)
 	return biq
 }
 
@@ -2527,7 +2527,14 @@ func (biq *BatchInsertQuery) Build() *Query {
 		" (" + strings.Join(quotedColumns, ", ") + ") VALUES " +
 		strings.Join(valueClauses, ", ")
 
-	query += biq.buildConflictClause()
+	// A batch without OnConflict or an action is a plain INSERT.
+	if biq.conflict.used() {
+		conflictSQL, err := biq.conflict.render(biq.builder.db, biq.columns)
+		if err != nil {
+			return &Query{prepErr: err, db: biq.builder.db, tx: biq.builder.tx, ctx: ctx}
+		}
+		query += conflictSQL
+	}
 
 	return &Query{
 		sql:    query,
@@ -2536,31 +2543,6 @@ func (biq *BatchInsertQuery) Build() *Query {
 		tx:     biq.builder.tx,
 		ctx:    ctx,
 	}
-}
-
-// buildConflictClause generates the ON CONFLICT suffix if conflict columns are set.
-func (biq *BatchInsertQuery) buildConflictClause() string {
-	if !biq.doNothing && len(biq.conflictColumns) == 0 {
-		return ""
-	}
-
-	quoteSlice := func(cols []string) []string {
-		q := make([]string, len(cols))
-		for i, c := range cols {
-			q[i] = biq.builder.db.dialect.QuoteIdentifier(c)
-		}
-		return q
-	}
-
-	if biq.doNothing {
-		return biq.builder.db.dialect.UpsertSQL(biq.table, quoteSlice(biq.conflictColumns), nil)
-	}
-
-	updateCols := biq.updateColumns
-	if len(updateCols) == 0 {
-		updateCols = filterKeys(biq.columns, biq.conflictColumns)
-	}
-	return biq.builder.db.dialect.UpsertSQL(biq.table, quoteSlice(biq.conflictColumns), quoteSlice(updateCols))
 }
 
 // Execute executes the batch INSERT query and returns the result.

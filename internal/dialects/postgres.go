@@ -26,27 +26,23 @@ func (d *PostgresDialect) Placeholder(index int) string {
 }
 
 // UpsertSQL generates PostgreSQL UPSERT syntax using ON CONFLICT.
-func (d *PostgresDialect) UpsertSQL(_ string, conflictColumns, updateCols []string) string {
-	if updateCols == nil {
-		// DO NOTHING case
-		if len(conflictColumns) > 0 {
-			return fmt.Sprintf(" ON CONFLICT (%s) DO NOTHING", strings.Join(conflictColumns, ", "))
-		}
-		return " ON CONFLICT DO NOTHING"
-	}
-
-	// DO UPDATE case
-	return fmt.Sprintf(" ON CONFLICT (%s) DO UPDATE SET %s",
-		strings.Join(conflictColumns, ", "),
-		buildUpdateSet(updateCols),
-	)
+func (d *PostgresDialect) UpsertSQL(u Upsert) string {
+	return onConflictSQL(u, "EXCLUDED")
 }
 
-// buildUpdateSet builds the SET clause for UPDATE.
-func buildUpdateSet(cols []string) string {
-	parts := make([]string, len(cols))
-	for i, col := range cols {
-		parts[i] = fmt.Sprintf("%s = EXCLUDED.%s", col, col)
+// onConflictSQL renders the PostgreSQL/SQLite ON CONFLICT clause; excluded is
+// the spelling of the proposed-row table.
+func onConflictSQL(u Upsert, excluded string) string {
+	target := ""
+	if len(u.Target) > 0 {
+		target = " (" + strings.Join(u.Target, ", ") + ")"
 	}
-	return strings.Join(parts, ", ")
+	if u.DoNothing {
+		return " ON CONFLICT" + target + " DO NOTHING"
+	}
+	parts := make([]string, len(u.Update))
+	for i, col := range u.Update {
+		parts[i] = fmt.Sprintf("%s = %s.%s", col, excluded, col)
+	}
+	return " ON CONFLICT" + target + " DO UPDATE SET " + strings.Join(parts, ", ")
 }
