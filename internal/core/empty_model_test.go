@@ -18,8 +18,7 @@ type (
 		A int    `db:"-"`
 		B string `db:"-"`
 	}
-	evEmpty          struct{}
-	evOnlyUnexported struct{ evNote } // an unexported single value is skipped
+	evEmpty struct{}
 )
 
 func emptyModelErr(typ string) string {
@@ -35,7 +34,6 @@ func TestEmptyModel_StructValues(t *testing.T) {
 		{&evNoExported{}, "evNoExported"},
 		{evAllSkipped{}, "evAllSkipped"},
 		{&evEmpty{}, "evEmpty"},
-		{&evOnlyUnexported{}, "evOnlyUnexported"},
 	} {
 		if _, err := db.structValues(c.model); err == nil || err.Error() != emptyModelErr(c.typ) {
 			t.Errorf("%T: err = %v, want %q", c.model, err, emptyModelErr(c.typ))

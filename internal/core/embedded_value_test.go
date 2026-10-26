@@ -217,7 +217,6 @@ func TestEmbeddedValue_Columns(t *testing.T) {
 		{&evNested{}, "id,null_string"},
 		{&evPtrNull{}, "id,null_string"},
 		{&evPtrTime{}, "id,time"},
-		{&evUnexported{}, "id"},                                 // skipped like any unexported field
 		{&miUser{}, "created_at,http_log,id,updated,user_name"}, // unexported embedded plain structs still promote
 		{&evAuditModel{}, "created_at,id,note"},
 		{&evStampModel{}, "id,time"},

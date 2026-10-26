@@ -703,6 +703,7 @@ everywhere; with `DoUpdate`, PostgreSQL rejects the statement (error 21000) and 
 | `One(&t)` / `All(&ts)` into `time.Time`, `sql.NullString` → zero value, `err == nil` | error "is a single value, not a row" | `Row(&t)` / `Column(&ts)` |
 | field type with `Value()` only on `*T` passed raw (struct: "unsupported type"; `type Level int`: written as the int) | written through `Value()` | — |
 | struct with no mapped field (all unexported or `db:"-"`) read as zero / wrote nothing | error | export or tag the fields |
+| unexported field with a `db` tag (`id int \`db:"id"\``), unexported embedded `Scan`/`Value` type → silently no column | error | export the field or type, or drop the tag |
 | `Column(&ids)` on a query with more than one column → error | first column scanned | — |
 | `db:"pk"` wrote column `pk` | primary key, column from the naming rule | `db:"pk_column,pk"` for an explicit column |
 | result without a column for a struct field → zero, `err == nil` | error (`ScanRequireFields`) | list the columns in `Select(...)`, tag the field `db:"-"`, or `relica.WithScanMode(relica.ScanLenient)` (per query: `.ScanMode(relica.ScanLenient)`) |

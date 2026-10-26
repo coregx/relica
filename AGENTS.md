@@ -907,8 +907,11 @@ db, err := relica.Open("postgres", dsn,
 promoted from an embedded field do not count, so `Audit{sql.NullString; X int}` gives columns `null_string`, `x`, and
 a wrapper `Date struct{ time.Time }` with its own `Scan`/`Value` is one column `date`. Tag an embedded single value to
 name it (`` sql.NullString `db:"note"` ``; `,pk` and `-` work too); embedding `*sql.NullString` is allowed (nil writes
-NULL). A `db` tag on an embedded plain struct, an embedded pointer to one, and a struct that maps to no column at all
-are errors. A field whose `Value()` is on the pointer receiver (`func (m *Meta) Value()`) is written through `Value()`.
+NULL). A `db` tag on an embedded plain struct, an embedded pointer to one, an unexported field with a `db` tag, an
+unexported embedded single value, and a struct that maps to no column at all are errors (untagged unexported fields
+are simply not columns). A type that declares its own `Scan`/`Value` but also embeds a Scanner/Valuer is flattened —
+Relica cannot tell its methods from promoted ones — so make the inner value a named field there. A field whose
+`Value()` is on the pointer receiver (`func (m *Meta) Value()`) is written through `Value()`.
 
 **Single values are not rows.** `One`/`All` scan rows into structs (or `NullStringMap`); for one value use
 `Row(&v)` or `Column(&[]v)` — `One(&t)` with `t time.Time` or `sql.NullString` is an error, like `One(&n)` with an
