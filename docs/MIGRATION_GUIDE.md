@@ -699,6 +699,11 @@ everywhere; with `DoUpdate`, PostgreSQL rejects the statement (error 21000) and 
 | `func (*T) TableName()` ignored for `db.Model(T{})` | honoured | — |
 | untagged field written as `"CreatedAt"`, read case-insensitively | `created_at` on write and read | add `db:"CreatedAt"` tags, or `WithNaming(relica.Naming{Column: func(c relica.ColumnSource) string { return c.Field.Name }})` |
 | embedded struct written as one column (or "unsupported type") | fields flattened | — (an embedded `*T` or a tagged embedded struct is now an error: embed `T`, tag its fields) |
+| embedded `time.Time` / `sql.NullString` / a type with its own `Scan`/`Value` written as one column named after the type (`Time`, `NullString`) | one column named by Naming (`time`, `null_string`) or its `db` tag | tag it: `` time.Time `db:"Time"` `` |
+| `One(&t)` / `All(&ts)` into `time.Time`, `sql.NullString` → zero value, `err == nil` | error "is a single value, not a row" | `Row(&t)` / `Column(&ts)` |
+| field type with `Value()` only on `*T` passed raw (struct: "unsupported type"; `type Level int`: written as the int) | written through `Value()` | — |
+| struct with no mapped field (all unexported or `db:"-"`) read as zero / wrote nothing | error | export or tag the fields |
+| `Column(&ids)` on a query with more than one column → error | first column scanned | — |
 | `db:"pk"` wrote column `pk` | primary key, column from the naming rule | `db:"pk_column,pk"` for an explicit column |
 | result without a column for a struct field → zero, `err == nil` | error (`ScanRequireFields`) | list the columns in `Select(...)`, tag the field `db:"-"`, or `relica.WithScanMode(relica.ScanLenient)` (per query: `.ScanMode(relica.ScanLenient)`) |
 | `BatchInsertStruct` with some zero and some explicit keys → explicit keys dropped | error | split the batch |
