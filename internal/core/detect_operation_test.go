@@ -18,6 +18,12 @@ func TestDetectOperation_CTEsAndCompound(t *testing.T) {
 		{"WITH c AS (SELECT 1) (SELECT n FROM c) UNION (SELECT 2)", "SELECT"},
 		{`(SELECT "id" FROM "a") UNION (SELECT "id" FROM "b")`, "SELECT"},
 		{"  ((SELECT 1))", "SELECT"},
+		// Leading comments (query tags, sqlcommenter-style) are skipped (F6).
+		{"/* app=billing */ SELECT 1", "SELECT"},
+		{"-- trace=abc\nDELETE FROM t", "DELETE"},
+		{"/* a */ -- b\n /* c */ WITH x AS (SELECT 1) UPDATE t SET y = 1", "UPDATE"},
+		{"WITH /* c */ x AS (SELECT 1) -- d\n INSERT INTO t SELECT * FROM x", "INSERT"},
+		{"/* unterminated SELECT 1", "UNKNOWN"},
 		{"SELECTED_ROWS", "UNKNOWN"},
 		{"DELETE_LOG", "UNKNOWN"},
 		{"WITH broken AS SELECT 1", "UNKNOWN"},

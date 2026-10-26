@@ -799,6 +799,10 @@ func TestDetectOperation(t *testing.T) {
 		{"ALTER TABLE x ADD COLUMN y INT", "ALTER"},
 		{"TRUNCATE TABLE x", "TRUNCATE"},
 		{"VACUUM", "UNKNOWN"},
+		// Same classifier as DetectOperation (CTEs, leading comments).
+		{"WITH old AS (SELECT 1) DELETE FROM users", "DELETE"},
+		{"/* migration 12 */ CREATE TABLE x (id INT)", "CREATE"},
+		{"CREATED_AT", "UNKNOWN"},
 	}
 
 	for _, tt := range tests {
