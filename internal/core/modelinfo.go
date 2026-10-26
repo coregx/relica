@@ -78,7 +78,7 @@ func buildModelInfo(t reflect.Type, naming Naming) (*modelInfo, error) {
 	if t.Kind() != reflect.Struct {
 		return nil, fmt.Errorf("relica: expected a struct, got %s", t)
 	}
-	if isValueRow(t) {
+	if isValueType(t) {
 		return nil, fmt.Errorf("relica: %s is a single value, not a struct of columns: make it a field of a model", t)
 	}
 	mi := &modelInfo{typ: t, byColumn: make(map[string]*modelField)}
@@ -129,10 +129,19 @@ var (
 
 // isValueType reports whether t (or the type t points to) is one database
 // value rather than a set of columns: time.Time, or a type whose value or
-// pointer implements sql.Scanner or driver.Valuer. Promoted methods count, as
-// Go itself sees the type (GORM and go-jet draw the same line); flattening such
-// a type wrote sql.NullString as columns string/valid and dropped time.Time,
-// which has no exported fields, without a word.
+// pointer implements sql.Scanner or driver.Valuer through methods of its own.
+// Flattening such a type wrote sql.NullString as columns string/valid and
+// dropped time.Time, which has no exported fields, without a word.
+//
+// Methods promoted from an embedded field do not count: Audit{sql.NullString;
+// X int} gets Scan and Value from NullString, and taken as one value it wrote
+// only the NullString and never X. reflect cannot tell a declared method from
+// a promoted one, so a Scan or Value that an embedded field also has counts as
+// promoted: a type that declares them and embeds such a field is flattened,
+// and a wrong guess fails on a missing column instead of dropping fields. A
+// method no embedded field has must be declared by the type itself, so
+// Date{time.Time} with its own Scan and Value stays one value (time.Time has
+// neither).
 func isValueType(t reflect.Type) bool {
 	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
@@ -140,28 +149,31 @@ func isValueType(t reflect.Type) bool {
 	if t == timeType {
 		return true
 	}
+	// The method set of *T includes that of T.
 	pt := reflect.PointerTo(t)
-	return t.Implements(scannerType) || pt.Implements(scannerType) ||
-		t.Implements(valuerType) || pt.Implements(valuerType)
-}
-
-// isValueRow reports whether struct type t, passed whole as a row (a model or
-// a One/All destination), is a single value. A type that is a value only
-// through methods promoted from an embedded single-value field is a row: that
-// field is one of its columns (a model embedding sql.NullString gets Scan and
-// Value by promotion). reflect cannot tell a declared method from a promoted
-// one, so a type that declares Scan/Value and also embeds a single value is
-// taken as a row; a wrong guess then fails on a missing column, not silently.
-func isValueRow(t reflect.Type) bool {
-	if !isValueType(t) {
+	scanner, valuer := pt.Implements(scannerType), pt.Implements(valuerType)
+	if !scanner && !valuer {
 		return false
 	}
+	if t.Kind() != reflect.Struct {
+		return true
+	}
 	for i := 0; i < t.NumField(); i++ {
-		if f := t.Field(i); f.Anonymous && isValueType(f.Type) {
+		if f := t.Field(i); f.Anonymous && embeddedProvides(f.Type, scanner, valuer) {
 			return false
 		}
 	}
 	return true
+}
+
+// embeddedProvides reports whether an embedded field of type ft has Scan (when
+// scanner) or Value (when valuer), so the embedding type may have it only by
+// promotion.
+func embeddedProvides(ft reflect.Type, scanner, valuer bool) bool {
+	if ft.Kind() != reflect.Pointer && ft.Kind() != reflect.Interface {
+		ft = reflect.PointerTo(ft)
+	}
+	return (scanner && ft.Implements(scannerType)) || (valuer && ft.Implements(valuerType))
 }
 
 // isEmbeddedStruct reports whether f is an embedded plain struct (or pointer
