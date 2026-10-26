@@ -89,11 +89,11 @@ db.Select().
 
 ```go
 // Organizational hierarchy
-anchor := db.Select("id", "name", "manager_id", "1 as level").
+anchor := db.Select("id", "name", "manager_id").SelectExpr("1 AS level").
     From("employees").
     Where("manager_id IS NULL")
 
-recursive := db.Select("e.id", "e.name", "e.manager_id", "h.level + 1").
+recursive := db.Select("e.id", "e.name", "e.manager_id").SelectExpr("h.level + 1").
     From("employees e").
     InnerJoin("hierarchy h", "e.manager_id = h.id")
 

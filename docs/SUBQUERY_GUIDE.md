@@ -450,7 +450,7 @@ func GetUsersWithOrderCount(db *relica.DB) ([]UserWithStats, error) {
     var users []UserWithStats
 
     err := db.Select("id", "name").
-        SelectExpr("(SELECT COUNT(*) FROM orders WHERE user_id = users.id)", "order_count").
+        SelectExpr("(SELECT COUNT(*) FROM orders WHERE user_id = users.id) AS order_count").
         From("users").
         All(&users)
 
@@ -479,9 +479,9 @@ func GetUserStats(db *relica.DB) ([]UserStats, error) {
     var users []UserStats
 
     err := db.Select("id", "name").
-        SelectExpr("(SELECT COUNT(*) FROM orders WHERE user_id = users.id)", "order_count").
-        SelectExpr("(SELECT COALESCE(SUM(total), 0) FROM orders WHERE user_id = users.id)", "total_spent").
-        SelectExpr("(SELECT MAX(created_at) FROM orders WHERE user_id = users.id)", "last_order").
+        SelectExpr("(SELECT COUNT(*) FROM orders WHERE user_id = users.id) AS order_count").
+        SelectExpr("(SELECT COALESCE(SUM(total), 0) FROM orders WHERE user_id = users.id) AS total_spent").
+        SelectExpr("(SELECT MAX(created_at) FROM orders WHERE user_id = users.id) AS last_order").
         From("users").
         All(&users)
 
@@ -497,7 +497,7 @@ func GetAboveAverageSpenders(db *relica.DB) ([]User, error) {
     var users []User
 
     err := db.Select().
-        SelectExpr("(SELECT SUM(total) FROM orders WHERE user_id = users.id)", "total_spent").
+        SelectExpr("(SELECT SUM(total) FROM orders WHERE user_id = users.id) AS total_spent").
         From("users").
         Where("(SELECT SUM(total) FROM orders WHERE user_id = users.id) > (SELECT AVG(total) FROM orders)").
         All(&users)
@@ -843,7 +843,7 @@ func GetUsersWithoutOrders(db *relica.DB) ([]User, error) {
 // Top 3 products per category
 func GetTopProductsPerCategory(db *relica.DB) ([]Product, error) {
     subquery := db.Select().
-        SelectExpr("ROW_NUMBER() OVER (PARTITION BY category_id ORDER BY sales DESC)", "rn").
+        SelectExpr("ROW_NUMBER() OVER (PARTITION BY category_id ORDER BY sales DESC) AS rn").
         From("products")
 
     var topProducts []Product
@@ -949,7 +949,7 @@ db.Select().
 ```go
 // ❌ SLOW: Executes subquery 1M times for 1M users
 db.Select("id", "name").
-    SelectExpr("(SELECT COUNT(*) FROM orders WHERE user_id = users.id)", "order_count").
+    SelectExpr("(SELECT COUNT(*) FROM orders WHERE user_id = users.id) AS order_count").
     From("users")
 ```
 
@@ -967,16 +967,16 @@ db.Select("u.id", "u.name", "COUNT(o.id) as order_count").
 **Problem**: Scalar subquery returns > 1 row
 ```go
 // ❌ ERROR: Subquery may return multiple rows
-SelectExpr("(SELECT name FROM products WHERE category_id = c.id)", "product_name")
+SelectExpr("(SELECT name FROM products WHERE category_id = c.id) AS product_name")
 ```
 
 **Solution**: Add LIMIT or use aggregate
 ```go
 // ✅ GOOD: Limit to one row
-SelectExpr("(SELECT name FROM products WHERE category_id = c.id LIMIT 1)", "product_name")
+SelectExpr("(SELECT name FROM products WHERE category_id = c.id LIMIT 1) AS product_name")
 
 // ✅ BETTER: Use aggregate
-SelectExpr("(SELECT COUNT(*) FROM products WHERE category_id = c.id)", "product_count")
+SelectExpr("(SELECT COUNT(*) FROM products WHERE category_id = c.id) AS product_count")
 ```
 
 ### Issue: Missing Alias for FROM Subquery
