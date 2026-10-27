@@ -769,7 +769,10 @@ func (d *DB) InsertStruct(table string, data any) *Query {
 //	    return err
 //	}
 //
-// For single struct inserts, use InsertStruct instead.
+// For single struct inserts, use InsertStruct instead. For a batch upsert, use
+// BatchInsert(table, nil).ValuesStructs(rows) with OnConflict and one action.
+// Rows × columns may not exceed the database's bind-parameter limit (see
+// BatchInsertQuery.ValuesStructs); a larger batch is an error, not split.
 func (d *DB) BatchInsertStruct(table string, data any) *Query {
 	return d.Builder().BatchInsertStruct(table, data)
 }
@@ -2669,6 +2672,31 @@ func (biq *BatchInsertQuery) Values(values ...any) *BatchInsertQuery {
 //	    ValuesMap(map[string]any{"name": "Alice", "email": "alice@example.com"})
 func (biq *BatchInsertQuery) ValuesMap(values map[string]any) *BatchInsertQuery {
 	biq.biq.ValuesMap(values)
+	return biq
+}
+
+// ValuesStructs adds one row per element of rows, a slice of structs or struct
+// pointers of one type, read like BatchInsertStruct (db tags, the DB's Naming,
+// embedded structs flattened). It is the struct form of a batch upsert:
+//
+//	db.BatchInsert("nodes", nil).
+//	    ValuesStructs(nodes).
+//	    OnConflict("project_id", "qualified_name").
+//	    DoUpdateAll().
+//	    Execute()
+//
+// With nil columns in BatchInsert, the columns come from the struct (a single
+// primary key that is zero in every row is left out) and ValuesStructs must be
+// the only source of rows. With columns, exactly those are read from each
+// struct, and a listed primary key must not be zero. An empty autoid field is
+// an error: a batch does not generate IDs (Model().Insert() does).
+//
+// One statement carries at most the database's bind parameters per statement
+// (rows × columns: 65535 on PostgreSQL and MySQL, 32766 on SQLite); a larger
+// batch is an error returned before anything is sent. Relica does not split it:
+// send the rows in slices, inside Transactional when they must be atomic.
+func (biq *BatchInsertQuery) ValuesStructs(rows any) *BatchInsertQuery {
+	biq.biq.ValuesStructs(rows)
 	return biq
 }
 

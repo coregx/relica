@@ -1127,7 +1127,19 @@ for _, user := range users {
     batch.Values(user.Name, user.Email)
 }
 result, err := batch.Execute()
+
+// Or straight from the structs, as an upsert (v0.20.1+)
+result, err = db.BatchInsert("users", nil). // nil: columns from the struct
+    ValuesStructs(users).
+    OnConflict("email").
+    DoUpdateAll().
+    Execute()
 ```
+
+One batch is one statement: rows × columns may not exceed 65535 bind parameters on PostgreSQL and
+MySQL, 32766 on SQLite. A larger batch is an error returned before anything is sent — Relica does not
+split it for you; send the rows in slices, inside `Transactional` when they must be atomic
+([AGENTS.md › Batch Operations](AGENTS.md#batch-operations)).
 
 **Batch UPDATE** (updates multiple rows with different values):
 

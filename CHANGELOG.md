@@ -7,8 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`BatchInsertQuery.ValuesStructs(rows)` — batch upsert from structs** (#47): `db.BatchInsert(table, nil).ValuesStructs(nodes).OnConflict(...).DoUpdateAll()` builds one multi-row INSERT … ON CONFLICT (ON DUPLICATE KEY UPDATE on MySQL) from a slice of structs or pointers of one type, read like `BatchInsertStruct` (db tags, Naming, embedded structs flattened). With `nil` columns the columns come from the struct (a single primary key that is zero in every row is left out) and `ValuesStructs` is the only source of rows; with listed columns exactly those are read, a listed primary key must not be zero, and it mixes with `Values`. Reachable through `Executor.BatchInsert`. `BatchInsertStruct` is built on it. The multi-row upsert with explicit values has existed since v0.16.5
+
 ### Fixed
 
+- **A batch over the database's bind-parameter limit reached the database** — `BatchInsert` and `BatchInsertStruct` send one statement, and PostgreSQL and MySQL take at most 65535 parameters (rows × columns), SQLite 32766, so a large batch failed in the driver or the server. It is now an error returned before anything is sent, naming the limit and the rows per statement that fit; Relica does not split the batch or open a transaction on its own — send the rows in slices, inside `Transactional` when they must be atomic (AGENTS.md › Batch Operations). In a transaction on MySQL and PostgreSQL the statement goes to the driver unprepared, where `interpolateParams` or the pgx simple protocol may accept it, so the check is left to the driver there; SQLite is checked everywhere
+- **`BatchInsertStruct` with rows of two struct types wrote NULL** for the columns the later type lacks; rows must now have one type
+- **`BatchInsertStruct` wrote an empty `autoid` field as `""`** — `Model().Insert()` generates the ID, a batch does not; an empty autoid field is now an error naming it
+- **AGENTS.md › Batch Operations showed code that does not compile**: `BatchInsertStruct`/`InsertStruct` without `.Execute()`, and a `BatchUpdate(table, columns, key).Values(...)` form that does not exist (it is `BatchUpdate(table, keyColumn).Set(key, map)`)
 - **The audit missed `Update`/`Delete` without `Where` when the table is not a string literal** — `skills/relica/scripts/audit.sh` (V4) matched only `db.Delete("t")`, so `db.Delete(table).Execute()` in a loop over table names (a schema reset) or `db.Update(tableName(x))…Execute()` went unreported, and the v0.20.0 error surfaced only at run time. V4 now takes any single table argument: a literal, a variable or one call
 
 ## [0.20.0] - 2026-10-27
