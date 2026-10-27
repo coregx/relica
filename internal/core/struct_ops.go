@@ -124,8 +124,13 @@ func (sr structRowSet) checkAutoID(written func(string) bool, op string) error {
 			continue
 		}
 		for i, m := range sr.maps {
-			// Any string kind, as Model's populateAutoIDFields: type NodeID string too.
-			if v := reflect.ValueOf(m[col]); v.Kind() == reflect.String && v.Len() == 0 {
+			// Any string kind, as Model's populateAutoIDFields: type NodeID string
+			// too, also when a Value on *T made argValue pass a pointer to a copy.
+			v := reflect.ValueOf(m[col])
+			if v.Kind() == reflect.Pointer && !v.IsNil() {
+				v = v.Elem()
+			}
+			if v.Kind() == reflect.String && v.Len() == 0 {
 				return fmt.Errorf("relica: %s row %d: autoid field %q is empty; a batch does not generate IDs: "+
 					"set it, or insert the row with Model().Insert()", op, i, col)
 			}

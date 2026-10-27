@@ -2,6 +2,7 @@ package core
 
 import (
 	"database/sql"
+	"database/sql/driver"
 	"reflect"
 	"strconv"
 	"strings"
@@ -31,6 +32,17 @@ type bsPublic struct {
 }
 
 type bsNodeID string
+
+// bsValID has Value only on its pointer, so its field is passed as a pointer
+// to a copy.
+type bsValID string
+
+func (v *bsValID) Value() (driver.Value, error) { return string(*v), nil }
+
+type bsValPublic struct {
+	ID       int64   `db:"id,pk"`
+	PublicID bsValID `db:"public_id,autoid:val"`
+}
 
 // bsNamedPublic has an autoid field of a named string type, which
 // Model().Insert() also generates.
@@ -136,6 +148,7 @@ func TestBatchInsertStruct_EmptyAutoID_IsError(t *testing.T) {
 	buildErrHas(t, qb.BatchInsertStruct("users", []bsPublic{{Name: "a"}}), "public_id")
 	buildErrHas(t, qb.BatchInsert("users", nil).ValuesStructs([]bsPublic{{Name: "a"}}).Build(), "public_id")
 	buildErrHas(t, qb.BatchInsertStruct("users", []bsNamedPublic{{Name: "a"}}), "public_id")
+	buildErrHas(t, qb.BatchInsertStruct("users", []bsValPublic{{}}), "public_id")
 	buildOK(t, qb.BatchInsertStruct("users", []bsPublic{{PublicID: "usr_1", Name: "a"}}),
 		`INSERT INTO "users" ("name", "public_id") VALUES ($1, $2)`)
 }
