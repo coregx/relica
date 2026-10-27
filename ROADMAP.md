@@ -1,7 +1,7 @@
 # Relica Roadmap
 
-> **Current Version**: v0.20.0 (October 2026)
-> **Previous Release**: v0.19.1 (Released: October 18, 2026)
+> **Current Version**: v0.20.1 (October 2026)
+> **Previous Release**: v0.20.0 (Released: October 27, 2026)
 > **Production Ready**: v1.0.0 (Target: Q4 2026)
 
 ---
@@ -14,9 +14,15 @@
 
 ---
 
-## 📍 Current State (v0.20.0)
+## 📍 Current State (v0.20.1)
 
-### ✅ What's New in v0.20.0
+### ✅ What's New in v0.20.1
+
+- **Batch upsert from structs** (v0.20.1, #47): `BatchInsert(table, nil).ValuesStructs(rows).OnConflict(...).DoUpdateAll()`
+- **Bind-parameter limit** (v0.20.1): a batch over 65535 parameters (PostgreSQL, MySQL) or 32766 (SQLite) is an error before anything is sent; Relica does not split it or open a transaction on its own
+- **Fixes** (v0.20.1): `BatchInsertStruct` with rows of two types or an empty autoid field is an error; the audit's Where check sees non-literal table names
+
+### ✅ Shipped in v0.20.0
 
 A release of breaking fixes: where Relica returned a different result than the code asked for, with no error,
 it now does what the code says or fails before sending anything. Upgrade path: [MIGRATION_GUIDE](docs/MIGRATION_GUIDE.md).
