@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **The audit missed `Update`/`Delete` without `Where` when the table is not a string literal** — `skills/relica/scripts/audit.sh` (V4) matched only `db.Delete("t")`, so `db.Delete(table).Execute()` in a loop over table names (a schema reset) or `db.Update(tableName(x))…Execute()` went unreported, and the v0.20.0 error surfaced only at run time. V4 now takes any single table argument: a literal, a variable or one call
+
 ## [0.20.0] - 2026-10-27
 
 ### Changed (breaking) — upsert needs exactly one explicit conflict action (ADR-019)

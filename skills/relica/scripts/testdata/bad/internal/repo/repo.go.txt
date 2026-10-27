@@ -96,6 +96,18 @@ func v4more(db *relica.DB) error {
 	return nil
 }
 
+func v4var(db *relica.DB, name string) error {
+	// V4 ×2 more: the table is not a string literal — a variable in a loop
+	// (a schema reset), and a function call
+	for _, table := range []string{"edges", "nodes"} {
+		if _, err := db.Delete(table).Execute(); err != nil {
+			return err
+		}
+	}
+	_, err := db.Update(tableName(name)).Set(map[string]any{"a": 1}).Execute()
+	return err
+}
+
 func v5(q *relica.Query) {
 	// V5 ×1 (QueryParams is left to the compiler)
 	relica.NewDB("postgres", "dsn")

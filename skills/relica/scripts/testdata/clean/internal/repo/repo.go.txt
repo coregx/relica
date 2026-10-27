@@ -89,6 +89,15 @@ func positional(db *relica.DB) {
 	db.Select("c.id").SelectSub(turnover.AsExpression(), "turnover").From("c").All(nil)
 }
 
+// A table from a variable or a call, with Where or AllRows; a repository's own
+// Delete(ctx, id) and Model().Delete() are not UPDATE/DELETE builders.
+func varTable(ctx context.Context, db *relica.DB, r *Store, u *User, table string) {
+	db.Delete(table).Where(relica.Eq("id", 1)).Execute()
+	db.Update(tableName(table)).Set(map[string]any{"a": 1}).AllRows().Execute()
+	r.Delete(ctx, 1)
+	db.Model(u).Delete()
+}
+
 // A comment that quotes a bad chain is not code:
 // Danger: db.Delete("t").Execute() would wipe the table.
 // Note: a.Union(b).OrderBy("x") sorts the union since v0.20.0.
