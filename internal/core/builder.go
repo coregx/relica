@@ -2832,6 +2832,15 @@ func (qb *QueryBuilder) BatchInsert(table string, columns []string) *BatchInsert
 // The number of values must match the number of columns specified in BatchInsert.
 // Stores an error (instead of panicking) if the value count doesn't match the column count.
 func (biq *BatchInsertQuery) Values(values ...any) *BatchInsertQuery {
+	if biq.derived {
+		// Derived columns are sorted by name: a positional row would land in
+		// the wrong columns.
+		if biq.buildErr == nil {
+			biq.buildErr = errors.New("relica: BatchInsert.Values after ValuesStructs without columns: " +
+				"name the columns in BatchInsert to mix rows from structs and values")
+		}
+		return biq
+	}
 	if len(values) != len(biq.columns) {
 		biq.buildErr = fmt.Errorf("relica: BatchInsert.Values expected %d values for %d columns, got %d", len(biq.columns), len(biq.columns), len(values))
 		return biq
@@ -3008,7 +3017,7 @@ func (biq *BatchInsertQuery) checkBindLimit() error {
 	if _, sqlite := biq.builder.db.dialect.(*dialects.SQLiteDialect); biq.builder.tx != nil && !sqlite {
 		return nil
 	}
-	return fmt.Errorf("relica: BatchInsert: %d rows × %d columns = %d bind parameters, over the %s limit of %d "+
+	return fmt.Errorf("relica: BatchInsert: %d rows of %d columns = %d bind parameters, over the %s limit of %d "+
 		"per statement: send at most %d rows per statement (split the rows, and run the batches inside "+
 		"Transactional to keep them atomic)", len(biq.rows), len(biq.columns), n, name, limit, limit/len(biq.columns))
 }

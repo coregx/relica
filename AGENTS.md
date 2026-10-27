@@ -355,8 +355,10 @@ err := db.Transactional(ctx, func(tx *relica.Tx) error {
 
 `ValuesStructs` rules: a slice of structs or pointers of one type. With `nil` columns, the columns come
 from the struct and it is the only source of rows; with listed columns, exactly those are read (a listed
-primary key must not be zero) and it mixes with `Values`. An empty `autoid` field is an error — a batch
-does not generate IDs, `Model().Insert()` does. In a transaction on MySQL/PostgreSQL the limit is left to
+primary key must not be zero) and it mixes with `Values`/`ValuesMap` (after a nil-column `ValuesStructs`
+they are an error). An empty `autoid` field is an error — a batch does not generate IDs,
+`Model().Insert()` does. `DoUpdateAll` with rows that carry their primary key and a conflict target that
+is another unique key overwrites the existing row's key too: list the columns with `DoUpdate` there. In a transaction on MySQL/PostgreSQL the limit is left to
 the driver, which may interpolate (`interpolateParams`, pgx simple protocol).
 
 ---

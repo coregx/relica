@@ -30,6 +30,16 @@ type bsPublic struct {
 	Name     string `db:"name"`
 }
 
+type bsNodeID string
+
+// bsNamedPublic has an autoid field of a named string type, which
+// Model().Insert() also generates.
+type bsNamedPublic struct {
+	ID       int64    `db:"id,pk"`
+	PublicID bsNodeID `db:"public_id,autoid:nod"`
+	Name     string   `db:"name"`
+}
+
 func buildErrHas(t *testing.T, q *Query, want string) {
 	t.Helper()
 	if q.prepErr == nil || !strings.Contains(q.prepErr.Error(), want) {
@@ -102,6 +112,11 @@ func TestValuesStructs_Errors(t *testing.T) {
 			ValuesStructs([]bsItem{{Name: "a"}}).Build(), "without columns"},
 		"derived twice": {qb.BatchInsert("items", nil).ValuesStructs([]bsItem{{Name: "a"}}).
 			ValuesStructs([]bsItem{{Name: "b"}}).Build(), "without columns"},
+		// Derived columns are sorted, so a positional row would land in the wrong columns.
+		"Values after derived": {qb.BatchInsert("items", nil).ValuesStructs([]bsItem{{Name: "a"}}).
+			Values("b", "y").Build(), "without columns"},
+		"ValuesMap after derived": {qb.BatchInsert("items", nil).ValuesStructs([]bsItem{{Name: "a"}}).
+			ValuesMap(map[string]any{"name": "b"}).Build(), "without columns"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) { buildErrHas(t, c.q, c.want) })
@@ -120,6 +135,7 @@ func TestBatchInsertStruct_EmptyAutoID_IsError(t *testing.T) {
 	qb := &QueryBuilder{db: mockDB("postgres")}
 	buildErrHas(t, qb.BatchInsertStruct("users", []bsPublic{{Name: "a"}}), "public_id")
 	buildErrHas(t, qb.BatchInsert("users", nil).ValuesStructs([]bsPublic{{Name: "a"}}).Build(), "public_id")
+	buildErrHas(t, qb.BatchInsertStruct("users", []bsNamedPublic{{Name: "a"}}), "public_id")
 	buildOK(t, qb.BatchInsertStruct("users", []bsPublic{{PublicID: "usr_1", Name: "a"}}),
 		`INSERT INTO "users" ("name", "public_id") VALUES ($1, $2)`)
 }
