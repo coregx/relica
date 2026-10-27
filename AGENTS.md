@@ -311,22 +311,53 @@ for _, u := range users {
 }
 _, err := batch.Execute()
 
-// BatchInsertStruct — batch from structs (auto-detects columns)
+// BatchInsertStruct — batch from structs (columns from db tags / Naming, a zero PK left out)
 users := []User{{Name: "Alice"}, {Name: "Bob"}}
-_, err := db.BatchInsertStruct("users", users)
+_, err := db.BatchInsertStruct("users", users).Execute()
 
-// BatchUpdate — multi-row UPDATE
-batch := db.BatchUpdate("users", []string{"name", "status"}, "id")
-for _, u := range users {
-    batch.Values(u.Name, u.Status, u.ID) // last value = WHERE id = ?
-}
-_, err := batch.Execute()
+// Batch UPSERT from structs (v0.20.1+): ValuesStructs + exactly one conflict action
+_, err := db.BatchInsert("nodes", nil). // nil: columns from the struct
+    ValuesStructs(nodes).
+    OnConflict("project_id", "qualified_name").
+    DoUpdateAll(). // or DoUpdate(cols...), DoNothing()
+    Execute()
+
+// BatchUpdate — multi-row UPDATE keyed by one column (CASE WHEN per column)
+_, err := db.BatchUpdate("users", "id").
+    Set(1, map[string]any{"name": "Alice", "status": "active"}).
+    Set(2, map[string]any{"name": "Bob", "status": "inactive"}).
+    Execute()
 
 // InsertStruct — single struct INSERT (auto-detects columns, skips zero PK)
-_, err := db.InsertStruct("users", user)
+_, err := db.InsertStruct("users", user).Execute()
 ```
 
 All batch operations work on both `DB` and `Tx`.
+
+**One batch = one statement, with a bind-parameter limit** (v0.20.1+): rows × columns may not exceed
+65535 on PostgreSQL and MySQL or 32766 on SQLite. A larger `BatchInsert`/`BatchInsertStruct` is an
+error returned before anything is sent; Relica never splits it or opens a transaction for you. Split the
+rows yourself, inside `Transactional` when the batches must be atomic:
+
+```go
+const rowsPerBatch = 1000
+err := db.Transactional(ctx, func(tx *relica.Tx) error {
+    for start := 0; start < len(nodes); start += rowsPerBatch {
+        end := min(start+rowsPerBatch, len(nodes))
+        if _, err := tx.BatchInsert("nodes", nil).ValuesStructs(nodes[start:end]).
+            OnConflict("project_id", "qualified_name").DoUpdateAll().Execute(); err != nil {
+            return err
+        }
+    }
+    return nil
+})
+```
+
+`ValuesStructs` rules: a slice of structs or pointers of one type. With `nil` columns, the columns come
+from the struct and it is the only source of rows; with listed columns, exactly those are read (a listed
+primary key must not be zero) and it mixes with `Values`. An empty `autoid` field is an error — a batch
+does not generate IDs, `Model().Insert()` does. In a transaction on MySQL/PostgreSQL the limit is left to
+the driver, which may interpolate (`interpolateParams`, pgx simple protocol).
 
 ---
 

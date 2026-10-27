@@ -2801,6 +2801,7 @@ type BatchInsertQuery struct {
 	conflict conflictClause
 	ctx      context.Context // context for this specific query
 	buildErr error           // stored programming error (replaces panic in fluent chain)
+	derived  bool            // columns came from ValuesStructs, which must be the only row source
 }
 
 // WithContext sets the context for this batch INSERT query.
@@ -2923,6 +2924,10 @@ func (biq *BatchInsertQuery) Build() *Query {
 		}
 	}
 
+	if err := biq.checkBindLimit(); err != nil {
+		return &Query{prepErr: err, db: biq.builder.db, tx: biq.builder.tx, ctx: ctx}
+	}
+
 	// Build column list with proper quoting
 	quotedColumns := make([]string, len(biq.columns))
 	for i, col := range biq.columns {
@@ -2969,6 +2974,43 @@ func (biq *BatchInsertQuery) Build() *Query {
 // Execute executes the batch INSERT query and returns the result.
 func (biq *BatchInsertQuery) Execute() (any, error) {
 	return biq.Build().Execute()
+}
+
+// maxBindParams is the number of bind parameters one statement may carry:
+// PostgreSQL's wire protocol counts them in an int16 (65535), MySQL's prepared
+// statements likewise, SQLite's default SQLITE_MAX_VARIABLE_NUMBER is 32766
+// (since 3.32). 0 means unknown.
+func maxBindParams(d dialects.Dialect) (int, string) {
+	switch d.(type) {
+	case *dialects.PostgresDialect:
+		return 65535, "PostgreSQL"
+	case *dialects.MySQLDialect:
+		return 65535, "MySQL"
+	case *dialects.SQLiteDialect:
+		return 32766, "SQLite"
+	}
+	return 0, ""
+}
+
+// checkBindLimit rejects a batch with more bind parameters than the database
+// takes in one statement, before anything is sent. Relica does not split the
+// batch itself: several statements are not atomic without a transaction, and
+// opening one is the caller's decision. In a transaction the statement goes to
+// tx.ExecContext unprepared, where the MySQL and PostgreSQL drivers may
+// interpolate it (interpolateParams, the pgx simple protocol) and such a batch
+// works, so it is left to the driver there; SQLite binds every parameter.
+func (biq *BatchInsertQuery) checkBindLimit() error {
+	limit, name := maxBindParams(biq.builder.db.dialect)
+	n := len(biq.rows) * len(biq.columns)
+	if limit == 0 || n <= limit || len(biq.columns) == 0 {
+		return nil
+	}
+	if _, sqlite := biq.builder.db.dialect.(*dialects.SQLiteDialect); biq.builder.tx != nil && !sqlite {
+		return nil
+	}
+	return fmt.Errorf("relica: BatchInsert: %d rows × %d columns = %d bind parameters, over the %s limit of %d "+
+		"per statement: send at most %d rows per statement (split the rows, and run the batches inside "+
+		"Transactional to keep them atomic)", len(biq.rows), len(biq.columns), n, name, limit, limit/len(biq.columns))
 }
 
 // BatchUpdateQuery represents a batch UPDATE query using CASE-WHEN logic.
