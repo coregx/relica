@@ -226,7 +226,9 @@ whole_table() {
 		{
 			text = $0
 			line = nocomment($0)
-			if (!open && match(line, /(^|[^A-Za-z0-9_])(Update|Delete)\("[^"]*"\)/)) {
+			# One argument, the table: a literal, a variable or one call
+			# (tableName(x)); Delete(ctx, id) and Model(m).Delete() do not match.
+			if (!open && match(line, /(^|[^A-Za-z0-9_])(Update|Delete)\([^,()]+(\([^()]*\))?[^,()]*\)/)) {
 				open = 1; start = FNR; code = $0; seen = 0; depth = 0
 				text = substr(line, RSTART)
 			}

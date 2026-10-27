@@ -1,6 +1,6 @@
 {
   "name": "relica",
-  "version": "0.20.0",
+  "version": "0.20.1",
   "description": "Write, audit and upgrade code that uses Relica (github.com/coregx/relica): version-exact docs, an audit script for real-world mistakes and every v0.20.0 behaviour change",
   "author": {
     "name": "Andrey Kolkov and Coregx contributors",
