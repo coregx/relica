@@ -1,7 +1,7 @@
 # Relica Roadmap
 
-> **Current Version**: v0.19.1 (October 2026)
-> **Previous Release**: v0.19.0 (Released: October 18, 2026)
+> **Current Version**: v0.20.0 (October 2026)
+> **Previous Release**: v0.19.1 (Released: October 18, 2026)
 > **Production Ready**: v1.0.0 (Target: Q4 2026)
 
 ---
@@ -14,9 +14,23 @@
 
 ---
 
-## 📍 Current State (v0.19.1)
+## 📍 Current State (v0.20.0)
 
-### ✅ What's New in v0.19.1
+### ✅ What's New in v0.20.0
+
+A release of breaking fixes: where Relica returned a different result than the code asked for, with no error,
+it now does what the code says or fails before sending anything. Upgrade path: [MIGRATION_GUIDE](docs/MIGRATION_GUIDE.md).
+
+- **Upsert needs exactly one conflict action** (v0.20.0): `DoUpdate(cols...)`, the new `DoUpdateAll()` or `DoNothing()`; MySQL `DoNothing()` keeps the existing row; `WithMySQLUpsertSyntax` for the 8.0.19+ row alias
+- **Table and column names** (v0.20.0): snake_case singular tables and snake_case untagged columns as in ozzo-dbx, `WithNaming`; embedded structs flattened on write, an embedded single value (`time.Time`, `sql.NullString`, a Scanner/Valuer) is one column
+- **Reads fail instead of leaving zero values** (v0.20.0): `ScanRequireFields` by default (`ScanLenient`, `ScanStrict`, `WithScanMode`); `One`/`All` into a single value is an error
+- **No silent whole-table statements** (v0.20.0): `Update`/`Delete` need `Where` or the explicit `AllRows()`; row locks only inside a transaction
+- **Set operations read left to right** (v0.20.0): `OrderBy`/`Limit` after `Union` apply to the combined result; `a.Union(b).Intersect(c)` means the same on every database
+- **`Count()`/`Exists()` follow what `All` returns** (v0.20.0) with `GroupBy`, `Distinct`, set operations and CTEs
+- **SQLite identifiers in backticks** (v0.20.0): a misspelled column fails instead of comparing a string
+- **Agent skill in the repository** (v0.20.0): `skills/relica/` with an audit script for the v0.20.0 behaviour changes; installable as a Claude Code plugin
+
+### ✅ Shipped in v0.19.1
 
 - **Case-insensitive LIKE on every database** (v0.19.1): `ILike`, `NotILike`, `OrILike`, `OrNotILike` — `ILIKE` on PostgreSQL, `LOWER(col) LIKE LOWER(?)` on MySQL and SQLite
 - **Error classification by driver code** (v0.19.1): the `Is*Violation` helpers read SQLSTATE / MySQL error number / SQLite extended code instead of message text (works on localized servers and MariaDB); new `IsDeadlock`, `IsSerializationFailure`, `IsLockTimeout`

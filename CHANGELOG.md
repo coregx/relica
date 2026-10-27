@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.20.0] - 2026-10-27
 
 ### Changed (breaking) — upsert needs exactly one explicit conflict action (ADR-019)
 
@@ -55,7 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`Count()` ignored `Distinct`, set operations and CTEs**: `Distinct` counted every row, `Union`/`Intersect`/`Except` counted only the first branch, a CTE was dropped (the query failed with "no such table"). They now apply: grouped, distinct and compound queries are counted as a derived table `SELECT COUNT(*) FROM (...) AS relica_count`
 - **`Exists()` dropped `GroupBy`, `Having`, `Distinct`, set operations and CTEs** (it sent `SELECT 1` with only FROM, JOIN and WHERE), so a `Having` that filtered every group still returned true and a match in a later `Union` branch returned false. It now sends the query itself inside `SELECT EXISTS(...)`
 - **`Count()` on a select list that aggregates without `GroupBy`** (`Select("MAX(x)")`, `SelectExpr("SUM(x) AS s")`) returned the number of matching rows instead of 1; a select list with anything but plain columns is now counted as a derived table
-- `OrderBy`, `Limit` and `Offset` stay ignored by both (a paginated query reports its total); in a set operation they belong to the first branch and are kept
+- `OrderBy`, `Limit` and `Offset` stay ignored by both (a paginated query reports its total); in a set operation those are the ones called after `Union`, while a branch's own `Limit`/`Offset` (`a.Limit(1).Union(b)`) choose its rows and are kept
 
 ### Changed (breaking) — SQLite identifiers are quoted with backticks
 
@@ -67,7 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed (breaking) — set operations read left to right
 
-- **`a.Union(b).OrderBy("name").Limit(10)` sorted and limited only the first branch**, then appended all of `b` unsorted — the docs promised the first 10 of the union. `OrderBy`, `OrderByExpr`, `OrderBySub`, `Limit` and `Offset` called after the first `Union`/`UnionAll`/`Intersect`/`Except` now apply to the combined result; called before it they still choose the first branch's rows (`a.OrderBy("x").Limit(5).Union(b)`), as the SQL text reads and as jOOQ, Laravel, goqu and SQLAlchemy define it (v0.19 and ozzo-dbx put them in the first branch). `Count()`/`Exists()` ignore the combined result's paging, like any paginated query, and keep a branch's
+- **`a.Union(b).OrderBy("name").Limit(10)` sorted and limited only the first branch**, then appended all of `b` unsorted — the docs promised the first 10 of the union. `OrderBy`, `OrderByExpr`, `OrderBySub`, `Limit` and `Offset` called after the first `Union`/`UnionAll`/`Intersect`/`Except` now apply to the combined result; called before it they still choose the first branch's rows (`a.OrderBy("x").Limit(5).Union(b)`), as the SQL text reads and as jOOQ, Laravel, goqu and SQLAlchemy define it (v0.19 and ozzo-dbx put them in the first branch). `Count()`/`Exists()` ignore the combined result's paging, like any paginated query, and keep a branch's own `Limit`/`Offset`
 - **`a.Union(b).Intersect(c)` returned different rows per database**: sent flat, SQLite computed `(a ∪ b) ∩ c` and PostgreSQL/MySQL `a ∪ (b ∩ c)` (they bind INTERSECT first). Relica now parenthesizes the left side on PostgreSQL and MySQL, so a chain means `(a ∪ b) ∩ c` everywhere; `a.Union(b.Intersect(c))` writes the other grouping
 - **Two ambiguous forms are errors** returned when the query runs: an `OrderBy` in a branch without `Limit`/`Offset` (`a.OrderBy("x").Union(b)` — PostgreSQL and MySQL ignore it; it is what code meant to sort the union wrote), and a set operation after the combined result's `OrderBy`/`Limit`/`Offset` (`a.Union(b).OrderBy("x").Union(c)`). To sort a compound by an expression, wrap it: `db.Select().FromSelect(compound, "u").OrderByExpr(...)`
 
@@ -109,7 +109,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`WarmCache`/`PinQuery` examples warmed text no query sends** (`"SELECT * FROM users WHERE id = ?"`): the cache is keyed by the exact SQL with the dialect's quoting and placeholders, so these never matched a builder query, and `?` does not prepare on PostgreSQL. The godoc and PERFORMANCE_TUNING now take the key from `ToSQL()`; an integration test pins that the `ToSQL` text is the cache key
 - **PRODUCTION_DEPLOYMENT's health endpoint returned `err.Error()` to the client** (host and user names in driver errors); it logs the error and answers `{"status":"unhealthy"}`. QUERY_ANALYZER_GUIDE no longer matches error text
 - **Guides no longer show API users cannot call** — SECURITY, SECURITY_TESTING, QUERY_OPTIMIZER_GUIDE, LOGGING_GUIDE, PRODUCTION_DEPLOYMENT, PERFORMANCE_TUNING and BEST_PRACTICES described the SQL validator, audit log, optimizer and an OpenTelemetry tracer that exist only as internal groundwork, plus `db.StmtCacheStats()` and `db.SetQueryLogger()`, which never existed. They now document the public equivalents (parameters, quoting, `WithLogger`, `WithQueryHook`, `MaskArgs`, `Stats()`), tracing as a user-side `QueryHook` with OpenTelemetry (Relica stays dependency-free), and mark the internal features as planned. `PRODUCTION_DEPLOYMENT` also showed `WithConnMaxLifetime(300)`, which is 300 ns
-
 - **SQLite read-only connections** (AGENTS.md › SQLite, TROUBLESHOOTING) — `?mode=ro` works only in a `file:` URI; both modernc.org/sqlite and mattn/go-sqlite3 drop the query of a plain path, so the "reader" opens read-write and, with `_txlock=immediate`, waits behind the writer with `database is locked`
 - **`LikeExp.EscapeChars()` with no arguments** turns escaping off (AGENTS.md › String Operators) — only for patterns the code builds, never for user input
 - **MIGRATION_GUIDE v0.19.1**: after a failed rollback `Transactional` returns `errors.Join(err, rollbackErr)`, so compare with `errors.Is`, not `==`
