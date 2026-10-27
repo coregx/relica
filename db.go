@@ -2688,13 +2688,18 @@ func (biq *BatchInsertQuery) ValuesMap(values map[string]any) *BatchInsertQuery 
 // With nil columns in BatchInsert, the columns come from the struct (a single
 // primary key that is zero in every row is left out) and ValuesStructs must be
 // the only source of rows. With columns, exactly those are read from each
-// struct, and a listed primary key must not be zero. An empty autoid field is
-// an error: a batch does not generate IDs (Model().Insert() does).
+// struct, and a listed primary key must not be zero. Values and ValuesMap mix
+// with listed columns only. An empty autoid field is an error: a batch does not
+// generate IDs (Model().Insert() does). DoUpdateAll updates every inserted
+// column except the conflict target, so rows that carry their primary key and
+// conflict on another unique key also overwrite the key of the existing row:
+// name the columns with DoUpdate there.
 //
-// One statement carries at most the database's bind parameters per statement
-// (rows × columns: 65535 on PostgreSQL and MySQL, 32766 on SQLite); a larger
-// batch is an error returned before anything is sent. Relica does not split it:
-// send the rows in slices, inside Transactional when they must be atomic.
+// One statement carries at most the database's bind parameters (rows ×
+// columns: 65535 on PostgreSQL and MySQL, 32766 on SQLite, its compiled
+// default); a larger batch is an error returned before anything is sent.
+// Relica does not split it: send the rows in slices, inside Transactional when
+// they must be atomic.
 func (biq *BatchInsertQuery) ValuesStructs(rows any) *BatchInsertQuery {
 	biq.biq.ValuesStructs(rows)
 	return biq
