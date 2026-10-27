@@ -10,5 +10,5 @@ replace github.com/coregx/relica => ../../
 require (
 	github.com/coregx/relica v0.0.0
 	github.com/lib/pq v1.2.0
-	github.com/mattn/go-sqlite3 v1.14.50
+	github.com/mattn/go-sqlite3 v1.14.52
 )
