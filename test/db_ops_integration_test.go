@@ -356,22 +356,12 @@ func runDBOpsTests(t *testing.T, db *relica.DB, dialect string) {
 		valid, valid2 := opsCacheQuery(db, 111), opsCacheQuery(db, 112)
 		bad := "SELEC name FROM ops_item"
 		n, err := db.WarmCache([]string{valid, bad, valid2})
-		if dialect == "sqlite" {
-			// modernc.org/sqlite compiles a statement lazily, on first use:
-			// Prepare cannot fail, so WarmCache accepts the broken statement
-			// and the error surfaces when it runs.
-			require.NoError(t, err)
-			assert.Equal(t, 3, n)
-			assert.True(t, db.PinQuery(valid2))
-			assert.True(t, db.UnpinQuery(valid2))
-			_, err = db.NewQuery(bad).Execute()
-			require.Error(t, err)
-		} else {
-			// Server-side prepare: WarmCache stops at the broken statement.
-			require.Error(t, err)
-			assert.Equal(t, 1, n, "only the statement before the broken one is warmed")
-			assert.False(t, db.PinQuery(valid2), "statements after the error are not warmed")
-		}
+		// Every driver pinned here compiles at prepare time (modernc.org/sqlite
+		// v1.39 still compiled lazily and accepted the broken statement), so
+		// WarmCache stops at the broken statement on all three databases.
+		require.Error(t, err)
+		assert.Equal(t, 1, n, "only the statement before the broken one is warmed")
+		assert.False(t, db.PinQuery(valid2), "statements after the error are not warmed")
 		assert.True(t, db.PinQuery(valid))
 		assert.True(t, db.UnpinQuery(valid))
 	})
@@ -451,12 +441,7 @@ func runDBOpsTests(t *testing.T, db *relica.DB, dialect string) {
 	t.Run("Prepare_InvalidSQL", func(t *testing.T) {
 		q := db.NewQuery("SELEC name FROM ops_item").Prepare()
 		defer func() { _ = q.Close() }()
-		if dialect == "sqlite" {
-			// modernc.org/sqlite compiles lazily: Prepare succeeds.
-			assert.True(t, q.IsPrepared())
-		} else {
-			assert.False(t, q.IsPrepared(), "server-side prepare rejects the syntax error")
-		}
+		assert.False(t, q.IsPrepared(), "prepare rejects the syntax error (see WarmCache_InvalidSQL)")
 		var name string
 		require.Error(t, q.Row(&name), "running the broken statement must fail")
 		_, err := q.Execute()
