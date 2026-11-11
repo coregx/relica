@@ -26,6 +26,9 @@ on:
 # - feature/fix branches tested via PR, no duplicate runs
 # Reference: https://adamj.eu/tech/2025/05/14/github-actions-avoid-simple-on/
 
+permissions:
+  contents: read
+
 jobs:
   # Static analysis - Run once on Linux (OS-independent)
   static-analysis:
@@ -86,6 +89,9 @@ jobs:
   unit-tests:
     name: Unit Tests - ${{ matrix.os }} - Go ${{ matrix.go-version }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write # Codecov OIDC — only this job needs it
     strategy:
       fail-fast: false # see integration-tests
       matrix:
@@ -134,7 +140,7 @@ jobs:
       if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.25'
       uses: codecov/codecov-action@v5
       with:
-        token: ${{ secrets.CODECOV_TOKEN }}
+        use_oidc: true
         files: ./coverage.out
         flags: unittests
         name: codecov-unit
